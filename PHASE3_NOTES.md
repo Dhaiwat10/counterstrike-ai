@@ -66,3 +66,8 @@ Archived in `checkpoints/_baseline/`.
 - Live dashboard: `.venv/bin/python dashboard/server.py` -> http://127.0.0.1:8050
 - Open question (asked): rounds where a moving bot walks out of sight are unwinnable; proposal = end them as no-contest
   (line-of-sight check each step) before the runs reach the moving stages; alternative = an aim map (user would supply it).
+- **Stage 2 = scripted strafing target** (user's choice after measuring that a free-roaming passive bot leaves line of sight
+  in 78% of 8 s rounds on dust2; a fighting bot in 28%). The frozen, passive bot is moved by us every tick along a
+  60-400-unit path perpendicular to the line of sight, checked free of walls, on level floor and fully visible from the
+  agent's eye; 120-220 u/s, direction changes every 0.3-0.8 s. Tests: out of sight 0/20 rounds, span median 157 units,
+  scripted tracking+tapping kills 11/12 (median 5.8 s). Demo: results/phase3/videos/strafe_target_demo.mp4.

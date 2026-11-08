@@ -87,7 +87,8 @@ class CS16Env(gym.Env):
         self.shaping_gamma = 0.99      # potential-based shaping uses gamma * Phi(s') - Phi(s)
         self.episode_seconds = self.scn.episode_seconds  # can grow with the arena distance
         self._ep_dist = 0.0
-        self.bot_level = 3             # arena: 0 frozen & passive, 1 moving & passive, 2 frozen & shoots, 3 normal
+        self.bot_level = 3             # arena: 0 frozen & passive, 1 strafing (scripted) & passive, 2 frozen & shoots, 3 normal
+        self._strafe = None
         self._bot_level_applied = None
         self.arena_max_offset = self.scn.arena_max_offset
         self._obs_queue: collections.deque = collections.deque()
@@ -177,7 +178,7 @@ class CS16Env(gym.Env):
         aim0 = self._snap["aim"]
         for i in range(self.repeat):
             s = b.step(dyaw=dyaw, dpitch=dpitch, forward=fwd, side=side, buttons=buttons,
-                       capture=(i == self.repeat - 1))
+                       capture=(i == self.repeat - 1), cmd=self._strafe_tick())
             r, died, killed = self._account(s)
             reward += r
             if (died and self.scn.end_on_death) or (killed and self.scn.end_on_kill):
@@ -201,13 +202,15 @@ class CS16Env(gym.Env):
         self.delay_steps = int(round(seconds / (self.tick * self.repeat)))
 
     def set_bot_level(self, level: int):
-        """Arena curriculum: 0 frozen & passive, 1 moving & passive, 2 frozen & shoots, 3 moving & shoots (next reset)."""
+        """Arena curriculum (next reset): 0 frozen & passive; 1 passive bot strafing left/right along a short path that
+        stays in view (we move it ourselves -- a free-roaming bot walks out of sight in ~78% of rounds on dust2);
+        2 frozen & shoots back; 3 normal YaPB bot (moves & shoots back)."""
         self.bot_level = int(level)
 
     def _apply_bot_level(self):
         if self._bot_level_applied == self.bot_level:
             return
-        freeze, ignore = {0: (1, 1), 1: (0, 1), 2: (1, 0)}.get(self.bot_level, (0, 0))
+        freeze, ignore = {0: (1, 1), 1: (1, 1), 2: (1, 0)}.get(self.bot_level, (0, 0))
         self.bridge.command(f"yb_freeze_bots {freeze}; yb_ignore_enemies {ignore}")
         self._bot_level_applied = self.bot_level
 
@@ -250,11 +253,84 @@ class CS16Env(gym.Env):
         pitch = float(np.clip(pitch + self.np_random.uniform(-off, off) / 4, -60, 60))
         me = s.playernum
         bot = next(k for k, p in enumerate(s.players) if p.connected and k != me)
+        self._strafe = None
+        if self.bot_level == 1:
+            path = self._strafe_path(a, e)
+            if path is None:  # no usable strafe path here: try another spawn pair
+                self._strafe_retry = getattr(self, "_strafe_retry", 0) + 1
+                if self._strafe_retry < 8:
+                    return self._arena_place()
+            self._strafe_retry = 0
+            if path is not None:
+                lo, hi, u = path
+                spd = float(self.np_random.uniform(120.0, 220.0))
+                self._strafe = dict(bot=bot, c=e.copy(), u=u, lo=lo, hi=hi, pos=0.0,
+                                    vel=spd * (1 if self.np_random.random() < 0.5 else -1), face=yaw + 180.0,
+                                    left=float(self.np_random.uniform(0.3, 0.8)))
         b.step(cmd=f"cs2ai_place {me} {a[0]:.1f} {a[1]:.1f} {a[2]:.1f} {pitch:.2f} {yaw:.2f} 100", capture=False)
         b.step(cmd=f"cs2ai_place {bot} {e[0]:.1f} {e[1]:.1f} {e[2]:.1f} 0 {yaw + 180:.2f} 100", capture=False)
         for _ in range(3):
             s = b.step(capture=False)
         return s
+
+    def _trace(self, segs):
+        """World line traces (<= 3 per bridge step); returns fractions (1 = clear)."""
+        out = []
+        for k in range(0, len(segs), 3):
+            chunk = segs[k:k + 3]
+            cmd = ";".join(f"cs2ai_trace {q} {p0[0]:.0f} {p0[1]:.0f} {p0[2]:.0f} {p1[0]:.0f} {p1[1]:.0f} {p1[2]:.0f}"
+                           for q, (p0, p1) in enumerate(chunk))
+            st = self.bridge.step(cmd=cmd, apply=False, capture=False)
+            out += [float(st.aux[q]) for q in range(len(chunk))]
+        return out
+
+    def _strafe_path(self, a, e):
+        """Pick a strafe segment through the bot's spot, perpendicular to the line of sight, that is free of walls,
+        on level floor, and fully visible from the agent's eye. Returns (lo, hi, unit axis) in units, or None."""
+        d = (e - a)[:2]
+        u = np.array([-d[1], d[0], 0.0]) / (np.linalg.norm(d) + 1e-6)
+        want = float(self.np_random.uniform(80.0, 200.0))
+        eye = a + (0.0, 0.0, 17.0)
+        lim = []
+        for sgn in (-1.0, 1.0):
+            L = want
+            for _ in range(3):
+                end = e + sgn * L * u
+                wall, floor = self._trace([(e + (0, 0, 10), end + (0, 0, 10)), (end, end - (0, 0, 80))])
+                if wall < 0.999:  # wall in the way: stop 24 units before it
+                    L = max(0.0, wall * L - 24.0)
+                    continue
+                if not (0.4 < floor * 80.0 / 36.0 < 1.25):  # floor must stay ~36 units below the hull centre
+                    L *= 0.5
+                    continue
+                vis = self._trace([(eye, end + (0, 0, 10)), (eye, end + (0, 0, 28)), (eye, end - (0, 0, 30))])
+                if min(vis) < 0.999:
+                    L *= 0.5
+                    continue
+                break
+            else:
+                L = 0.0
+            lim.append(L)
+        if lim[0] + lim[1] < 60.0:
+            return None
+        return -lim[0], lim[1], u
+
+    def _strafe_tick(self):
+        """Advance the scripted strafe by one engine tick; returns the console command that moves the bot."""
+        st = self._strafe
+        if st is None:
+            return ""
+        dt = self.tick
+        st["pos"] += st["vel"] * dt
+        st["left"] -= dt
+        if st["pos"] <= st["lo"] or st["pos"] >= st["hi"] or st["left"] <= 0:  # change direction like an AD strafe
+            st["pos"] = float(np.clip(st["pos"], st["lo"], st["hi"]))
+            st["vel"] = -st["vel"] if st["left"] > 0 or self.np_random.random() < 0.8 else st["vel"]
+            if st["pos"] in (st["lo"], st["hi"]):
+                st["vel"] = abs(st["vel"]) * (1 if st["pos"] == st["lo"] else -1)
+            st["left"] = float(self.np_random.uniform(0.3, 0.8))
+        p = st["c"] + st["pos"] * st["u"]
+        return f"cs2ai_place {st['bot']} {p[0]:.1f} {p[1]:.1f} {p[2]:.1f} 0 {st['face']:.1f}"
 
     def render(self):
         f = self.bridge.frame() if self.bridge else None
