@@ -99,7 +99,7 @@ class BridgeError(RuntimeError):
 
 
 class EngineBridge:
-    def __init__(self, cfg: EngineConfig | None = None, start_timeout: float = 30.0):
+    def __init__(self, cfg: EngineConfig | None = None, start_timeout: float = 30.0, step_timeout: float = 120.0):
         self.cfg = cfg or EngineConfig()
         self._tmp = tempfile.mkdtemp(prefix="cs16b_", dir="/tmp")
         self.sock_path = os.path.join(self._tmp, "s")
@@ -138,6 +138,7 @@ class EngineBridge:
         finally:
             srv.close()
         self.conn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 20)
+        self.conn.settimeout(step_timeout)  # engine hung (no reply to a step) -> BridgeError, not a silent stall
 
         # the engine creates/truncates the shm file before its first frame
         t0 = time.time()
@@ -201,7 +202,10 @@ class EngineBridge:
         view = memoryview(buf)
         got = 0
         while got < len(buf):
-            n = self.conn.recv_into(view[got:])
+            try:
+                n = self.conn.recv_into(view[got:])
+            except socket.timeout as e:
+                raise BridgeError("engine stopped responding (hung)") from e
             if n == 0:
                 raise BridgeError("engine closed the bridge (crashed or quit)")
             got += n
