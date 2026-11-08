@@ -113,3 +113,7 @@ Archived in `checkpoints/_baseline/`.
 - **No-contest rule active** for free-roaming-bot stages (bot out of sight >0.5 s -> neutral round, not counted in stats,
   promotion or exams). Measured at stage 11: bot left sight in 32% of rounds; 12 of 13 timeouts were such rounds; contested
   kill rate 58-61% vs 47% raw. Applied together at stage 12 from 4.67M steps (~17% slower training).
+- **KL fix worked (05:20, ~40 min / ~500k steps after enabling):** big-turn probability at round start 0.13% -> **23.9%**
+  (>= 16 deg/step: 0.07% -> 1.0%); median time to get on target 0.84 -> 0.60 s; KL(prior||policy) 3.0 -> 0.46.
+  Agent at stage 13 (80 ms delay), 5.2M steps. (The app restarted the session twice overnight; that only ends the
+  background watcher/timer helpers -- training, exams and dashboard are separate processes and kept running.)
