@@ -100,3 +100,8 @@ Archived in `checkpoints/_baseline/`.
   stage 10 (`train/probe_turns.py`, log in results/phase3/turn_probe.jsonl; baseline 0.12% at 3.07M steps). If it rises
   toward a few percent, RL is relearning by itself; if it stays ~0.1%, apply the free fixes first (extra exploration bonus on
   the yaw head + rehearsal rounds of earlier stages), and only then the KL pull toward the imitation policy.
+- **Wait-and-see result (03:05):** big-turn probability 0.12% -> 0.11% over ~900k steps and two bigger-angle stages: RL was
+  not relearning flicks. **Free fixes applied (user, ~03:15) at stage 11 from 4.03M steps:** the turning (yaw) head's
+  entropy term weighted 5x (`--ent-yaw-mult 5`), and 10% rehearsal rounds that replay a random earlier stage (`--rehearsal
+  0.1`; tracked as kill_rehearsal, never counted for promotion). Smoke test: rehearsal rounds 71-75% kills. Next check:
+  big-turn probe ~1 h after the switch; if still ~0.1%, the KL pull toward the imitation policy.

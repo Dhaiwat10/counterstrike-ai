@@ -61,7 +61,17 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
         env.rw_death = rewards["death"] if bot_shoots else 0.0
         env.hurt_penalty = rewards["hurt"] if bot_shoots else 0.0
 
-    set_knobs(knobs)
+    import random
+    rng = random.Random(seed)
+    state = dict(cur=dict(knobs), pool=list(knobs.get("pool", [])), rehearsing=False)
+
+    def choose_round():  # before each reset: usually the current stage, sometimes an earlier one
+        if state["pool"] and rng.random() < rewards.get("rehearsal", 0.0):
+            set_knobs(rng.choice(state["pool"])); state["rehearsing"] = True
+        else:
+            set_knobs(state["cur"]); state["rehearsing"] = False
+
+    choose_round()
     obs, info = env.reset(seed=seed)
 
     def views(o):
@@ -79,15 +89,16 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
                 if term or trunc:
                     ep = dict(ret=ep_ret, kills=info["kills"], deaths=info["deaths"], damage=info["damage"],
                               time=info["time"], timeout=bool(trunc), dist=info["spawn_dist"], offset=info["spawn_offset"],
-                              acquire=info.get("acquire_time"))
+                              acquire=info.get("acquire_time"), rehearsal=state["rehearsing"])
                     ep_ret = 0.0
                     if trunc:
                         final = views(obs)  # bootstrap V(final obs) on a time-limit cut
+                    choose_round()
                     obs, info = env.reset()
                 remote.send((views(obs), info["aux"], r, bool(term), bool(trunc), final, ep))
             elif cmd == "knobs":
-                set_knobs(data)
-                remote.send(True)
+                state["cur"] = dict(data); state["pool"] = list(data.get("pool", []))
+                remote.send(True)  # takes effect from the next round
             elif cmd == "close":
                 break
     finally:
@@ -158,6 +169,11 @@ def curriculum_stages():
     return st
 
 
+def pub(knobs):
+    """knobs without the (long) list of earlier stages used for rehearsal -- for logs and checkpoints."""
+    return {k: v for k, v in knobs.items() if k != "pool"}
+
+
 def band_of(dist):
     return "close" if dist < 600 else "medium" if dist < 1200 else "long"
 
@@ -202,7 +218,8 @@ def dist_stats(logits, mask, actions=None):
         acts.append(a)
         logps.append(lp.gather(-1, a.unsqueeze(-1)).squeeze(-1))
         ents.append(-(lp.exp() * lp).sum(-1) / math.log(NVEC[k]))
-    return torch.stack(acts, -1), torch.stack(logps, -1).sum(-1), torch.stack(ents, -1).mean(-1)
+    E = torch.stack(ents, -1)  # [..., n_learned_heads], each in [0, 1]
+    return torch.stack(acts, -1), torch.stack(logps, -1).sum(-1), E
 
 
 def seq_forward(model, frames, fov, state, starts):
@@ -260,6 +277,10 @@ def main():
     ap.add_argument("--lam", type=float, default=0.95)
     ap.add_argument("--clip", type=float, default=0.2)
     ap.add_argument("--ent", type=float, default=0.01, help="coef on mean normalised entropy of learned heads")
+    ap.add_argument("--ent-yaw-mult", type=float, default=1.0,
+                    help="extra exploration on the turning (yaw) head: its entropy term is multiplied by this")
+    ap.add_argument("--rehearsal", type=float, default=0.0,
+                    help="share of rounds that replay a random EARLIER stage (anti-forgetting; not counted for promotion)")
     ap.add_argument("--vf", type=float, default=0.5)
     ap.add_argument("--aux", type=float, default=0.5, help="coef of the auxiliary enemy-location loss (0 = off)")
     ap.add_argument("--aim-shaping", type=float, default=0.03, help="reward per degree of crosshair-to-enemy error removed")
@@ -305,6 +326,8 @@ def main():
 
     heads = [h.strip() for h in a.heads.split(",") if h.strip()]
     mask = [h in heads for h in HEADS]
+    # per-head entropy weights (learned heads only): the turning head can get extra exploration
+    head_w = torch.tensor([a.ent_yaw_mult if h == "yaw" else 1.0 for h in HEADS if h in heads], device=dev)
     if a.init:
         ck = torch.load(a.init, map_location="cpu")
         ba = ck["args"]
@@ -334,12 +357,12 @@ def main():
     stage = a.stage0
     if resume is not None:
         stage = a.stage0 if a.stage0 else int(resume.get("stage", 0))
-    knobs = dict(stages[stage])
+    knobs = dict(stages[stage], pool=[dict(x) for x in stages[:stage]])
     stage_eps = 0  # engagements played at the current stage
     low_windows = 0
     rewards = dict(aim_shaping=a.aim_shaping, bullet_cost=a.bullet_cost, damage=a.damage_reward, death=a.death_penalty,
                    time_round=a.time_penalty_round, hurt=a.hurt_penalty, gamma=a.gamma, review=a.review_frac,
-                   offtarget=a.offtarget_cost, acquire=a.acquire_bonus)
+                   offtarget=a.offtarget_cost, acquire=a.acquire_bonus, rehearsal=a.rehearsal)
     venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, rewards, seed=a.seed * 100)
     N, T = a.envs, a.rollout
 
@@ -356,6 +379,7 @@ def main():
     eps = collections.deque(maxlen=a.cur_window)
     far = collections.deque(maxlen=a.cur_window)  # distance stages: engagements in the newest band
     win = []      # current non-overlapping promotion window (gate-relevant engagements only)
+    reh = collections.deque(maxlen=200)  # rehearsal rounds (earlier stages), tracked separately
     passes = 0    # consecutive windows that cleared the pass mark
     all_eps = 0
     t0 = time.time()
@@ -364,7 +388,7 @@ def main():
     update0 = update
     steps0 = steps
     emit(dict(event="start", device=str(dev), envs=N, rollout=T, init=a.init, fovea=fovea, heads=heads,
-              knobs=knobs, stage=stage, n_stages=len(stages), resume=a.resume, rewards=rewards,
+              knobs=pub(knobs), stage=stage, n_stages=len(stages), resume=a.resume, rewards=rewards,
               params=sum(p.numel() for p in model.parameters())))
 
     try:
@@ -415,6 +439,9 @@ def main():
                 for x in res:
                     if x[6] is not None:
                         e = x[6]
+                        if e.get("rehearsal"):
+                            reh.append(e); all_eps += 1
+                            continue
                         eps.append(e)
                         all_eps += 1
                         stage_eps += 1
@@ -458,12 +485,14 @@ def main():
                         stats["vloss"].append(vloss.item())
                         stats["aux"].append(xloss.item())
                         continue
-                    _, lp, ent = dist_stats(lg, mask, A[j])
+                    _, lp, ent_heads = dist_stats(lg, mask, A[j])
+                    ent = ent_heads.mean(-1)
+                    ent_w = (ent_heads * head_w).sum(-1) / head_w.sum()  # turning head weighted --ent-yaw-mult times
                     adv_j = adv[j]
                     adv_j = (adv_j - adv_j.mean()) / (adv_j.std() + 1e-8)
                     ratio = (lp - LP[j]).exp()
                     pg = -torch.min(ratio * adv_j, ratio.clamp(1 - a.clip, 1 + a.clip) * adv_j).mean()
-                    loss = pg + a.vf * vloss - a.ent * ent.mean() + a.aux * xloss
+                    loss = pg + a.vf * vloss - a.ent * ent_w.mean() * head_w.mean() + a.aux * xloss
                     opt.zero_grad(set_to_none=True)
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
@@ -500,10 +529,10 @@ def main():
                     move = -1 if low_windows >= 2 else 0
                 if move:
                     stage += move
-                    knobs = dict(stages[stage])
+                    knobs = dict(stages[stage], pool=[dict(x) for x in stages[:stage]])
                     venv.set_knobs(knobs)
                     eps.clear(); far.clear(); stage_eps = 0; low_windows = 0; win = []; passes = 0
-                    emit(dict(event="curriculum", update=update, steps=steps, stage=stage, move=move, knobs=dict(knobs)))
+                    emit(dict(event="curriculum", update=update, steps=steps, stage=stage, move=move, knobs=pub(knobs)))
 
             el = time.time() - t0
             E = list(eps)
@@ -517,27 +546,28 @@ def main():
                        acquire_time_med=float(np.median([e["acquire"] for e in E if e.get("acquire") is not None]))
                        if any(e.get("acquire") is not None for e in E) else None,
                        stage=stage, gate=float(gate), passes=passes, window_fill=len(win),
+                       kill_rehearsal=float(np.mean([e["kills"] > 0 for e in reh])) if reh else None,
                        **{f"kill_{b}": float(np.mean([e["kills"] > 0 for e in E if band_of(e["dist"]) == b]))
                           for b in ("close", "medium", "long") if any(band_of(e["dist"]) == b for e in E)},
                        **{f"kill_ang_{b}": float(np.mean([e["kills"] > 0 for e in E if angle_band(e.get("offset", 0)) == b]))
                           for b in ("lt15", "15to30", "30plus") if any(angle_band(e.get("offset", 0)) == b for e in E)},
-                       fire_frac=fire, expl_var=ev, knobs=dict(knobs), sps=(steps - steps0) / el,
+                       fire_frac=fire, expl_var=ev, knobs=pub(knobs), sps=(steps - steps0) / el,
                        roll_s=round(t_roll, 2), upd_s=round(t_upd, 2),
                        **{k: float(np.mean(v)) for k, v in stats.items()})
             if update % 5 == 0 or update <= 3:
                 emit(rec)
             if update % a.snapshot_every == 0:
                 torch.save(dict(model={k: v.half() if v.is_floating_point() else v for k, v in model.state_dict().items()},
-                                args=model_args, steps=steps, update=update, knobs=dict(knobs), stage=stage),
+                                args=model_args, steps=steps, update=update, knobs=pub(knobs), stage=stage),
                            out / "snapshots" / f"update_{update:06d}.pt")
                 torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), args=model_args, steps=steps,
-                                update=update, knobs=dict(knobs), stage=stage), out / "last.pt")
+                                update=update, knobs=pub(knobs), stage=stage), out / "last.pt")
             if (a.max_steps and steps >= a.max_steps) or el > a.hours * 3600:
                 break
     finally:
         torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), args=model_args, steps=steps, update=update,
-                        knobs=dict(knobs), stage=stage), out / "last.pt")
-        emit(dict(event="done", steps=steps, updates=update, episodes=all_eps, knobs=dict(knobs)))
+                        knobs=pub(knobs), stage=stage), out / "last.pt")
+        emit(dict(event="done", steps=steps, updates=update, episodes=all_eps, knobs=pub(knobs)))
         venv.close()
 
 

@@ -40,7 +40,7 @@ assert torch.allclose(lp, lp2)
 parts = torch.split(logits, NVEC, dim=-1)
 manual = sum(torch.log_softmax(parts[k], -1).gather(-1, acts[:, k:k + 1]).squeeze(-1) for k in range(len(NVEC)) if mask[k])
 assert torch.allclose(lp, manual, atol=1e-5)
-assert ((ent >= 0) & (ent <= 1 + 1e-6)).all()                      # normalised entropy in [0, 1]
+assert ((ent >= 0) & (ent <= 1 + 1e-6)).all()                      # per-head normalised entropy in [0, 1]
 uni = torch.zeros(1, sum(NVEC))
-assert abs(dist_stats(uni, mask)[2].item() - 1.0) < 1e-5           # uniform -> 1
+assert torch.allclose(dist_stats(uni, mask)[2], torch.ones(1, sum(mask)))  # uniform -> 1 per head
 print("ppo math: all checks passed")
