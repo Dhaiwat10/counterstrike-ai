@@ -334,6 +334,18 @@ index b428096..5cda967 100644
  	switch( cls.scrshot_action )
  	{
  	case scrshot_inactive:
+diff --git a/engine/client/client.h b/engine/client/client.h
+index ecb69a1..6c1db82 100644
+--- a/engine/client/client.h
++++ b/engine/client/client.h
+@@ -736,6 +736,7 @@ extern convar_t	net_graph;
+ extern convar_t	rate;
+ extern convar_t cl_ticket_generator;
+ extern convar_t	m_ignore;
++qboolean IN_MouseHandsOff( void );
+ extern convar_t	r_showtree;
+ extern convar_t	ui_renderworld;
+ extern convar_t cl_fixmodelinterpolationartifacts;
 diff --git a/engine/client/dll_int/cl_game.c b/engine/client/dll_int/cl_game.c
 index 495245d..6c5de0c 100644
 --- a/engine/client/dll_int/cl_game.c
@@ -378,6 +390,57 @@ index 9ca1f79..21beb39 100644
 +	}
  
  	CL_SetUpPlayerPrediction( false, false );
+ 
+diff --git a/engine/client/input/input.c b/engine/client/input/input.c
+index 712a86e..6752725 100644
+--- a/engine/client/input/input.c
++++ b/engine/client/input/input.c
+@@ -52,6 +52,17 @@ static CVAR_DEFINE_AUTO( cl_sidespeed, "400", FCVAR_ARCHIVE | FCVAR_CLIENTDLL |
+ static CVAR_DEFINE_AUTO( m_grab_debug, "0", FCVAR_PRIVILEGED, "show debug messages on mouse state change" );
+ CVAR_DEFINE_AUTO( touch_enable, DEFAULT_TOUCH_ENABLE, FCVAR_ARCHIVE | FCVAR_FILTERABLE, "enable touch controls" );
+ 
++
++// cs2-ai: a -hiddenwindow engine is driven through the bridge; never touch the OS mouse
++// (no grab, no relative mode, no warping), so the Mac stays usable while instances run.
++qboolean IN_MouseHandsOff( void )
++{
++	static int cached = -1;
++	if( cached < 0 )
++		cached = Sys_CheckParm( "-hiddenwindow" ) ? 1 : 0;
++	return cached;
++}
++
+ /*
+ ================
+ IN_MouseConnected
+@@ -59,7 +70,7 @@ IN_MouseConnected
+ */
+ qboolean IN_MouseConnected( void )
+ {
+-	if( m_ignore.value )
++	if( m_ignore.value || IN_MouseHandsOff( ))
+ 		return false;
+ 
+ 	return Platform_MouseConnected();
+@@ -228,6 +239,9 @@ void IN_SetRelativeMouseMode( qboolean set )
+ 	static qboolean s_bRawInput;
+ 	qboolean verbose = m_grab_debug.value ? true : false;
+ 
++	if( set && IN_MouseHandsOff( ))
++		return;
++
+ 	if( set && !s_bRawInput )
+ 	{
+ #if XASH_SDL >= 2
+@@ -261,6 +275,9 @@ void IN_SetRelativeMouseMode( qboolean set )
+ 
+ void IN_SetMouseGrab( qboolean set )
+ {
++	if( set && IN_MouseHandsOff( ))
++		return;
++
+ 	static qboolean s_bMouseGrab;
+ 	qboolean verbose = m_grab_debug.value ? true : false;
  
 diff --git a/engine/common/bridge.h b/engine/common/bridge.h
 new file mode 100644
@@ -702,6 +765,19 @@ index ef6270f..37d1ddb 100644
  double Sys_GetCPUUsage( void ); // process CPU usage as fraction of one core, 0.0 if unsupported
  char *Sys_GetClipboardData( void );
  const char *Sys_GetCurrentUser( void );
+diff --git a/engine/platform/sdl2/in_sdl2.c b/engine/platform/sdl2/in_sdl2.c
+index 3123eb5..effb25b 100644
+--- a/engine/platform/sdl2/in_sdl2.c
++++ b/engine/platform/sdl2/in_sdl2.c
+@@ -60,6 +60,8 @@ Platform_SetMousePos
+ */
+ void GAME_EXPORT Platform_SetMousePos( int x, int y )
+ {
++	if( IN_MouseHandsOff( ))
++		return;
+ 	SDL_WarpMouseInWindow( host.hWnd, x, y );
+ }
+ 
 diff --git a/engine/platform/sdl2/vid_sdl2.c b/engine/platform/sdl2/vid_sdl2.c
 index f9f4bce..a9065d9 100644
 --- a/engine/platform/sdl2/vid_sdl2.c
