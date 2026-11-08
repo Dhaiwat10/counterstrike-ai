@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import hashlib
 import io
 import json
 import re
@@ -93,7 +94,8 @@ def main():
         raise SystemExit(f"map {hdr.map_name} not installed; skipping")
     demo_dir = game / "cstrike" / "demos_pro"
     demo_dir.mkdir(parents=True, exist_ok=True)
-    safe = re.sub(r"[^A-Za-z0-9_-]", "_", name)[:48]  # engine console chokes on dots/$ in demo names
+    # engine playdemo chokes on long names and dots/$: short sanitized prefix + hash
+    safe = re.sub(r"[^A-Za-z0-9_]", "_", name)[:16] + "_" + hashlib.md5(name.encode()).hexdigest()[:8]
     xdemo = demo_dir / f"ds_{safe}.dem"
     conv.convert(str(src), str(xdemo))
 
