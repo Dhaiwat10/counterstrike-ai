@@ -78,6 +78,9 @@ class CS16Env(gym.Env):
             z = np.load(self.scn.arena)
             self._arena = (z["positions"], z["pairs"], z["dist"])
         self.arena_max_dist = self.scn.arena_max_dist
+        # training-only shaping: reward per degree the crosshair moves toward the nearest live enemy
+        # (potential-based, Phi = -angular error; computed from server state, never observed by the agent)
+        self.aim_shaping = 0.0
         self.arena_max_offset = self.scn.arena_max_offset
         self._obs_queue: collections.deque = collections.deque()
         self._blank = np.zeros((height, width, 3), np.uint8)
@@ -206,9 +209,31 @@ class CS16Env(gym.Env):
             self.bridge = None
 
     # ------------------------------------------------------------------ reward bookkeeping
+    def _aim_error(self, s):
+        """(enemy slot, angular error in degrees) from the crosshair to the nearest live enemy's chest."""
+        me = s.playernum
+        m = self._me(s)
+        if not m.alive:
+            return None, None
+        eye = np.array(m.origin) + (0.0, 0.0, 17.0)
+        best = (None, None)
+        for k, p in enumerate(s.players):
+            if k == me or not p.connected or not p.alive:
+                continue
+            d = np.array(p.origin) + (0.0, 0.0, 10.0) - eye
+            yaw = math.degrees(math.atan2(d[1], d[0]))
+            pitch = -math.degrees(math.atan2(d[2], math.hypot(d[0], d[1])))
+            dy = (yaw - s.viewangles[1] + 180.0) % 360.0 - 180.0
+            err = math.hypot(dy, pitch - s.viewangles[0])
+            if best[1] is None or err < best[1]:
+                best = (k, err)
+        return best
+
     def _snapshot(self, s):
         me = s.playernum
+        tgt, err = self._aim_error(s) if self.aim_shaping else (None, None)
         return {
+            "aim": (tgt, err),
             "frags": self._me(s).frags,
             "alive": self._me(s).alive,
             "hp": {i: p.health for i, p in enumerate(s.players) if p.connected and i != me},
@@ -234,6 +259,10 @@ class CS16Env(gym.Env):
         self._damage += dmg
         self._snap = cur
         r = self.rw_kill * killed - self.rw_death * died + self.rw_dmg * dmg
+        if self.aim_shaping:
+            (t0, e0), (t1, e1) = prev["aim"], cur["aim"]
+            if t0 is not None and t0 == t1 and abs(e0 - e1) < 90.0:
+                r += self.aim_shaping * (e0 - e1)
         return r, died, killed
 
     def _info(self, s):

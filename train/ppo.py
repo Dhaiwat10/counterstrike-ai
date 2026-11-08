@@ -26,13 +26,14 @@ from cs16env.policy import NVEC, Policy
 
 
 # ---------------------------------------------------------------------------------- workers
-def _worker(remote, scenario, seed, hw, fovea, delay0, offset0, dist0):
+def _worker(remote, scenario, seed, hw, fovea, delay0, offset0, dist0, aim_shaping):
     import dataclasses  # noqa: F401
     from cs16env import CS16Env
     from cs16env.vision import views_from_frame
 
     env = CS16Env(scenario, reaction_delay=delay0)
     env.arena_max_offset, env.arena_max_dist = offset0, dist0
+    env.aim_shaping = aim_shaping
     obs, info = env.reset(seed=seed)
 
     def views(o):
@@ -67,13 +68,13 @@ def _worker(remote, scenario, seed, hw, fovea, delay0, offset0, dist0):
 
 
 class VecEnv:
-    def __init__(self, n, scenario, hw, fovea, knobs, seed=0):
+    def __init__(self, n, scenario, hw, fovea, knobs, seed=0, aim_shaping=0.0):
         ctx = mp.get_context("spawn")
         self.remotes, self.procs = [], []
         for i in range(n):
             a, b = ctx.Pipe()
             p = ctx.Process(target=_worker, args=(b, scenario, seed + i, hw, fovea, knobs["delay"],
-                                                  knobs["offset"], knobs["dist"]), daemon=True)
+                                                  knobs["offset"], knobs["dist"], aim_shaping), daemon=True)
             p.start()
             self.remotes.append(a)
             self.procs.append(p)
@@ -150,7 +151,8 @@ def main():
     ap.add_argument("--gamma", type=float, default=0.99)
     ap.add_argument("--lam", type=float, default=0.95)
     ap.add_argument("--clip", type=float, default=0.2)
-    ap.add_argument("--ent", type=float, default=0.01)
+    ap.add_argument("--ent", type=float, default=0.001)
+    ap.add_argument("--aim-shaping", type=float, default=0.01, help="reward per degree of crosshair-to-enemy error removed (training only)")
     ap.add_argument("--vf", type=float, default=0.5)
     ap.add_argument("--value-warmup", type=int, default=20, help="updates that train only the value head (BC init)")
     ap.add_argument("--hours", type=float, default=8.0)
@@ -198,7 +200,7 @@ def main():
     cur_max = dict(offset=45.0, dist=2000.0, delay=0.20)
     cur_step = dict(offset=5.0, dist=250.0, delay=0.04)
     cur_i = 0
-    venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, seed=a.seed * 100)
+    venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, seed=a.seed * 100, aim_shaping=a.aim_shaping)
     N, T = a.envs, a.rollout
     first = venv.first
     cur_p = torch.from_numpy(np.stack([v[0] for v in first])).to(dev)
