@@ -35,6 +35,7 @@ def run_exam(env, agent, cfg, seed):
     env.set_reaction_delay(cfg["delay"])
     env.set_bot_level(cfg["bot"])
     env.arena_max_offset, env.arena_max_dist = cfg["offset"], cfg["dist"]
+    env.arena_min_offset = cfg.get("offset_min", 0.0)
     env.episode_seconds = round_seconds(cfg["dist"])
     obs, info = env.reset(seed=seed)  # same seed -> same sequence of spawn pairs every exam
     rows = []
@@ -45,12 +46,17 @@ def run_exam(env, agent, cfg, seed):
             obs, _, term, trunc, info = env.step(agent.act(obs))
             done = term or trunc
         rows.append(dict(kill=info["kills"] > 0, death=info["deaths"] > 0, damage=info["damage"],
-                         time=info["time"], dist=info["spawn_dist"]))
+                         time=info["time"], dist=info["spawn_dist"], offset=info["spawn_offset"]))
         obs, info = env.reset()
     res = dict(rounds=len(rows), kill_rate=float(np.mean([r["kill"] for r in rows])),
                death_rate=float(np.mean([r["death"] for r in rows])),
                damage=float(np.mean([r["damage"] for r in rows])),
                time_to_kill=float(np.median([r["time"] for r in rows if r["kill"]])) if any(r["kill"] for r in rows) else None)
+    for b, lo, hi in (("ang_lt15", 0, 15), ("ang_15to30", 15, 30), ("ang_30plus", 30, 999)):
+        sub = [r for r in rows if lo <= r["offset"] < hi]
+        if sub:
+            res[f"kill_{b}"] = float(np.mean([r["kill"] for r in sub]))
+            res[f"n_{b}"] = len(sub)
     for b in ("close", "medium", "long"):
         sub = [r for r in rows if band_of(r["dist"]) == b]
         if sub:

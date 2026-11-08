@@ -28,7 +28,8 @@ BOT = {0: "frozen, doesn't shoot", 1: "moving, doesn't shoot", 2: "frozen, shoot
 
 
 def stage_desc(s):
-    return (f"Bot {BOT[s['bot']]} · aim error ≤{s['offset']:.0f}° · reaction delay {int(s['delay'] * 1000)} ms · "
+    ang = (f"aim error {s['offset_min']:.0f}–{s['offset']:.0f}°" if s.get("offset_min") else f"aim error ≤{s['offset']:.0f}°")
+    return (f"Bot {BOT[s['bot']]} · {ang} · reaction delay {int(s['delay'] * 1000)} ms · "
             f"distance ≤{s['dist']:.0f} units · {round_seconds(s['dist']):.0f} s rounds · pass at {int(s['gate'] * 100)}%")
 
 

@@ -71,3 +71,11 @@ Archived in `checkpoints/_baseline/`.
   60-400-unit path perpendicular to the line of sight, checked free of walls, on level floor and fully visible from the
   agent's eye; 120-220 u/s, direction changes every 0.3-0.8 s. Tests: out of sight 0/20 rounds, span median 157 units,
   scripted tracking+tapping kills 11/12 (median 5.8 s). Demo: results/phase3/videos/strafe_target_demo.mp4.
+- **Bounded aim-error ranges** (user's catch, 2026-11-08 ~23:50): "up to X deg" drew the starting error from [0, X], so
+  ~40% of rounds were easy near-centre starts that padded the kill rate; the agent was passing aim stages while still weak
+  at big flicks. Now each aim stage draws |yaw error| from [X/3, X] (stage 9: 12-35 deg; stages 11+: 15-45 deg); bot stages
+  keep 0-10. aim_bc had just passed stage 9 under the old rule and was put back to stage 9 under the new one.
+  Kill rate is now also logged by starting angle (<15, 15-30, 30+ deg) in training, exams and the dashboard.
+- **Stop signals fixed**: background launches start with SIGINT ignored, so `kill -INT` never reached the trainer (earlier
+  stops needed forcing; once a forced cleanup crashed the run). The trainer now turns SIGINT/SIGTERM into a clean stop
+  (save last.pt, close workers); tested: stops in ~12 s, nothing left behind.

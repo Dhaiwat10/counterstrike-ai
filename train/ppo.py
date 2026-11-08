@@ -39,6 +39,8 @@ LOGN = torch.tensor([math.log(n) for n in NVEC])
 
 # ---------------------------------------------------------------------------------- workers
 def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
+    import signal
+    signal.signal(signal.SIGINT, signal.SIG_IGN)  # only the main process handles stop signals; it closes us via "close"
     from cs16env import CS16Env
     from cs16env.vision import views_from_frame
 
@@ -48,6 +50,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
 
     def set_knobs(k):
         env.arena_max_offset, env.arena_max_dist = k["offset"], k["dist"]
+        env.arena_min_offset = k.get("offset_min", 0.0)
         env.set_reaction_delay(k["delay"])
         env.set_bot_level(k["bot"])
         env.episode_seconds = round_seconds(k["dist"])
@@ -73,7 +76,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
                 ep, final = None, None
                 if term or trunc:
                     ep = dict(ret=ep_ret, kills=info["kills"], deaths=info["deaths"], damage=info["damage"],
-                              time=info["time"], timeout=bool(trunc), dist=info["spawn_dist"])
+                              time=info["time"], timeout=bool(trunc), dist=info["spawn_dist"], offset=info["spawn_offset"])
                     ep_ret = 0.0
                     if trunc:
                         final = views(obs)  # bootstrap V(final obs) on a time-limit cut
@@ -135,13 +138,14 @@ def curriculum_stages():
     frozen & passive -> moving & passive -> frozen & shoots back -> moving & shoots back (each needs an
     80% kill rate); then larger initial aim error; then the full 200 ms reaction delay. Only then does
     distance grow, one band at a time (60% on the newest band)."""
-    st, k = [], dict(bot=0, offset=10.0, delay=0.0, dist=800.0, gate=0.8)
+    st, k = [], dict(bot=0, offset=10.0, offset_min=0.0, delay=0.0, dist=800.0, gate=0.8)
     st.append(dict(k))
     for b in (1, 2, 3):
         k["bot"] = b; st.append(dict(k))
     k["gate"] = 0.6
     for off in (15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0):
-        k["offset"] = off; st.append(dict(k))
+        # bounded range [max/3, max] (e.g. 15-45 deg at the end): passing must mean winning genuinely off-target starts
+        k["offset"] = off; k["offset_min"] = round(off / 3.0, 1); st.append(dict(k))
     for d in (0.04, 0.08, 0.12, 0.16, 0.20):
         k["delay"] = d; st.append(dict(k))
     for dist in (1050.0, 1300.0, 1550.0, 1800.0, 2000.0):
@@ -151,6 +155,10 @@ def curriculum_stages():
 
 def band_of(dist):
     return "close" if dist < 600 else "medium" if dist < 1200 else "long"
+
+
+def angle_band(offset):
+    return "lt15" if offset < 15 else "15to30" if offset < 30 else "30plus"
 
 
 # ---------------------------------------------------------------------------------- math
@@ -217,7 +225,21 @@ def aux_loss(pred, label):
 
 
 # ---------------------------------------------------------------------------------- main
+def _install_stop_handlers():
+    """Background launches start with SIGINT ignored, so Ctrl-C/`kill -INT` never reached the trainer.
+    Make SIGINT and SIGTERM both raise KeyboardInterrupt in the main process -> the `finally` block saves
+    last.pt and closes the game workers cleanly."""
+    import signal
+
+    def _stop(signum, frame):
+        raise KeyboardInterrupt(f"signal {signum}")
+
+    signal.signal(signal.SIGINT, _stop)
+    signal.signal(signal.SIGTERM, _stop)
+
+
 def main():
+    _install_stop_handlers()
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True)
     ap.add_argument("--scenario", default="aim_dust2")
@@ -471,6 +493,8 @@ def main():
                        stage=stage, gate=float(gate),
                        **{f"kill_{b}": float(np.mean([e["kills"] > 0 for e in E if band_of(e["dist"]) == b]))
                           for b in ("close", "medium", "long") if any(band_of(e["dist"]) == b for e in E)},
+                       **{f"kill_ang_{b}": float(np.mean([e["kills"] > 0 for e in E if angle_band(e.get("offset", 0)) == b]))
+                          for b in ("lt15", "15to30", "30plus") if any(angle_band(e.get("offset", 0)) == b for e in E)},
                        fire_frac=fire, expl_var=ev, knobs=dict(knobs), sps=(steps - steps0) / el,
                        roll_s=round(t_roll, 2), upd_s=round(t_upd, 2),
                        **{k: float(np.mean(v)) for k, v in stats.items()})

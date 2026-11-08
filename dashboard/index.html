@@ -103,6 +103,7 @@ function card(r) {
   const stale = r.log_age_s != null && r.log_age_s > 300;
   const lastCur = r.curriculum.length ? r.curriculum[r.curriculum.length - 1] : null;
   const bands = ['close', 'medium', 'long'].filter(b => L['kill_' + b] != null).map(b => `${b} ${pct(L['kill_' + b])}`).join(' · ');
+  const angs = [['lt15', '<15°'], ['15to30', '15–30°'], ['30plus', '30°+']].filter(([b]) => L['kill_ang_' + b] != null).map(([b, n]) => `${n} ${pct(L['kill_ang_' + b])}`).join(' · ');
   return `<div class="panel" style="border-top:3px solid ${COL[r.name]}">
     <div style="display:flex;justify-content:space-between;align-items:baseline"><h2 style="color:${COL[r.name]}">${r.name}</h2>
       <span class="badge ${r.alive && !stale ? 'on' : 'off'}">${r.alive ? (stale ? 'running · log stale' : 'training') : 'stopped'}</span></div>
@@ -120,7 +121,7 @@ function card(r) {
       <div class="stat"><div class="v">${L.steps ? (L.steps / 1e6).toFixed(2) + 'M' : '–'}</div><div class="l">total steps</div></div>
       <div class="stat"><div class="v">${num(L.sps, 0)}</div><div class="l">steps / s</div></div>
     </div>
-    <div class="small muted" style="margin-top:8px">${bands ? 'By range: ' + bands + ' · ' : ''}${lastCur ? 'last stage change at ' + (lastCur.steps / 1e3).toFixed(0) + 'k steps' : 'no stage change yet in this setup'} · ${r.snapshots} snapshots saved</div>
+    <div class="small muted" style="margin-top:8px">${angs ? 'By starting aim error: ' + angs + '<br>' : ''}${bands ? 'By range: ' + bands + ' · ' : ''}${lastCur ? 'last stage change at ' + (lastCur.steps / 1e3).toFixed(0) + 'k steps' : 'no stage change yet in this setup'} · ${r.snapshots} snapshots saved</div>
   </div>`;
 }
 function examTable(runs) {

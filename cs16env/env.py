@@ -91,6 +91,8 @@ class CS16Env(gym.Env):
         self._strafe = None
         self._bot_level_applied = None
         self.arena_max_offset = self.scn.arena_max_offset
+        self.arena_min_offset = 0.0  # curriculum: starting yaw error is drawn from [min, max] (bounded range)
+        self._ep_offset = 0.0
         self._obs_queue: collections.deque = collections.deque()
         self._blank = np.zeros((height, width, 3), np.uint8)
 
@@ -249,8 +251,11 @@ class CS16Env(gym.Env):
         yaw = math.degrees(math.atan2(d[1], d[0]))
         pitch = -math.degrees(math.atan2(d[2], math.hypot(d[0], d[1])))  # engine: positive pitch = down
         off = self.arena_max_offset
-        yaw += self.np_random.uniform(-off, off)
+        lo = min(self.arena_min_offset, off)
+        mag = float(self.np_random.uniform(lo, off))  # |yaw error| in [min, max]: big-flick stages can't be padded by easy starts
+        yaw += mag if self.np_random.random() < 0.5 else -mag
         pitch = float(np.clip(pitch + self.np_random.uniform(-off, off) / 4, -60, 60))
+        self._ep_offset = mag
         me = s.playernum
         bot = next(k for k, p in enumerate(s.players) if p.connected and k != me)
         self._strafe = None
@@ -407,5 +412,6 @@ class CS16Env(gym.Env):
             "health": me.health,
             "alive": bool(me.alive),
             "spawn_dist": self._ep_dist,
+            "spawn_offset": self._ep_offset,
             "aux": self._aux_queue[0] if getattr(self, "_aux_queue", None) else np.zeros(3, np.float32),
         }
