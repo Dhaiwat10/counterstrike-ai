@@ -73,6 +73,12 @@ class CS16Env(gym.Env):
         self.action_space = gym.spaces.MultiDiscrete([len(YAW_TABLE), len(PITCH_TABLE), 3, 3, 2, 2, 2, 2, 2])
 
         self.bridge: EngineBridge | None = None
+        self._arena = None
+        if self.scn.arena:
+            z = np.load(self.scn.arena)
+            self._arena = (z["positions"], z["pairs"], z["dist"])
+        self.arena_max_dist = self.scn.arena_max_dist
+        self.arena_max_offset = self.scn.arena_max_offset
         self._obs_queue: collections.deque = collections.deque()
         self._blank = np.zeros((height, width, 3), np.uint8)
 
@@ -113,6 +119,8 @@ class CS16Env(gym.Env):
         # wait until we're alive (respawn is automatic in all scenarios)
         if not self._me(s).alive:
             s = b.wait_until(lambda s: self._me(s).alive, max_steps=2000)
+        if self._arena is not None:
+            s = self._arena_place()
         s = b.step(apply=True, capture=True)  # one neutral step to get a fresh frame
         self._ep_start = s.time
         self._snap = self._snapshot(s)
@@ -159,6 +167,34 @@ class CS16Env(gym.Env):
         self._obs_queue.append(frame if frame is not None else self._obs_queue[-1])
         truncated = (s.time - self._ep_start) >= self.scn.episode_seconds
         return self._obs_queue[0], reward, terminated, truncated, self._info(s)
+
+    # ------------------------------------------------------------------ curriculum knobs
+    def set_reaction_delay(self, seconds: float):
+        """Takes effect at the next reset (training-time curriculum; evaluate at 0.20)."""
+        self.delay_steps = int(round(seconds / (self.tick * self.repeat)))
+
+    def _arena_place(self):
+        b = self.bridge
+        s = b.wait_until(lambda s: self._me(s).alive and self._others_alive(s) and self._bots_ready(s), max_steps=3000)
+        P, pairs, dist = self._arena
+        ok = np.nonzero(dist <= self.arena_max_dist)[0]
+        i, j = pairs[self.np_random.choice(ok)]
+        if self.np_random.random() < 0.5:
+            i, j = j, i
+        a, e = P[i], P[j]
+        d = e - a
+        yaw = math.degrees(math.atan2(d[1], d[0]))
+        pitch = -math.degrees(math.atan2(d[2], math.hypot(d[0], d[1])))  # engine: positive pitch = down
+        off = self.arena_max_offset
+        yaw += self.np_random.uniform(-off, off)
+        pitch = float(np.clip(pitch + self.np_random.uniform(-off, off) / 4, -60, 60))
+        me = s.playernum
+        bot = next(k for k, p in enumerate(s.players) if p.connected and k != me)
+        b.step(cmd=f"cs2ai_place {me} {a[0]:.1f} {a[1]:.1f} {a[2]:.1f} {pitch:.2f} {yaw:.2f} 100", capture=False)
+        b.step(cmd=f"cs2ai_place {bot} {e[0]:.1f} {e[1]:.1f} {e[2]:.1f} 0 {yaw + 180:.2f} 100", capture=False)
+        for _ in range(3):
+            s = b.step(capture=False)
+        return s
 
     def render(self):
         f = self.bridge.frame() if self.bridge else None

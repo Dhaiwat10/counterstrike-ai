@@ -38,34 +38,50 @@ class _Stage(nn.Module):
 
 
 class Policy(nn.Module):
-    def __init__(self, in_hw=(120, 160), chans=(32, 64, 64), hidden=512):
+    def __init__(self, in_hw=(120, 160), chans=(32, 64, 64), hidden=512, fovea=0, fovea_chans=(16, 32, 32)):
         super().__init__()
         self.in_hw = tuple(in_hw)
-        stages, c = [], 3
-        for co in chans:
-            stages.append(_Stage(c, co))
-            c = co
-        self.cnn = nn.Sequential(*stages)
+        self.fovea = int(fovea)
+        self.cnn = self._tower(chans)
         with torch.no_grad():
             n = self.cnn(torch.zeros(1, 3, *in_hw)).numel()
+        if self.fovea:  # second, smaller tower on the sharp crosshair crop
+            self.fcnn = self._tower(fovea_chans)
+            with torch.no_grad():
+                n += self.fcnn(torch.zeros(1, 3, self.fovea, self.fovea)).numel()
         self.fc = nn.Linear(n, hidden)
         self.lstm = nn.LSTM(hidden, hidden, batch_first=True)
         self.heads = nn.Linear(hidden, sum(NVEC))
         self.value = nn.Linear(hidden, 1)
         self.hidden = hidden
 
-    def encode(self, frames: torch.Tensor) -> torch.Tensor:
-        """frames: uint8 [B, T, H, W, 3] -> features [B, T, hidden]."""
+    @staticmethod
+    def _tower(chans):
+        stages, c = [], 3
+        for co in chans:
+            stages.append(_Stage(c, co))
+            c = co
+        return nn.Sequential(*stages)
+
+    @staticmethod
+    def _img(t: torch.Tensor) -> torch.Tensor:
+        return t.reshape(-1, *t.shape[2:]).permute(0, 3, 1, 2).float().div_(255.0)
+
+    def encode(self, frames: torch.Tensor, fovea: torch.Tensor | None = None) -> torch.Tensor:
+        """frames: uint8 [B, T, H, W, 3] (+ fovea uint8 [B, T, F, F, 3]) -> features [B, T, hidden]."""
         B, T = frames.shape[:2]
-        x = frames.reshape(B * T, *frames.shape[2:]).permute(0, 3, 1, 2).float().div_(255.0)
+        x = self._img(frames)
         if x.shape[-2:] != self.in_hw:
             x = F.interpolate(x, size=self.in_hw, mode="area")
-        x = F.relu(self.cnn(x)).flatten(1)
-        return F.relu(self.fc(x)).view(B, T, -1)
+        feats = [F.relu(self.cnn(x)).flatten(1)]
+        if self.fovea:
+            assert fovea is not None and fovea.shape[2] == self.fovea, "this policy needs the fovea crop"
+            feats.append(F.relu(self.fcnn(self._img(fovea))).flatten(1))
+        return F.relu(self.fc(torch.cat(feats, 1))).view(B, T, -1)
 
-    def forward(self, frames: torch.Tensor, state=None):
+    def forward(self, frames: torch.Tensor, state=None, fovea: torch.Tensor | None = None):
         """Returns (logits [B, T, sum(NVEC)], value [B, T], new LSTM state)."""
-        z = self.encode(frames)
+        z = self.encode(frames, fovea)
         with torch.autocast(z.device.type, enabled=False):  # LSTM in fp32 (no MPS autocast support)
             h, state = self.lstm(z.float(), state)
             return self.heads(h), self.value(h).squeeze(-1), state

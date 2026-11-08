@@ -33,10 +33,11 @@ def evaluate(model, loader, dev, burn, amp):
     tot = np.zeros(len(NVEC)); n = 0
     correct = np.zeros(len(NVEC)); near = np.zeros(2); count = 0
     tp = fp = fn = 0
-    for x, y in loader:
+    for x, f, y in loader:
         x, y = x.to(dev, non_blocking=True), y.to(dev, non_blocking=True)
+        f = f.to(dev, non_blocking=True) if f.numel() else None
         with torch.autocast(dev.type, dtype=torch.bfloat16, enabled=amp):
-            lg, _, _ = model(x)
+            lg, _, _ = model(x, fovea=f)
         tot += np.array([l.item() for l in head_losses(lg, y, burn)]); n += 1
         preds = [p.argmax(-1) for p in Policy.split(lg[:, burn:])]
         tgt = y[:, burn:]
@@ -68,6 +69,7 @@ def main():
     ap.add_argument("--delay", type=int, default=5, help="observation delay in 25 Hz steps (5 = 200 ms)")
     ap.add_argument("--hw", type=int, nargs=2, default=(120, 160))
     ap.add_argument("--chans", type=int, nargs=3, default=(32, 64, 64))
+    ap.add_argument("--fovea", type=int, default=0, help="sharp crosshair crop size in render pixels (0 = off; 80 = central 25%% of 320x240)")
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--wd", type=float, default=0.01)
     ap.add_argument("--workers", type=int, default=6)
@@ -92,8 +94,8 @@ def main():
     if a.train_subset:
         tr_dirs = tr_dirs[:a.train_subset]
     va_dirs = [d for d in dirs if d.name in VAL_DEMOS]
-    train = DemoClips(tr_dirs, clip_len=a.clip, delay=a.delay, hw=tuple(a.hw))
-    val = DemoClips(va_dirs, clip_len=a.clip, delay=a.delay, hw=tuple(a.hw))
+    train = DemoClips(tr_dirs, clip_len=a.clip, delay=a.delay, hw=tuple(a.hw), fovea=a.fovea)
+    val = DemoClips(va_dirs, clip_len=a.clip, delay=a.delay, hw=tuple(a.hw), fovea=a.fovea)
     rng = np.random.default_rng(0)
     val_idx = rng.choice(len(val), size=min(a.val_clips, len(val)), replace=False)
 
@@ -104,7 +106,7 @@ def main():
                     persistent_workers=True, prefetch_factor=4, drop_last=True)
     vl = DataLoader(Subset(val, val_idx), batch_size=a.batch, num_workers=2)
 
-    model = Policy(in_hw=tuple(a.hw), chans=tuple(a.chans)).to(dev)
+    model = Policy(in_hw=tuple(a.hw), chans=tuple(a.chans), fovea=a.fovea).to(dev)
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=a.wd)
     step = 0
     best = math.inf
@@ -124,7 +126,7 @@ def main():
 
     # majority-class baselines on the val subset (what "always predict the most common action" scores)
     if step == 0:
-        ys = torch.cat([y[:, a.burn:].reshape(-1, len(NVEC)) for _, y in DataLoader(Subset(val, val_idx), batch_size=64, num_workers=2)])
+        ys = torch.cat([y[:, a.burn:].reshape(-1, len(NVEC)) for _, _, y in DataLoader(Subset(val, val_idx), batch_size=64, num_workers=2)])
         base = {f"base_acc_{h}": float(torch.bincount(ys[:, k]).max() / len(ys)) for k, h in enumerate(HEADS)}
         for k, h in enumerate(HEADS):  # loss of predicting just the marginal distribution (entropy, nats)
             pr = torch.bincount(ys[:, k]).float() / len(ys); pr = pr[pr > 0]
@@ -145,10 +147,11 @@ def main():
         snapshot()  # the untrained policy: the first shot of the montage
     t0 = time.time(); seen = 0; run_loss = 0.0
     model.train()
-    for x, y in tl:
+    for x, f, y in tl:
         x, y = x.to(dev, non_blocking=True), y.to(dev, non_blocking=True)
+        f = f.to(dev, non_blocking=True) if f.numel() else None
         with torch.autocast(dev.type, dtype=torch.bfloat16, enabled=amp):
-            lg, _, _ = model(x)
+            lg, _, _ = model(x, fovea=f)
         loss = sum(head_losses(lg, y, a.burn))
         opt.zero_grad(set_to_none=True)
         loss.backward()

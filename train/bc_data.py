@@ -10,16 +10,15 @@ match pauses, freeze time).
 """
 from __future__ import annotations
 
-import io
 import json
 from pathlib import Path
 
 import numpy as np
 import torch
-from PIL import Image
 from torch.utils.data import Dataset
 
 from cs16env.dataset import labels_to_actions
+from cs16env.vision import views_from_jpeg
 
 IDLE_ACTION = np.array([10, 5, 0, 0, 0, 0, 0, 0, 0])  # yaw 0, pitch 0, no keys
 
@@ -32,8 +31,8 @@ def _runs(mask: np.ndarray):
 
 
 class DemoClips(Dataset):
-    def __init__(self, dirs, clip_len=40, delay=5, idle_min=75, hw=(120, 160), stride=1):
-        self.clip_len, self.delay, self.hw = clip_len, delay, hw
+    def __init__(self, dirs, clip_len=40, delay=5, idle_min=75, hw=(120, 160), stride=1, fovea=0):
+        self.clip_len, self.delay, self.hw, self.fovea = clip_len, delay, hw, fovea
         self.dirs = [Path(d) for d in dirs]
         self.offsets, self.lengths, self.actions, starts = [], [], [], []
         self.n_frames = 0
@@ -79,20 +78,17 @@ class DemoClips(Dataset):
 
     def _decode(self, k, j):
         o, n = int(self.offsets[k][j]), int(self.lengths[k][j])
-        im = Image.open(io.BytesIO(self._blob(k)[o:o + n].tobytes()))
-        im.draft("RGB", (self.hw[1], self.hw[0]))  # JPEG DCT-domain downscale: fast
-        im = im.convert("RGB")
-        if im.size != (self.hw[1], self.hw[0]):
-            im = im.resize((self.hw[1], self.hw[0]), Image.BILINEAR)
-        return np.asarray(im)
+        return views_from_jpeg(self._blob(k)[o:o + n].tobytes(), self.hw, self.fovea)
 
     def __getitem__(self, i):
         k, s = self.starts[i]
         L, D = self.clip_len, self.delay
         fs, ts = s + max(0, -D), s + max(0, D)  # negative delay = frames lead (alignment test only)
-        frames = np.stack([self._decode(k, j) for j in range(fs, fs + L)])
+        views = [self._decode(k, j) for j in range(fs, fs + L)]
+        frames = np.stack([v[0] for v in views])
+        fov = np.stack([v[1] for v in views]) if self.fovea else np.zeros((L, 0), np.uint8)
         target = self.actions[k][ts:ts + L]
-        return torch.from_numpy(frames), torch.from_numpy(target.copy())
+        return torch.from_numpy(frames), torch.from_numpy(fov), torch.from_numpy(target.copy())
 
 
 def dataset_dirs(root="data/datasets"):

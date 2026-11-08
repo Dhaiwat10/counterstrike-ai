@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import io
 import json
 import time
 from pathlib import Path
@@ -21,17 +20,7 @@ from PIL import Image
 
 from cs16env import SCENARIOS, CS16Env
 from cs16env.policy import NVEC, Policy
-
-
-def preprocess(frame: np.ndarray, hw) -> np.ndarray:
-    buf = io.BytesIO()
-    Image.fromarray(frame).save(buf, format="JPEG", quality=90)
-    im = Image.open(io.BytesIO(buf.getvalue()))
-    im.draft("RGB", (hw[1], hw[0]))
-    im = im.convert("RGB")
-    if im.size != (hw[1], hw[0]):
-        im = im.resize((hw[1], hw[0]), Image.BILINEAR)
-    return np.asarray(im)
+from cs16env.vision import views_from_frame
 
 
 class TorchAgent:
@@ -40,7 +29,8 @@ class TorchAgent:
         a = ck["args"]
         self.hw = tuple(a["hw"])
         self.dev = torch.device(device if (device != "mps" or torch.backends.mps.is_available()) else "cpu")
-        self.model = Policy(in_hw=self.hw, chans=tuple(a["chans"])).to(self.dev).eval()
+        self.fovea = int(a.get("fovea", 0))
+        self.model = Policy(in_hw=self.hw, chans=tuple(a["chans"]), fovea=self.fovea).to(self.dev).eval()
         self.model.load_state_dict({k: v.float() if v.is_floating_point() else v for k, v in ck["model"].items()})
         self.temp = temperature
         self.state = None
@@ -50,8 +40,10 @@ class TorchAgent:
 
     @torch.no_grad()
     def act(self, obs: np.ndarray) -> np.ndarray:
-        x = torch.from_numpy(preprocess(obs, self.hw)).to(self.dev)[None, None]
-        lg, _, self.state = self.model(x, self.state)
+        p, f = views_from_frame(obs, self.hw, self.fovea)
+        x = torch.from_numpy(p).to(self.dev)[None, None]
+        fv = torch.from_numpy(f).to(self.dev)[None, None] if f is not None else None
+        lg, _, self.state = self.model(x, self.state, fovea=fv)
         out = []
         for p in Policy.split(lg[0, 0]):
             if self.temp <= 0:

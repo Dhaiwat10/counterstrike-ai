@@ -77,6 +77,7 @@ class State(C.Structure):
         ("time", C.c_double), ("playernum", C.c_int32), ("num_players", C.c_int32),
         ("viewangles", C.c_float * 3), ("velocity", C.c_float * 3),
         ("players", Player * MAX_PLAYERS),
+        ("aux", C.c_float * 8),
     ]
 
 

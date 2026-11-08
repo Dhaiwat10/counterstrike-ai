@@ -49,6 +49,9 @@ class Scenario:
     end_on_kill: bool = False
     human_team: str = "T"
     reset_round: bool = False      # restart the round (respawn everyone at spawn points) on every reset
+    arena: str = ""                # aim arena: npz of line-of-sight spawn pairs (scripts/make_arena_pairs.py)
+    arena_max_dist: float = 2000.0 # curriculum: max spawn distance (units)
+    arena_max_offset: float = 30.0 # curriculum: max initial aim error (degrees, yaw; pitch gets 1/4)
     notes: str = ""
     extra: dict = field(default_factory=dict)
 
@@ -81,6 +84,17 @@ SCENARIOS: dict[str, Scenario] = {
             "mp_t_default_weapons_primary ak47", "mp_ct_default_weapons_primary ak47",
         ],
         notes="1v1 vs a single bot; episode ends at the first kill or death (or timeout).",
+    ),
+    # Aim arena: one bot placed in view at a random line-of-sight spot; episode = one engagement.
+    "aim_dust2": Scenario(
+        name="aim_dust2", map="de_dust2", bots=1, bot_difficulty=0, episode_seconds=4.0,
+        end_on_death=True, end_on_kill=True, arena="data/arena/dust2_pairs.npz",
+        server_cmds=_DM_BASE + [
+            "mp_freeforall 1",
+            "mp_t_default_weapons_primary ak47", "mp_ct_default_weapons_primary ak47",
+            "mp_t_default_weapons_secondary \"\"", "mp_ct_default_weapons_secondary \"\"",
+        ],
+        notes="Phase 3 stage 1: enemy in view, ends on kill/death/4 s. Distance and initial aim error are curriculum knobs.",
     ),
     # Navigation / exploration warm-up: no enemies.
     "explore_dust2": Scenario(

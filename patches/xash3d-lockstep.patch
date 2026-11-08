@@ -1,9 +1,9 @@
 diff --git a/engine/client/cl_bridge.c b/engine/client/cl_bridge.c
 new file mode 100644
-index 0000000..d28d5dc
+index 0000000..41c4ce6
 --- /dev/null
 +++ b/engine/client/cl_bridge.c
-@@ -0,0 +1,236 @@
+@@ -0,0 +1,237 @@
 +/*
 +cl_bridge.c - cs2-ai RL bridge (lockstep action-in / frame-out). See common/bridge.h.
 +*/
@@ -218,6 +218,7 @@ index 0000000..d28d5dc
 +	VectorCopy( cl.viewangles, st.viewangles );
 +	VectorCopy( cl.simvel, st.velocity );
 +	st.num_players = SV_BridgeFillPlayers( st.players, BRIDGE_MAX_PLAYERS );
++	SV_BridgeAux( st.aux );
 +
 +	br.have_act = false;
 +
@@ -444,10 +445,10 @@ index 712a86e..6752725 100644
  
 diff --git a/engine/common/bridge.h b/engine/common/bridge.h
 new file mode 100644
-index 0000000..5dc52ad
+index 0000000..e5a0273
 --- /dev/null
 +++ b/engine/common/bridge.h
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,95 @@
 +/*
 +bridge.h - cs2-ai RL bridge: lockstep action-in / frame-out channel to an external controller
 +See /patches/BRIDGE.md in the cs2-ai repo for the protocol.
@@ -524,6 +525,7 @@ index 0000000..5dc52ad
 +	float    viewangles[3]; // local client's current view angles (pitch, yaw, roll)
 +	float    velocity[3];
 +	bridge_player_t players[BRIDGE_MAX_PLAYERS];
++	float    aux[8];        // cs2ai_trace results (fraction per slot), see sv_main.c
 +} bridge_state_t;
 +#pragma pack( pop )
 +
@@ -539,6 +541,7 @@ index 0000000..5dc52ad
 +void CL_BridgeDemoAngles( float *viewangles );           // after demo angle interpolation
 +#endif
 +int SV_BridgeFillPlayers( bridge_player_t *out, int max ); // server side, returns maxclients
++void SV_BridgeAux( float *out8 );
 +
 +#endif // BRIDGE_H
 diff --git a/engine/common/common.h b/engine/common/common.h
@@ -863,7 +866,7 @@ index e42f0d8..ff9713e 100644
  
  typedef int (*REFAPI)( int version, ref_interface_t *pFunctionTable, ref_api_t* engfuncs, ref_globals_t *pGlobals );
 diff --git a/engine/server/sv_main.c b/engine/server/sv_main.c
-index 985e438..9e4985e 100644
+index 985e438..d4e50f3 100644
 --- a/engine/server/sv_main.c
 +++ b/engine/server/sv_main.c
 @@ -17,6 +17,7 @@ GNU General Public License for more details.
@@ -874,7 +877,7 @@ index 985e438..9e4985e 100644
  
  // server cvars
  CVAR_DEFINE_AUTO( sv_lan, "0", 0, "server is a lan server ( no heartbeat, no authentication, no non-class C addresses, 9999.0 rate, etc." );
-@@ -672,6 +673,58 @@ static void SV_UpdateStatusLine( void )
+@@ -672,6 +673,116 @@ static void SV_UpdateStatusLine( void )
  #endif // XASH_PLATFORM_HAVE_STATUS
  }
  
@@ -924,6 +927,64 @@ index 985e438..9e4985e 100644
 +	return n;
 +}
 +
++
++// cs2-ai: scenario helpers for the RL env (aim arena). Server-side, local listen server only.
++static float sv_cs2ai_aux[8];
++
++void SV_BridgeAux( float *out8 )
++{
++	memcpy( out8, sv_cs2ai_aux, sizeof( sv_cs2ai_aux ));
++}
++
++// cs2ai_place <slot> <x> <y> <z> <pitch> <yaw> [health]: teleport a player, set view, reset health
++static void SV_CS2AI_Place_f( void )
++{
++	int slot;
++	edict_t *ed;
++
++	if( Cmd_Argc() < 7 || !SV_Active( ) || !svs.clients )
++		return;
++	slot = Q_atoi( Cmd_Argv( 1 ));
++	if( slot < 0 || slot >= svs.maxclients || svs.clients[slot].state < cs_spawned )
++		return;
++	ed = svs.clients[slot].edict;
++	if( !ed || ed->free )
++		return;
++
++	ed->v.origin[0] = Q_atof( Cmd_Argv( 2 ));
++	ed->v.origin[1] = Q_atof( Cmd_Argv( 3 ));
++	ed->v.origin[2] = Q_atof( Cmd_Argv( 4 ));
++	VectorClear( ed->v.velocity );
++	VectorClear( ed->v.basevelocity );
++	ed->v.v_angle[0] = ed->v.angles[0] = Q_atof( Cmd_Argv( 5 ));
++	ed->v.v_angle[1] = ed->v.angles[1] = Q_atof( Cmd_Argv( 6 ));
++	ed->v.v_angle[2] = ed->v.angles[2] = 0.0f;
++	ed->v.punchangle[0] = ed->v.punchangle[1] = ed->v.punchangle[2] = 0.0f;
++	ed->v.fixangle = 1; // client view snaps to v.angles
++	if( Cmd_Argc() > 7 )
++		ed->v.health = Q_atof( Cmd_Argv( 7 ));
++	SV_LinkEdict( ed, false );
++}
++
++// cs2ai_trace <k> <x1> <y1> <z1> <x2> <y2> <z2>: world-only line trace, fraction -> aux[k] (1 = clear)
++static void SV_CS2AI_Trace_f( void )
++{
++	int k;
++	vec3_t a, b;
++	trace_t tr;
++
++	if( Cmd_Argc() < 8 || !SV_Active( ))
++		return;
++	k = Q_atoi( Cmd_Argv( 1 ));
++	if( k < 0 || k >= 8 )
++		return;
++	a[0] = Q_atof( Cmd_Argv( 2 )); a[1] = Q_atof( Cmd_Argv( 3 )); a[2] = Q_atof( Cmd_Argv( 4 ));
++	b[0] = Q_atof( Cmd_Argv( 5 )); b[1] = Q_atof( Cmd_Argv( 6 )); b[2] = Q_atof( Cmd_Argv( 7 ));
++	tr = SV_Move( a, vec3_origin, vec3_origin, b, MOVE_NOMONSTERS, NULL, false );
++	sv_cs2ai_aux[k] = ( tr.allsolid || tr.startsolid ) ? -1.0f : tr.fraction;
++}
++
++
 +// cs2-ai: for host_lockstep_report
 +double SV_LockstepTime( void )
 +{
@@ -933,6 +994,15 @@ index 985e438..9e4985e 100644
  /*
  ==================
  Host_ServerFrame
+@@ -866,6 +977,8 @@ void SV_Init( void )
+ 	string	versionString;
+ 
+ 	SV_InitHostCommands();
++	Cmd_AddCommand( "cs2ai_place", SV_CS2AI_Place_f, "cs2-ai: teleport a player (slot x y z pitch yaw [health])" );
++	Cmd_AddCommand( "cs2ai_trace", SV_CS2AI_Trace_f, "cs2-ai: world line trace into bridge aux[k]" );
+ 
+ 	Cvar_Getf( "protocol", FCVAR_READ_ONLY, "displays server protocol version", "%i", PROTOCOL_VERSION );
+ 	Cvar_Get( "suitvolume", "0.25", FCVAR_ARCHIVE, "HEV suit volume" );
 diff --git a/engine/server/sv_pmove.c b/engine/server/sv_pmove.c
 index f146b9f..496f9ce 100644
 --- a/engine/server/sv_pmove.c
