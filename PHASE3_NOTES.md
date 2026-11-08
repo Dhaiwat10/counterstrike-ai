@@ -96,3 +96,7 @@ Archived in `checkpoints/_baseline/`.
   when random big turns mostly lost the target), so the flick rewards rarely get sampled. Matched comparison on identical
   spawns: acquisition on already-won rounds 0.62 -> 0.60 s; overshoot unchanged (22% -> 21%). Options: per-head exploration
   bonus on yaw, KL-to-imitation-prior on the yaw head, or forced big-turn exploration.
+- **Decision (user, ~01:35): wait-and-see on flicking.** No change now; re-probe the big-turn probability after ~90 min on
+  stage 10 (`train/probe_turns.py`, log in results/phase3/turn_probe.jsonl; baseline 0.12% at 3.07M steps). If it rises
+  toward a few percent, RL is relearning by itself; if it stays ~0.1%, apply the free fixes first (extra exploration bonus on
+  the yaw head + rehearsal rounds of earlier stages), and only then the KL pull toward the imitation policy.
