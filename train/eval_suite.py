@@ -36,6 +36,7 @@ def run_exam(env, agent, cfg, seed):
     env.set_bot_level(cfg["bot"])
     env.arena_max_offset, env.arena_max_dist = cfg["offset"], cfg["dist"]
     env.arena_min_offset = cfg.get("offset_min", 0.0)
+    env.arena_review_frac = 0.0  # exams test the stage's band only
     env.episode_seconds = round_seconds(cfg["dist"])
     obs, info = env.reset(seed=seed)  # same seed -> same sequence of spawn pairs every exam
     rows = []

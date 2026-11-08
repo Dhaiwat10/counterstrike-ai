@@ -92,6 +92,7 @@ class CS16Env(gym.Env):
         self._bot_level_applied = None
         self.arena_max_offset = self.scn.arena_max_offset
         self.arena_min_offset = 0.0  # curriculum: starting yaw error is drawn from [min, max] (bounded range)
+        self.arena_review_frac = 0.0  # share of "review" rounds drawn from easier angles [0, min] (anti-forgetting)
         self._ep_offset = 0.0
         self._obs_queue: collections.deque = collections.deque()
         self._blank = np.zeros((height, width, 3), np.uint8)
@@ -252,7 +253,10 @@ class CS16Env(gym.Env):
         pitch = -math.degrees(math.atan2(d[2], math.hypot(d[0], d[1])))  # engine: positive pitch = down
         off = self.arena_max_offset
         lo = min(self.arena_min_offset, off)
-        mag = float(self.np_random.uniform(lo, off))  # |yaw error| in [min, max]: big-flick stages can't be padded by easy starts
+        if lo > 0 and self.np_random.random() < self.arena_review_frac:
+            mag = float(self.np_random.uniform(0.0, lo))  # review round: an easier angle (does not count for promotion)
+        else:
+            mag = float(self.np_random.uniform(lo, off))  # |yaw error| in [min, max]: big-flick stages can't be padded
         yaw += mag if self.np_random.random() < 0.5 else -mag
         pitch = float(np.clip(pitch + self.np_random.uniform(-off, off) / 4, -60, 60))
         self._ep_offset = mag

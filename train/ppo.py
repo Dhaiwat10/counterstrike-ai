@@ -51,6 +51,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
     def set_knobs(k):
         env.arena_max_offset, env.arena_max_dist = k["offset"], k["dist"]
         env.arena_min_offset = k.get("offset_min", 0.0)
+        env.arena_review_frac = rewards["review"] if k.get("offset_min", 0.0) > 15.0 or (k["offset"] < 45.0 and k.get("offset_min", 0.0) > 0) else 0.0
         env.set_reaction_delay(k["delay"])
         env.set_bot_level(k["bot"])
         env.episode_seconds = round_seconds(k["dist"])
@@ -144,8 +145,10 @@ def curriculum_stages():
         k["bot"] = b; st.append(dict(k))
     k["gate"] = 0.6
     for off in (15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0):
-        # bounded range [max/3, max] (e.g. 15-45 deg at the end): passing must mean winning genuinely off-target starts
-        k["offset"] = off; k["offset_min"] = round(off / 3.0, 1); st.append(dict(k))
+        # a 10-degree band at the frontier ([max-10, max], e.g. 25-35 deg): passing means winning these big flicks;
+        # 20% review rounds from easier angles keep old skills (only band rounds count for promotion)
+        k["offset"] = off; k["offset_min"] = off - 10.0; st.append(dict(k))
+    k["offset_min"] = 15.0  # delay and distance stages: realistic 15-45 deg mix, every round counts
     for d in (0.04, 0.08, 0.12, 0.16, 0.20):
         k["delay"] = d; st.append(dict(k))
     for dist in (1050.0, 1300.0, 1550.0, 1800.0, 2000.0):
@@ -273,6 +276,9 @@ def main():
     ap.add_argument("--cur-window", type=int, default=200)
     ap.add_argument("--cur-up", type=float, default=0.6, help="kill rate needed to advance (distance stages: on the newest band)")
     ap.add_argument("--cur-down", type=float, default=0.2, help="step back if kill rate stays below this for 2 windows")
+    ap.add_argument("--review-frac", type=float, default=0.2, help="aim stages: share of easier review rounds (not counted for promotion)")
+    ap.add_argument("--cur-passes", type=int, default=2,
+                    help="consecutive non-overlapping windows that must clear the pass mark to advance")
     ap.add_argument("--no-curriculum", action="store_true")
     ap.add_argument("--snapshot-every", type=int, default=25, help="updates")
     ap.add_argument("--seed", type=int, default=0)
@@ -326,7 +332,7 @@ def main():
     stage_eps = 0  # engagements played at the current stage
     low_windows = 0
     rewards = dict(aim_shaping=a.aim_shaping, bullet_cost=a.bullet_cost, damage=a.damage_reward, death=a.death_penalty,
-                   time_round=a.time_penalty_round, hurt=a.hurt_penalty, gamma=a.gamma)
+                   time_round=a.time_penalty_round, hurt=a.hurt_penalty, gamma=a.gamma, review=a.review_frac)
     venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, rewards, seed=a.seed * 100)
     N, T = a.envs, a.rollout
 
@@ -342,6 +348,8 @@ def main():
 
     eps = collections.deque(maxlen=a.cur_window)
     far = collections.deque(maxlen=a.cur_window)  # distance stages: engagements in the newest band
+    win = []      # current non-overlapping promotion window (gate-relevant engagements only)
+    passes = 0    # consecutive windows that cleared the pass mark
     all_eps = 0
     t0 = time.time()
     steps = resume.get("steps", 0) if resume is not None else 0
@@ -406,6 +414,9 @@ def main():
                         prev_max = stages[stage - 1]["dist"] if stage > 0 else 0.0
                         if knobs["dist"] > 800.0 and e["dist"] > prev_max:
                             far.append(e)
+                        in_band = e.get("offset", 0.0) >= knobs.get("offset_min", 0.0) - 1e-6  # review rounds don't count
+                        if (knobs["dist"] <= 800.0 or e["dist"] > prev_max) and in_band:
+                            win.append(e)
             with torch.no_grad():
                 keep = (1.0 - start_flag).view(1, N, 1)
                 _, vlast, _ = model(cur_p[:, None], (state[0] * keep, state[1] * keep),
@@ -470,7 +481,12 @@ def main():
             gate = np.mean([e["kills"] > 0 for e in gate_eps]) if gate_eps else 0.0
             if not a.no_curriculum and len(eps) >= a.cur_window:
                 move = 0
-                if len(gate_eps) >= a.cur_window and gate > stages[stage].get("gate", a.cur_up) and stage < len(stages) - 1:
+                if len(win) >= a.cur_window:  # a full, fresh window: did it clear the pass mark?
+                    wrate = float(np.mean([e["kills"] > 0 for e in win]))
+                    passes = passes + 1 if wrate > stages[stage].get("gate", a.cur_up) else 0
+                    emit(dict(event="window", update=update, steps=steps, stage=stage, kill_rate=wrate, passes=passes))
+                    win = []
+                if passes >= a.cur_passes and stage < len(stages) - 1:
                     move = +1
                 elif stage > 0 and kr < a.cur_down:
                     low_windows = low_windows + 1 if stage_eps >= a.cur_window * (low_windows + 1) else low_windows
@@ -479,7 +495,7 @@ def main():
                     stage += move
                     knobs = dict(stages[stage])
                     venv.set_knobs(knobs)
-                    eps.clear(); far.clear(); stage_eps = 0; low_windows = 0
+                    eps.clear(); far.clear(); stage_eps = 0; low_windows = 0; win = []; passes = 0
                     emit(dict(event="curriculum", update=update, steps=steps, stage=stage, move=move, knobs=dict(knobs)))
 
             el = time.time() - t0
@@ -490,7 +506,7 @@ def main():
                        dmg_per_ep=float(np.mean([e["damage"] for e in E])) if E else 0.0,
                        ret_per_ep=float(np.mean([e["ret"] for e in E])) if E else 0.0,
                        ep_len_s=float(np.mean([e["time"] for e in E])) if E else 0.0,
-                       stage=stage, gate=float(gate),
+                       stage=stage, gate=float(gate), passes=passes, window_fill=len(win),
                        **{f"kill_{b}": float(np.mean([e["kills"] > 0 for e in E if band_of(e["dist"]) == b]))
                           for b in ("close", "medium", "long") if any(band_of(e["dist"]) == b for e in E)},
                        **{f"kill_ang_{b}": float(np.mean([e["kills"] > 0 for e in E if angle_band(e.get("offset", 0)) == b]))

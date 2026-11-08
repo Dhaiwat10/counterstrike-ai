@@ -79,3 +79,8 @@ Archived in `checkpoints/_baseline/`.
 - **Stop signals fixed**: background launches start with SIGINT ignored, so `kill -INT` never reached the trainer (earlier
   stops needed forcing; once a forced cleanup crashed the run). The trainer now turns SIGINT/SIGTERM into a clean stop
   (save last.pt, close workers); tested: stops in ~12 s, nothing left behind.
+- **Stricter promotion + narrower bands** (user, 2026-11-09 ~00:10, after a lucky stage-9 pass: training sat at 48-54%
+  and one window touched 60%): advancing now needs **two consecutive, non-overlapping 200-round windows** above the pass
+  mark. Aim stages draw from a **10-degree band at the frontier** ([max-10, max], stage 9 = 25-35 deg), with 20% easier
+  "review" rounds that do not count for promotion; delay/distance stages keep a 15-45 deg mix. Exams test the band only.
+  aim_bc was put back to stage 9 under these rules (2.30M steps).

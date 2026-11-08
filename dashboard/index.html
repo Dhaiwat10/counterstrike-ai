@@ -109,7 +109,7 @@ function card(r) {
       <span class="badge ${r.alive && !stale ? 'on' : 'off'}">${r.alive ? (stale ? 'running · log stale' : 'training') : 'stopped'}</span></div>
     <div class="muted small">${r.about} · learning rate ${r.lr}</div>
     <div style="margin:12px 0 4px"><b>Stage ${(r.stage ?? 0) + 1} of 21</b> <span class="muted small">— ${r.stage_desc}</span></div>
-    <div class="small muted">Kill rate vs pass mark (${pct(gate)})</div>
+    <div class="small muted">Kill rate vs pass mark (${pct(gate)}) · promotion: <b>${L.passes ?? 0}/2</b> consecutive 200-round windows passed (current window ${L.window_fill ?? 0}/200; review rounds at easier angles don't count)</div>
     <div class="bar"><div style="width:${Math.min(100, kr * 100)}%;background:${COL[r.name]}"></div><div class="gate" style="left:${gate * 100}%"></div></div>
     <div class="grid4" style="margin-top:12px">
       <div class="stat"><div class="v">${pct(L.kill_rate)}</div><div class="l">kill rate (last 200 rounds)</div></div>
