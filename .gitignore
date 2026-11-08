@@ -15,3 +15,6 @@ __pycache__/
 .venv/
 .DS_Store
 scratch/
+
+# rendered gameplay (Valve content) stays local
+results/**/*.gif

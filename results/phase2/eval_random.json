@@ -1,0 +1,109 @@
+{
+  "summary": {
+    "agent": "random",
+    "scenario": "dm_dust2",
+    "difficulty": 0,
+    "bots": 8,
+    "episodes": 10,
+    "game_minutes": 10.0,
+    "kills": 0,
+    "deaths": 57,
+    "kd": 0.0,
+    "kills_per_min": 0.0,
+    "deaths_per_min": 5.7,
+    "temperature": 1.0,
+    "wall_seconds": 57.73782920837402
+  },
+  "episodes": [
+    {
+      "episode": 0,
+      "kills": 0,
+      "deaths": 5,
+      "ret": -5.0,
+      "fire_frac": 0.5016655562958028,
+      "move_frac": 0.6635576282478348,
+      "turn_frac": 0.9493670886075949
+    },
+    {
+      "episode": 1,
+      "kills": 0,
+      "deaths": 9,
+      "ret": -9.0,
+      "fire_frac": 0.49566955363091275,
+      "move_frac": 0.6768820786142572,
+      "turn_frac": 0.950033311125916
+    },
+    {
+      "episode": 2,
+      "kills": 0,
+      "deaths": 5,
+      "ret": -5.0,
+      "fire_frac": 0.4823451032644903,
+      "move_frac": 0.6568954030646236,
+      "turn_frac": 0.9473684210526315
+    },
+    {
+      "episode": 3,
+      "kills": 0,
+      "deaths": 3,
+      "ret": -3.0,
+      "fire_frac": 0.4810126582278481,
+      "move_frac": 0.6515656229180546,
+      "turn_frac": 0.9540306462358428
+    },
+    {
+      "episode": 4,
+      "kills": 0,
+      "deaths": 3,
+      "ret": -3.0,
+      "fire_frac": 0.5089940039973351,
+      "move_frac": 0.6555629580279814,
+      "turn_frac": 0.9533644237175216
+    },
+    {
+      "episode": 5,
+      "kills": 0,
+      "deaths": 6,
+      "ret": -6.0,
+      "fire_frac": 0.4876748834110593,
+      "move_frac": 0.6562291805463024,
+      "turn_frac": 0.9480346435709527
+    },
+    {
+      "episode": 6,
+      "kills": 0,
+      "deaths": 4,
+      "ret": -4.0,
+      "fire_frac": 0.49100599600266487,
+      "move_frac": 0.704197201865423,
+      "turn_frac": 0.944037308461026
+    },
+    {
+      "episode": 7,
+      "kills": 0,
+      "deaths": 2,
+      "ret": -2.0,
+      "fire_frac": 0.4996668887408394,
+      "move_frac": 0.6682211858760826,
+      "turn_frac": 0.9526982011992006
+    },
+    {
+      "episode": 8,
+      "kills": 0,
+      "deaths": 9,
+      "ret": -9.0,
+      "fire_frac": 0.5049966688874084,
+      "move_frac": 0.676215856095936,
+      "turn_frac": 0.9487008660892738
+    },
+    {
+      "episode": 9,
+      "kills": 0,
+      "deaths": 11,
+      "ret": -11.0,
+      "fire_frac": 0.4843437708194537,
+      "move_frac": 0.6622251832111925,
+      "turn_frac": 0.9447035309793471
+    }
+  ]
+}
