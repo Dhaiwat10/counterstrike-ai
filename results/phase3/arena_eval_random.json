@@ -1,0 +1,919 @@
+{
+  "summary": {
+    "agent": "random",
+    "scenario": "aim_dust2",
+    "difficulty": 0,
+    "bots": 1,
+    "episodes": 100,
+    "game_minutes": 6.666666666666667,
+    "kills": 0,
+    "deaths": 30,
+    "kd": 0.0,
+    "kills_per_min": 0.0,
+    "deaths_per_min": 4.5,
+    "temperature": 1.0,
+    "wall_seconds": 33.50280404090881
+  },
+  "episodes": [
+    {
+      "episode": 0,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.6138613861386139,
+      "move_frac": 0.7326732673267327,
+      "turn_frac": 0.9801980198019802
+    },
+    {
+      "episode": 1,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.42574257425742573,
+      "move_frac": 0.6336633663366337,
+      "turn_frac": 0.9801980198019802
+    },
+    {
+      "episode": 2,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5247524752475248,
+      "move_frac": 0.6237623762376238,
+      "turn_frac": 0.9405940594059405
+    },
+    {
+      "episode": 3,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.44554455445544555,
+      "move_frac": 0.693069306930693,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 4,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.45544554455445546,
+      "move_frac": 0.801980198019802,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 5,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.47058823529411764,
+      "move_frac": 0.5882352941176471,
+      "turn_frac": 0.8823529411764706
+    },
+    {
+      "episode": 6,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5544554455445545,
+      "move_frac": 0.693069306930693,
+      "turn_frac": 0.9702970297029703
+    },
+    {
+      "episode": 7,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.45544554455445546,
+      "move_frac": 0.5742574257425742,
+      "turn_frac": 0.9405940594059405
+    },
+    {
+      "episode": 8,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5544554455445545,
+      "move_frac": 0.6732673267326733,
+      "turn_frac": 0.9702970297029703
+    },
+    {
+      "episode": 9,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.46534653465346537,
+      "move_frac": 0.6732673267326733,
+      "turn_frac": 0.9801980198019802
+    },
+    {
+      "episode": 10,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5148514851485149,
+      "move_frac": 0.6237623762376238,
+      "turn_frac": 0.9603960396039604
+    },
+    {
+      "episode": 11,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5544554455445545,
+      "move_frac": 0.6435643564356436,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 12,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.4375,
+      "move_frac": 0.625,
+      "turn_frac": 1.0
+    },
+    {
+      "episode": 13,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5445544554455446,
+      "move_frac": 0.6633663366336634,
+      "turn_frac": 0.9306930693069307
+    },
+    {
+      "episode": 14,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.5652173913043478,
+      "move_frac": 0.5652173913043478,
+      "turn_frac": 1.0
+    },
+    {
+      "episode": 15,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.49504950495049505,
+      "move_frac": 0.693069306930693,
+      "turn_frac": 0.9405940594059405
+    },
+    {
+      "episode": 16,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5742574257425742,
+      "move_frac": 0.6831683168316832,
+      "turn_frac": 0.9603960396039604
+    },
+    {
+      "episode": 17,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.5342465753424658,
+      "move_frac": 0.6575342465753424,
+      "turn_frac": 0.958904109589041
+    },
+    {
+      "episode": 18,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.5609756097560976,
+      "move_frac": 0.6341463414634146,
+      "turn_frac": 0.975609756097561
+    },
+    {
+      "episode": 19,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.5116279069767442,
+      "move_frac": 0.6976744186046512,
+      "turn_frac": 1.0
+    },
+    {
+      "episode": 20,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5247524752475248,
+      "move_frac": 0.5544554455445545,
+      "turn_frac": 0.9603960396039604
+    },
+    {
+      "episode": 21,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.5208333333333334,
+      "move_frac": 0.7291666666666666,
+      "turn_frac": 0.9583333333333334
+    },
+    {
+      "episode": 22,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.46551724137931033,
+      "move_frac": 0.7586206896551724,
+      "turn_frac": 0.9310344827586207
+    },
+    {
+      "episode": 23,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.4777777777777778,
+      "move_frac": 0.6444444444444445,
+      "turn_frac": 0.9222222222222223
+    },
+    {
+      "episode": 24,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5544554455445545,
+      "move_frac": 0.6237623762376238,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 25,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5148514851485149,
+      "move_frac": 0.6237623762376238,
+      "turn_frac": 0.9405940594059405
+    },
+    {
+      "episode": 26,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.504950495049505,
+      "move_frac": 0.6633663366336634,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 27,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.5903614457831325,
+      "move_frac": 0.7228915662650602,
+      "turn_frac": 0.9879518072289156
+    },
+    {
+      "episode": 28,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.504950495049505,
+      "move_frac": 0.6831683168316832,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 29,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5148514851485149,
+      "move_frac": 0.6732673267326733,
+      "turn_frac": 0.9306930693069307
+    },
+    {
+      "episode": 30,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.39603960396039606,
+      "move_frac": 0.6435643564356436,
+      "turn_frac": 0.9801980198019802
+    },
+    {
+      "episode": 31,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5247524752475248,
+      "move_frac": 0.693069306930693,
+      "turn_frac": 0.9702970297029703
+    },
+    {
+      "episode": 32,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.4489795918367347,
+      "move_frac": 0.6224489795918368,
+      "turn_frac": 0.9693877551020408
+    },
+    {
+      "episode": 33,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.49504950495049505,
+      "move_frac": 0.7128712871287128,
+      "turn_frac": 0.9900990099009901
+    },
+    {
+      "episode": 34,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.48514851485148514,
+      "move_frac": 0.6831683168316832,
+      "turn_frac": 0.9306930693069307
+    },
+    {
+      "episode": 35,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.53125,
+      "move_frac": 0.65625,
+      "turn_frac": 0.9375
+    },
+    {
+      "episode": 36,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.5,
+      "move_frac": 0.7666666666666667,
+      "turn_frac": 0.9666666666666667
+    },
+    {
+      "episode": 37,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.48514851485148514,
+      "move_frac": 0.6732673267326733,
+      "turn_frac": 0.9603960396039604
+    },
+    {
+      "episode": 38,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5247524752475248,
+      "move_frac": 0.6435643564356436,
+      "turn_frac": 0.9306930693069307
+    },
+    {
+      "episode": 39,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.44554455445544555,
+      "move_frac": 0.7029702970297029,
+      "turn_frac": 0.9900990099009901
+    },
+    {
+      "episode": 40,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.46534653465346537,
+      "move_frac": 0.6237623762376238,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 41,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.49504950495049505,
+      "move_frac": 0.7029702970297029,
+      "turn_frac": 0.9603960396039604
+    },
+    {
+      "episode": 42,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.4752475247524752,
+      "move_frac": 0.7524752475247525,
+      "turn_frac": 0.9603960396039604
+    },
+    {
+      "episode": 43,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.15789473684210525,
+      "move_frac": 0.42105263157894735,
+      "turn_frac": 0.9473684210526315
+    },
+    {
+      "episode": 44,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5445544554455446,
+      "move_frac": 0.7128712871287128,
+      "turn_frac": 0.9405940594059405
+    },
+    {
+      "episode": 45,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.40594059405940597,
+      "move_frac": 0.6831683168316832,
+      "turn_frac": 0.9702970297029703
+    },
+    {
+      "episode": 46,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.44554455445544555,
+      "move_frac": 0.6534653465346535,
+      "turn_frac": 0.9108910891089109
+    },
+    {
+      "episode": 47,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.38095238095238093,
+      "move_frac": 0.5238095238095238,
+      "turn_frac": 0.9523809523809523
+    },
+    {
+      "episode": 48,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.6111111111111112,
+      "move_frac": 0.6666666666666666,
+      "turn_frac": 0.9444444444444444
+    },
+    {
+      "episode": 49,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.53125,
+      "move_frac": 0.7291666666666666,
+      "turn_frac": 0.9583333333333334
+    },
+    {
+      "episode": 50,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.4583333333333333,
+      "move_frac": 0.6944444444444444,
+      "turn_frac": 0.8888888888888888
+    },
+    {
+      "episode": 51,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.55,
+      "move_frac": 0.65,
+      "turn_frac": 0.975
+    },
+    {
+      "episode": 52,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5247524752475248,
+      "move_frac": 0.5742574257425742,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 53,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5148514851485149,
+      "move_frac": 0.7623762376237624,
+      "turn_frac": 0.9207920792079208
+    },
+    {
+      "episode": 54,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.4794520547945205,
+      "move_frac": 0.6438356164383562,
+      "turn_frac": 0.958904109589041
+    },
+    {
+      "episode": 55,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5247524752475248,
+      "move_frac": 0.7623762376237624,
+      "turn_frac": 0.9702970297029703
+    },
+    {
+      "episode": 56,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.4794520547945205,
+      "move_frac": 0.7397260273972602,
+      "turn_frac": 0.9726027397260274
+    },
+    {
+      "episode": 57,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5247524752475248,
+      "move_frac": 0.6633663366336634,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 58,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.5555555555555556,
+      "move_frac": 0.5,
+      "turn_frac": 1.0
+    },
+    {
+      "episode": 59,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.4752475247524752,
+      "move_frac": 0.6237623762376238,
+      "turn_frac": 0.9702970297029703
+    },
+    {
+      "episode": 60,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.5555555555555556,
+      "move_frac": 0.654320987654321,
+      "turn_frac": 0.9753086419753086
+    },
+    {
+      "episode": 61,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.42574257425742573,
+      "move_frac": 0.6138613861386139,
+      "turn_frac": 0.9306930693069307
+    },
+    {
+      "episode": 62,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5148514851485149,
+      "move_frac": 0.6435643564356436,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 63,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.45544554455445546,
+      "move_frac": 0.6633663366336634,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 64,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.44554455445544555,
+      "move_frac": 0.7326732673267327,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 65,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.4752475247524752,
+      "move_frac": 0.693069306930693,
+      "turn_frac": 0.9702970297029703
+    },
+    {
+      "episode": 66,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.40594059405940597,
+      "move_frac": 0.6831683168316832,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 67,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.6,
+      "move_frac": 0.7111111111111111,
+      "turn_frac": 0.9777777777777777
+    },
+    {
+      "episode": 68,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.504950495049505,
+      "move_frac": 0.6534653465346535,
+      "turn_frac": 0.9603960396039604
+    },
+    {
+      "episode": 69,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5445544554455446,
+      "move_frac": 0.6831683168316832,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 70,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.38613861386138615,
+      "move_frac": 0.6633663366336634,
+      "turn_frac": 0.9405940594059405
+    },
+    {
+      "episode": 71,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.38095238095238093,
+      "move_frac": 0.5952380952380952,
+      "turn_frac": 0.9761904761904762
+    },
+    {
+      "episode": 72,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.44554455445544555,
+      "move_frac": 0.594059405940594,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 73,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.49504950495049505,
+      "move_frac": 0.7227722772277227,
+      "turn_frac": 0.9207920792079208
+    },
+    {
+      "episode": 74,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.4752475247524752,
+      "move_frac": 0.6831683168316832,
+      "turn_frac": 0.9405940594059405
+    },
+    {
+      "episode": 75,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.42574257425742573,
+      "move_frac": 0.594059405940594,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 76,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5148514851485149,
+      "move_frac": 0.5148514851485149,
+      "turn_frac": 0.9702970297029703
+    },
+    {
+      "episode": 77,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.4752475247524752,
+      "move_frac": 0.7920792079207921,
+      "turn_frac": 0.9801980198019802
+    },
+    {
+      "episode": 78,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5247524752475248,
+      "move_frac": 0.7029702970297029,
+      "turn_frac": 0.9306930693069307
+    },
+    {
+      "episode": 79,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.504950495049505,
+      "move_frac": 0.6732673267326733,
+      "turn_frac": 0.9306930693069307
+    },
+    {
+      "episode": 80,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.36363636363636365,
+      "move_frac": 0.5,
+      "turn_frac": 1.0
+    },
+    {
+      "episode": 81,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.46534653465346537,
+      "move_frac": 0.693069306930693,
+      "turn_frac": 0.9900990099009901
+    },
+    {
+      "episode": 82,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.46534653465346537,
+      "move_frac": 0.6732673267326733,
+      "turn_frac": 0.9603960396039604
+    },
+    {
+      "episode": 83,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.4752475247524752,
+      "move_frac": 0.6138613861386139,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 84,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.48514851485148514,
+      "move_frac": 0.6336633663366337,
+      "turn_frac": 0.9405940594059405
+    },
+    {
+      "episode": 85,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.6039603960396039,
+      "move_frac": 0.6435643564356436,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 86,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.45544554455445546,
+      "move_frac": 0.6633663366336634,
+      "turn_frac": 0.9306930693069307
+    },
+    {
+      "episode": 87,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.45544554455445546,
+      "move_frac": 0.6237623762376238,
+      "turn_frac": 0.9405940594059405
+    },
+    {
+      "episode": 88,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5346534653465347,
+      "move_frac": 0.5742574257425742,
+      "turn_frac": 0.9207920792079208
+    },
+    {
+      "episode": 89,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.45544554455445546,
+      "move_frac": 0.7623762376237624,
+      "turn_frac": 0.9306930693069307
+    },
+    {
+      "episode": 90,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.48484848484848486,
+      "move_frac": 0.7878787878787878,
+      "turn_frac": 0.9848484848484849
+    },
+    {
+      "episode": 91,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.49504950495049505,
+      "move_frac": 0.6435643564356436,
+      "turn_frac": 0.9702970297029703
+    },
+    {
+      "episode": 92,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.5148514851485149,
+      "move_frac": 0.693069306930693,
+      "turn_frac": 0.9504950495049505
+    },
+    {
+      "episode": 93,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.6666666666666666,
+      "move_frac": 0.5,
+      "turn_frac": 1.0
+    },
+    {
+      "episode": 94,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.504950495049505,
+      "move_frac": 0.6435643564356436,
+      "turn_frac": 0.9801980198019802
+    },
+    {
+      "episode": 95,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.48514851485148514,
+      "move_frac": 0.7623762376237624,
+      "turn_frac": 0.9306930693069307
+    },
+    {
+      "episode": 96,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.4772727272727273,
+      "move_frac": 0.625,
+      "turn_frac": 0.9431818181818182
+    },
+    {
+      "episode": 97,
+      "kills": 0,
+      "deaths": 1,
+      "ret": -1.0,
+      "fire_frac": 0.5384615384615384,
+      "move_frac": 0.5641025641025641,
+      "turn_frac": 0.9230769230769231
+    },
+    {
+      "episode": 98,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.49504950495049505,
+      "move_frac": 0.6336633663366337,
+      "turn_frac": 0.9306930693069307
+    },
+    {
+      "episode": 99,
+      "kills": 0,
+      "deaths": 0,
+      "ret": 0.0,
+      "fire_frac": 0.46534653465346537,
+      "move_frac": 0.6831683168316832,
+      "turn_frac": 0.9603960396039604
+    }
+  ]
+}

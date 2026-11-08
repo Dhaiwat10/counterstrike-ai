@@ -18,3 +18,4 @@ scratch/
 
 # rendered gameplay (Valve content) stays local
 results/**/*.gif
+results/**/*.mp4
