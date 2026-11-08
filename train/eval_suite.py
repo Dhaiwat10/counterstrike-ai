@@ -85,9 +85,10 @@ def main():
                        train_stage=meta.get("stage"), time=time.strftime("%H:%M:%S"))
             stages = curriculum_stages()
             st = int(meta.get("stage") or 0)
-            exams = {f"stage{st}": dict(stages[st], rounds=a.rounds)}
+            # names count stages from 1, like the dashboard
+            exams = {f"stage{st + 1}": dict(stages[st], rounds=a.rounds)}
             if st + 1 < len(stages):
-                exams[f"stage{st + 1}_next"] = dict(stages[st + 1], rounds=a.rounds)
+                exams[f"stage{st + 2}_next"] = dict(stages[st + 1], rounds=a.rounds)
             if a.full:
                 exams["full"] = FULL
             for name, cfg in exams.items():
