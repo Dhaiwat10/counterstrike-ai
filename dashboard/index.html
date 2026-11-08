@@ -35,7 +35,7 @@
 </head>
 <body>
 <header>
-  <div><h1>Counter-Strike 1.6 AI · Phase 3: RL aim training</h1>
+  <div><h1>Counter-Strike 1.6 AI · Phase 3: RL aim training (aim_bc)</h1>
     <div class="muted small">Pixels in, mouse & trigger out · fair-play rules (200 ms reaction delay at the end of the curriculum, 25 decisions/s, human turn speed) · offline only</div></div>
   <div class="small muted" id="hdr"></div>
 </header>
@@ -67,7 +67,7 @@
       <tr><td>Firing</td><td>How often it holds the trigger</td><td>Stable, not collapsing to 0 or pinned at 100%</td></tr>
       <tr><td>Randomness</td><td>How undecided the policy is (entropy, normalised)</td><td>Slow decline; not jumping back up</td></tr>
       <tr><td>Enemy-location error</td><td>Side task: how well it can tell where the bot is (lower = better)</td><td>Near 0 means its vision has learned to find the bot</td></tr>
-      <tr><td>Steps / s</td><td>Decisions per second of training (25 decisions = 1 s of game)</td><td>~100+ per run while both runs share the Mac</td></tr>
+      <tr><td>Steps / s</td><td>Decisions per second of training (25 decisions = 1 s of game)</td><td>~200+ with all 12 game instances on this Mac</td></tr>
       <tr><td>Stage</td><td>Where it is in the curriculum ladder</td><td>Moving up; a step back means the last jump was too big</td></tr>
     </table>
     <div class="small muted" style="margin-top:8px">Rewards (training only): +1 kill, +0.01 per HP dealt, −0.5 for a round that runs out without a kill (spread over the round), small cost per shot, aim-shaping bonus for moving the crosshair toward the bot; once the bot shoots back: −1 death, −0.01 per HP lost. The agent itself only ever sees the screen.</div>
@@ -136,9 +136,13 @@ function story(s) {
   const r = s.runs; const parts = r.map(x => {
     const L = x.latest || {};
     return `<b style="color:${COL[x.name]}">${x.name}</b> (${x.about}) is at <b>stage ${(x.stage ?? 0) + 1}/21</b> winning <b>${pct(L.kill_rate)}</b> of rounds (needs ${pct(x.gate)} to move on), dealing ${num(L.dmg_per_ep, 0)} HP per round.`; });
-  return `<h2>Right now</h2>Two agents are learning to aim on de_dust2, side by side, to test whether starting from the pro-demo imitation model helps.
-    Each round, the agent and one bot are placed where they can see each other; the agent starts roughly facing the bot and has to kill it before time runs out.
-    The bot gets harder only after the agent masters the current stage. <br><br>${parts.join('<br>')}
+  return `<h2>Right now</h2>One agent is learning to aim on de_dust2. Each round, the agent and one bot are placed where they can see each other;
+    the agent starts roughly facing the bot and has to kill it before time runs out. The bot gets harder only after the agent masters the current stage
+    (frozen → strafing → frozen but shooting back → moving and shooting back; then bigger aim error, then the 200 ms reaction delay, then distance).
+    <br><br>${parts.join('<br>')}
+    <br><span class="muted small">Why one run: a second agent trained from random weights (aim_scratch) was run side by side to test whether the pro-demo
+    imitation start helps. It clearly did (≈40% vs ≈20% kills on stage 1; earlier 10–14% vs ~1%), so aim_scratch was stopped and aim_bc got all 12 game instances.
+    Its weights and logs are archived in checkpoints/_baseline/.</span>
     <br><span class="muted small">Exam process: ${s.exam_alive ? '<span class="badge on">running</span>' : '<span class="badge off">stopped</span>'} · machine load ${num(s.machine.load1, 1)} of ${s.machine.cores} cores · ${num(s.machine.disk_free_gb, 0)} GB free</span>`;
 }
 async function refresh() {

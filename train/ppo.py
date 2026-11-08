@@ -299,7 +299,7 @@ def main():
     stages = curriculum_stages()
     stage = a.stage0
     if resume is not None:
-        stage = a.stage0 if a.stage0 else 0  # curriculum layout changed between versions: restart at stage 0
+        stage = a.stage0 if a.stage0 else int(resume.get("stage", 0))
     knobs = dict(stages[stage])
     stage_eps = 0  # engagements played at the current stage
     low_windows = 0
@@ -325,6 +325,7 @@ def main():
     steps = resume.get("steps", 0) if resume is not None else 0
     update = resume.get("update", 0) if resume is not None else 0
     update0 = update
+    steps0 = steps
     emit(dict(event="start", device=str(dev), envs=N, rollout=T, init=a.init, fovea=fovea, heads=heads,
               knobs=knobs, stage=stage, n_stages=len(stages), resume=a.resume, rewards=rewards,
               params=sum(p.numel() for p in model.parameters())))
@@ -470,7 +471,7 @@ def main():
                        stage=stage, gate=float(gate),
                        **{f"kill_{b}": float(np.mean([e["kills"] > 0 for e in E if band_of(e["dist"]) == b]))
                           for b in ("close", "medium", "long") if any(band_of(e["dist"]) == b for e in E)},
-                       fire_frac=fire, expl_var=ev, knobs=dict(knobs), sps=steps / el,
+                       fire_frac=fire, expl_var=ev, knobs=dict(knobs), sps=(steps - steps0) / el,
                        roll_s=round(t_roll, 2), upd_s=round(t_upd, 2),
                        **{k: float(np.mean(v)) for k, v in stats.items()})
             if update % 5 == 0 or update <= 3:
