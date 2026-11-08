@@ -40,14 +40,26 @@ Because we own the engine, the agent's I/O goes through a small in-engine bridge
 3. Every tick force the camera to the parsed view angles (new bridge flag `SETANGLES`). During playback the engine's `cl.time` *is* the original match clock and matches the parsed timestamps to ~5 ms, so frames and inputs align exactly.
 4. Every 4th tick (25 Hz) save the frame (JPEG q90, 320×240) with the pro's input over the next 40 ms: yaw/pitch delta, movement, buttons. `cs16env.dataset` maps these onto the env's exact action bins, so imitation and RL share one action head.
 
-| Demo | Map | Match time | Frames (alive) | Wall time |
-|---|---|---|---|---|
-| fnatic dsn vs Mojawi, IEM4 WC 2010, part 1 | de_dust2 | 18.1 min | 25,801 (24,920) | 2.4 min |
-| fnatic dsn vs Mojawi, IEM4 WC 2010, part 2 | de_dust2 | 17.6 min | 25,500 (23,889) | 2.5 min |
-| mYm Delpan vs Millenium, IEM4 EU | de_nuke | 44.8 min | 64,724 (60,612) | 6.1 min |
-| **Total** | | **80.5 min** | **116,025 (109,421)** | **11 min** |
+All 25 curated player-POV archives on archive.org (36 demo files, IEM4 2009–10, ESL, Gamegune 2010, ClanBase Nations Cup; players incl. fnatic dsn, Na`Vi Zeus, mYm/SK Delpan):
 
-~2.9 GB on disk. Generation runs at ~8× realtime on this Mac.
+| Map | Frames | Hours |
+|---|---|---|
+| de_dust2 | 596,685 | 6.63 |
+| de_train | 355,328 | 3.95 |
+| de_nuke | 203,268 | 2.26 |
+| de_inferno | 163,531 | 1.82 |
+| **Total (37 datasets)** | **1,318,812** (1,260,686 alive) | **14.65** |
+
+34 GB on disk (git-ignored, never published). Generation: `JOBS=6 scripts/make_all_datasets.sh` runs 6 replays in parallel at ~4.5–5× realtime each (~3× the throughput of one job at ~9×; they contend for GPU readback), ~1.5 h for the whole set on this Mac.
+
+Not converted: 2 de_tuscan demos (community map, not in the Steam content — drop `de_tuscan.bsp` into `game-dev/cstrike/maps/` to include them) and 2 ESWC 2004 demos (protocol 47). `mouzfinal4` keeps its first 24 min: the server restarts mid-demo and the engine ends playback there.
+
+Bugs found and fixed while generating (all reproducible, all committed):
+- **Match pauses froze playback forever.** Xash stops reading demo messages while `cl.paused`, so it never reaches the demo's own unpause message. In lockstep the engine now reads through pauses (`cl_demo.c`). Several datasets went from partial to complete (e.g. Delpan vs AGAiN 10.8k → 72k frames).
+- **Long converted demo names** made `playdemo` fail silently → short sanitized name + hash.
+- **Clock resets mid-demo** (server restart) produced empty datasets → the clock is split into monotonic runs and followed across resets.
+- **Hidden engines grabbed the Mac's mouse** (cursor warped to window centre for mouse-look) → `-hiddenwindow` now never grabs/warps/captures the OS mouse.
+- **Stall safety:** every job ends itself on a frozen demo clock (10 s game time, saves partial + `stalled` flag), an unresponsive engine (120 s bridge timeout), or a missing map.
 
 Label sanity: `walk` was initially always 0 — in CS 1.6 walking is client-side speed scaling, not a server button — now derived from movement speed (<140 u/s ⇒ walking; AK run 221, walk 115).
 
@@ -58,8 +70,9 @@ Label sanity: `walk` was initially always 0 — in CS 1.6 walking is client-side
 - Frame↔label alignment is checked by clock agreement and spot-checking frames (ammo/flash/knife consistent with buttons), not by a pixel-level test.
 - Converted demos drop GoldSrc client-side events (some gunshot effects missing in the rendered frames).
 - Capture cost: synchronous `glReadPixels`; PBOs or the software renderer would help.
-- Single env instance measured; multi-instance scaling on this Mac not yet measured (server scaled linearly).
-- 25 POV demos are curated on archive.org; only 3 downloaded so far. More POVs = more pro data.
+- Multi-instance: 6 rendering instances in parallel run ~4.5–5× realtime each (~28× total) on this Mac; GPU readback is the shared bottleneck.
+- Frames during match pauses (frozen scene, no input) are kept; filter them before training (e.g. drop runs of identical labels with zero input).
+- More data: ~1,100 HLTV/spectator demos exist but need entity-delta decoding to recover inputs.
 
 ## Final-build stability re-runs
 

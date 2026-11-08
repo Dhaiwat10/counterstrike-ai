@@ -80,5 +80,5 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e .
 ```bash
 .venv/bin/python tests/random_episodes.py 100 dm_dust2 10        # stability check
 scripts/fetch_pov_demos.sh data/demos/pov_list.txt                # pro POV demos from archive.org
-scripts/make_all_datasets.sh                                      # POV demos -> data/datasets/
+JOBS=6 scripts/make_all_datasets.sh                               # POV demos -> data/datasets/ (6 in parallel)
 ```

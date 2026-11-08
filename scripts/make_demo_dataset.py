@@ -85,8 +85,18 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
 
     hdr, P = parse(str(src))
-    ct, pitch, yaw = P[:, 0], P[:, 1], P[:, 2]
-    print(f"{src.name}: map={hdr.map_name} {len(P)} client frames, clock {ct[0]:.2f}..{ct[-1]:.2f}")
+    # the match clock can reset mid-demo (map/server restart): split into monotonic runs and
+    # follow the engine from one run to the next when its clock jumps back too
+    cuts = np.nonzero(np.diff(P[:, 0]) < -1.0)[0] + 1
+    runs = np.split(np.arange(len(P)), cuts)
+    print(f"{src.name}: map={hdr.map_name} {len(P)} client frames, clock runs "
+          + ", ".join(f"{P[r[0], 0]:.2f}..{P[r[-1], 0]:.2f}" for r in runs))
+    run = 0
+    P_full = P
+    def select(r):
+        Q = P_full[runs[r]]
+        return Q, Q[:, 0], Q[:, 1], Q[:, 2]
+    P, ct, pitch, yaw = select(0)
 
     game = REPO / "game-dev"
     maps = [game / d / "maps" / f"{hdr.map_name}.bsp" for d in ("cstrike", "valve")]
@@ -108,11 +118,14 @@ def main():
     with EngineBridge(cfg) as b:
         b.command(f"playdemo demos_pro/{xdemo.stem}")
         s = b.wait_until(lambda s: s.demoplayback and s.time >= ct[0], max_steps=20000)
-        t_end = ct[-1] if not a.max_seconds else min(ct[-1], s.time + a.max_seconds)
+        t_stop = s.time + a.max_seconds if a.max_seconds else None
+        t_end = ct[-1]
         k = 0
         last_time = s.time
         stuck = 0  # consecutive ticks without the demo clock advancing
-        while s.demoplayback and last_time < t_end:
+        while s.demoplayback and (run < len(runs) - 1 or last_time < t_end):
+            if t_stop is not None and run == 0 and last_time >= t_stop:
+                break
             if stuck > 1000:  # 10 s of game time frozen: playback hung (seen on zeus_vs_mtw); keep what we have
                 print(f"  playback stalled at match t={last_time:.1f}/{t_end:.0f}; saving partial dataset", flush=True)
                 break
@@ -122,6 +135,14 @@ def main():
             capture = (k % a.every == 0)
             s = b.step(apply=False, capture=capture, setangles=(pitch[i], yaw[i], 0.0))
             k += 1
+            if s.time < last_time - 1.0 and run < len(runs) - 1:  # clock reset: move to the next run
+                run += 1
+                P, ct, pitch, yaw = select(run)
+                t_end = ct[-1]
+                print(f"  clock reset {last_time:.1f} -> {s.time:.1f}; run {run + 1}/{len(runs)}", flush=True)
+                last_time = s.time
+                stuck = 0
+                continue
             if s.time <= last_time:  # demo not advancing (loading / between segments)
                 last_time = s.time
                 stuck += 1
@@ -149,13 +170,13 @@ def main():
             if len(labels) % 2500 == 0:
                 el = time.time() - t_wall
                 print(f"  {len(labels)} frames, match t={s.time:.0f}/{t_end:.0f}, "
-                      f"{(s.time - ct[0]) / el:.1f}x realtime", flush=True)
+                      f"{len(labels) * tick * a.every / el:.1f}x realtime", flush=True)
     frames.close()
     L = np.array(labels, dtype=np.float64)
     np.savez_compressed(out / "data.npz", offsets=np.array(offs, np.int64), lengths=np.array(lens, np.int32),
                         labels=L, label_names=np.array(LABELS))
     meta = dict(source=str(src), map=hdr.map_name, width=a.width, height=a.height, every_ticks=a.every,
-                hz=1.0 / (tick * a.every), frames=len(L), stalled=bool(stuck > 1000), match_seconds=float(L[-1, 0] - L[0, 0]) if len(L) else 0,
+                hz=1.0 / (tick * a.every), frames=len(L), stalled=bool(stuck > 1000), match_seconds=len(L) * tick * a.every, clock_runs=len(runs),
                 wall_seconds=time.time() - t_wall, jpeg_quality=a.quality, labels=LABELS)
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
     xdemo.unlink(missing_ok=True)
