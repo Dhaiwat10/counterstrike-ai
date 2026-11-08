@@ -81,6 +81,9 @@ class CS16Env(gym.Env):
         # training-only shaping: reward per degree the crosshair moves toward the nearest live enemy
         # (potential-based, Phi = -angular error; computed from server state, never observed by the agent)
         self.aim_shaping = 0.0
+        self.bullet_cost = 0.0         # training only: reward per step spent holding fire
+        self.bot_level = 2             # arena: 0 = frozen & passive, 1 = frozen & shoots, 2 = normal
+        self._bot_level_applied = None
         self.arena_max_offset = self.scn.arena_max_offset
         self._obs_queue: collections.deque = collections.deque()
         self._blank = np.zeros((height, width, 3), np.uint8)
@@ -123,6 +126,7 @@ class CS16Env(gym.Env):
         if not self._me(s).alive:
             s = b.wait_until(lambda s: self._me(s).alive, max_steps=2000)
         if self._arena is not None:
+            self._apply_bot_level()
             s = self._arena_place()
         s = b.step(apply=True, capture=True)  # one neutral step to get a fresh frame
         self._ep_start = s.time
@@ -132,6 +136,9 @@ class CS16Env(gym.Env):
         frame = b.frame()
         first = frame if frame is not None else self._blank
         self._obs_queue = collections.deque([first] * (self.delay_steps + 1), maxlen=self.delay_steps + 1)
+        # privileged labels aligned with the (delayed) observation, for auxiliary training losses only
+        lab = self._aux_label(s)
+        self._aux_queue = collections.deque([lab] * (self.delay_steps + 1), maxlen=self.delay_steps + 1)
         return self._obs_queue[0], self._info(s)
 
     def step(self, action):
@@ -166,15 +173,50 @@ class CS16Env(gym.Env):
             reward += r
             if (died and self.scn.end_on_death) or (killed and self.scn.end_on_kill):
                 terminated = True
+        if a[4] and self.bullet_cost:
+            reward -= self.bullet_cost
         frame = b.frame()
         self._obs_queue.append(frame if frame is not None else self._obs_queue[-1])
-        truncated = (s.time - self._ep_start) >= self.scn.episode_seconds
+        self._aux_queue.append(self._aux_label(s))
+        truncated = (s.time - self._ep_start) >= self.scn.episode_seconds and not terminated
         return self._obs_queue[0], reward, terminated, truncated, self._info(s)
 
     # ------------------------------------------------------------------ curriculum knobs
     def set_reaction_delay(self, seconds: float):
         """Takes effect at the next reset (training-time curriculum; evaluate at 0.20)."""
         self.delay_steps = int(round(seconds / (self.tick * self.repeat)))
+
+    def set_bot_level(self, level: int):
+        """Arena curriculum: 0 frozen & passive, 1 frozen & shoots, 2 moves & shoots (next reset)."""
+        self.bot_level = int(level)
+
+    def _apply_bot_level(self):
+        if self._bot_level_applied == self.bot_level:
+            return
+        freeze, ignore = {0: (1, 1), 1: (1, 0)}.get(self.bot_level, (0, 0))
+        self.bridge.command(f"yb_freeze_bots {freeze}; yb_ignore_enemies {ignore}")
+        self._bot_level_applied = self.bot_level
+
+    def _aux_label(self, s):
+        """(signed yaw error, signed pitch error, in-view flag) of the nearest live enemy's chest relative
+        to the crosshair, degrees. Training-only label for an auxiliary 'where is the enemy' loss."""
+        me = s.playernum
+        m = self._me(s)
+        best = (0.0, 0.0, 0.0, 1e9)
+        if m.alive:
+            eye = np.array(m.origin) + (0.0, 0.0, 17.0)
+            for k, p in enumerate(s.players):
+                if k == me or not p.connected or not p.alive:
+                    continue
+                d = np.array(p.origin) + (0.0, 0.0, 10.0) - eye
+                yaw = math.degrees(math.atan2(d[1], d[0]))
+                pitch = -math.degrees(math.atan2(d[2], math.hypot(d[0], d[1])))
+                dy = (yaw - s.viewangles[1] + 180.0) % 360.0 - 180.0
+                dp = pitch - s.viewangles[0]
+                e = math.hypot(dy, dp)
+                if e < best[3]:
+                    best = (dy, dp, float(abs(dy) < 45.0 and abs(dp) < 37.0), e)
+        return np.array(best[:3], np.float32)
 
     def _arena_place(self):
         b = self.bridge
@@ -274,4 +316,5 @@ class CS16Env(gym.Env):
             "damage": getattr(self, "_damage", 0),
             "health": me.health,
             "alive": bool(me.alive),
+            "aux": self._aux_queue[0] if getattr(self, "_aux_queue", None) else np.zeros(3, np.float32),
         }

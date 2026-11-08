@@ -19,7 +19,9 @@ import torch
 from PIL import Image
 
 from cs16env import SCENARIOS, CS16Env
-from cs16env.policy import NVEC, Policy
+from cs16env.policy import HEADS, NVEC, Policy
+
+IDLE = (NVEC[0] // 2, NVEC[1] // 2, 0, 0, 0, 0, 0, 0, 0)
 from cs16env.vision import views_from_frame
 
 
@@ -31,7 +33,10 @@ class TorchAgent:
         self.dev = torch.device(device if (device != "mps" or torch.backends.mps.is_available()) else "cpu")
         self.fovea = int(a.get("fovea", 0))
         self.model = Policy(in_hw=self.hw, chans=tuple(a["chans"]), fovea=self.fovea).to(self.dev).eval()
-        self.model.load_state_dict({k: v.float() if v.is_floating_point() else v for k, v in ck["model"].items()})
+        self.model.load_state_dict({k: v.float() if v.is_floating_point() else v for k, v in ck["model"].items()},
+                                   strict=False)  # imitation checkpoints have no aux head (unused when acting)
+        active = a.get("active_heads")
+        self.mask = [h in active for h in HEADS] if active else [True] * len(HEADS)
         self.temp = temperature
         self.state = None
 
@@ -45,8 +50,10 @@ class TorchAgent:
         fv = torch.from_numpy(f).to(self.dev)[None, None] if f is not None else None
         lg, _, self.state = self.model(x, self.state, fovea=fv)
         out = []
-        for p in Policy.split(lg[0, 0]):
-            if self.temp <= 0:
+        for k, p in enumerate(Policy.split(lg[0, 0])):
+            if not self.mask[k]:  # head not learned by this policy: "no input"
+                out.append(IDLE[k])
+            elif self.temp <= 0:
                 out.append(int(p.argmax()))
             else:
                 out.append(int(torch.multinomial(torch.softmax(p.float() / self.temp, -1), 1)))

@@ -53,6 +53,9 @@ class Policy(nn.Module):
         self.lstm = nn.LSTM(hidden, hidden, batch_first=True)
         self.heads = nn.Linear(hidden, sum(NVEC))
         self.value = nn.Linear(hidden, 1)
+        # training-only auxiliary head: where is the nearest enemy relative to the crosshair
+        # (yaw error, pitch error, in-view logit); never used to act
+        self.aux = nn.Linear(hidden, 3)
         self.hidden = hidden
 
     @staticmethod
