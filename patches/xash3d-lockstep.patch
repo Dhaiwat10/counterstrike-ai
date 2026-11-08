@@ -1,8 +1,269 @@
+diff --git a/engine/client/cl_bridge.c b/engine/client/cl_bridge.c
+new file mode 100644
+index 0000000..d28d5dc
+--- /dev/null
++++ b/engine/client/cl_bridge.c
+@@ -0,0 +1,236 @@
++/*
++cl_bridge.c - cs2-ai RL bridge (lockstep action-in / frame-out). See common/bridge.h.
++*/
++#include "common.h"
++#include "client.h"
++#include "bridge.h"
++
++#if XASH_POSIX
++#include <sys/socket.h>
++#include <sys/un.h>
++#include <sys/mman.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <errno.h>
++
++static struct
++{
++	int             sock;
++	int             shmfd;
++	byte           *shm;
++	size_t          shmsize;
++	qboolean        active;
++	bridge_action_t act;
++	qboolean        have_act;
++	qboolean        frame_valid;
++	int             width, height;
++	uint32_t        frame_bytes;
++} br = { -1, -1 };
++
++static qboolean Br_ReadFull( int fd, void *buf, size_t len )
++{
++	byte *p = buf;
++
++	while( len )
++	{
++		ssize_t n = read( fd, p, len );
++
++		if( n == 0 ) return false;
++		if( n < 0 )
++		{
++			if( errno == EINTR ) continue;
++			return false;
++		}
++		p += n;
++		len -= n;
++	}
++	return true;
++}
++
++static qboolean Br_WriteFull( int fd, const void *buf, size_t len )
++{
++	const byte *p = buf;
++
++	while( len )
++	{
++		ssize_t n = write( fd, p, len );
++
++		if( n < 0 )
++		{
++			if( errno == EINTR ) continue;
++			return false;
++		}
++		p += n;
++		len -= n;
++	}
++	return true;
++}
++
++void CL_BridgeInit( void )
++{
++	char sockpath[MAX_SYSPATH], shmpath[MAX_SYSPATH];
++	struct sockaddr_un addr;
++
++	if( !Sys_GetParmFromCmdLine( "-bridge", sockpath ))
++		return;
++
++	if( !Sys_GetParmFromCmdLine( "-bridge_shm", shmpath ))
++		Host_Error( "bridge: -bridge requires -bridge_shm <file>\n" );
++
++	br.sock = socket( AF_UNIX, SOCK_STREAM, 0 );
++	if( br.sock < 0 )
++		Host_Error( "bridge: socket() failed: %s\n", strerror( errno ));
++
++	memset( &addr, 0, sizeof( addr ));
++	addr.sun_family = AF_UNIX;
++	Q_strncpy( addr.sun_path, sockpath, sizeof( addr.sun_path ));
++
++	if( connect( br.sock, (struct sockaddr *)&addr, sizeof( addr )) < 0 )
++		Host_Error( "bridge: connect(%s) failed: %s\n", sockpath, strerror( errno ));
++
++	br.shmsize = BRIDGE_SHM_HEADER + BRIDGE_MAX_FRAME;
++	br.shmfd = open( shmpath, O_RDWR | O_CREAT, 0600 );
++	if( br.shmfd < 0 || ftruncate( br.shmfd, br.shmsize ) < 0 )
++		Host_Error( "bridge: can't open shm %s: %s\n", shmpath, strerror( errno ));
++
++	br.shm = mmap( NULL, br.shmsize, PROT_READ | PROT_WRITE, MAP_SHARED, br.shmfd, 0 );
++	if( br.shm == MAP_FAILED )
++		Host_Error( "bridge: mmap failed: %s\n", strerror( errno ));
++
++	br.active = true;
++	Con_Printf( "bridge: connected to %s, frames -> %s\n", sockpath, shmpath );
++}
++
++qboolean CL_BridgeActive( void )
++{
++	return br.active;
++}
++
++void CL_BridgeBeginFrame( void )
++{
++	if( !br.active )
++		return;
++
++	if( !Br_ReadFull( br.sock, &br.act, sizeof( br.act )) || br.act.magic != BRIDGE_ACTION_MAGIC )
++	{
++		br.active = false;
++		Con_Printf( "bridge: controller went away, quitting\n" );
++		Sys_Quit( "bridge closed" );
++		return;
++	}
++
++	br.have_act = true;
++	br.frame_valid = false;
++
++	if( br.act.flags & BRIDGE_ACT_QUIT )
++	{
++		br.active = false;
++		Sys_Quit( "bridge quit" );
++		return;
++	}
++
++	if( br.act.cmd[0] )
++	{
++		br.act.cmd[sizeof( br.act.cmd ) - 1] = 0;
++		Cbuf_AddText( br.act.cmd );
++		Cbuf_AddText( "\n" );
++	}
++}
++
++void CL_BridgeApplyAngles( float *viewangles )
++{
++	if( !br.active || !br.have_act || !( br.act.flags & BRIDGE_ACT_APPLY ))
++		return;
++
++	viewangles[PITCH] = bound( -89.0f, viewangles[PITCH] + br.act.dpitch, 89.0f );
++	viewangles[YAW] = anglemod( viewangles[YAW] + br.act.dyaw );
++	viewangles[ROLL] = 0.0f;
++
++	// consume the mouse delta: it must only apply once even if several cmds are built
++	br.act.dyaw = br.act.dpitch = 0.0f;
++}
++
++void CL_BridgeApplyCmd( usercmd_t *cmd, const float *viewangles )
++{
++	if( !br.active || !br.have_act || !( br.act.flags & BRIDGE_ACT_APPLY ))
++		return;
++
++	VectorCopy( viewangles, cmd->viewangles );
++	cmd->forwardmove = br.act.forwardmove;
++	cmd->sidemove = br.act.sidemove;
++	cmd->upmove = br.act.upmove;
++	cmd->buttons = (unsigned short)br.act.buttons;
++	cmd->impulse = (byte)br.act.impulse;
++	cmd->weaponselect = (byte)br.act.weaponselect;
++}
++
++void CL_BridgeDemoAngles( float *viewangles )
++{
++	if( !br.active || !br.have_act || !( br.act.flags & BRIDGE_ACT_SETANGLES ))
++		return;
++
++	VectorCopy( br.act.setangles, viewangles );
++}
++
++void CL_BridgeCapture( void )
++{
++	int w = 0, h = 0;
++	size_t n;
++
++	if( !br.active || !br.have_act || !( br.act.flags & BRIDGE_ACT_CAPTURE ))
++		return;
++
++	if( !ref.dllFuncs.VID_GetFrameRGB )
++		return;
++
++	n = ref.dllFuncs.VID_GetFrameRGB( br.shm + BRIDGE_SHM_HEADER, BRIDGE_MAX_FRAME, &w, &h );
++	br.width = w;
++	br.height = h;
++	br.frame_bytes = (uint32_t)n;
++	br.frame_valid = n > 0;
++}
++
++void CL_BridgeEndFrame( void )
++{
++	bridge_state_t st;
++
++	if( !br.active || !br.have_act )
++		return;
++
++	memset( &st, 0, sizeof( st ));
++	st.magic = BRIDGE_STATE_MAGIC;
++	st.seq = br.act.seq;
++	st.in_game = cls.state == ca_active && SV_Active( );
++	st.frame_valid = br.frame_valid;
++	st.width = br.width;
++	st.height = br.height;
++	st.frame_bytes = br.frame_bytes;
++	st.framecount = host.framecount;
++	st.demoplayback = cls.demoplayback;
++	st.time = cl.time;
++	st.playernum = cls.state == ca_active ? cl.playernum : -1;
++	VectorCopy( cl.viewangles, st.viewangles );
++	VectorCopy( cl.simvel, st.velocity );
++	st.num_players = SV_BridgeFillPlayers( st.players, BRIDGE_MAX_PLAYERS );
++
++	br.have_act = false;
++
++	if( !Br_WriteFull( br.sock, &st, sizeof( st )))
++	{
++		br.active = false;
++		Sys_Quit( "bridge closed" );
++	}
++}
++
++#else // !XASH_POSIX
++
++void CL_BridgeInit( void ) { }
++qboolean CL_BridgeActive( void ) { return false; }
++void CL_BridgeBeginFrame( void ) { }
++void CL_BridgeEndFrame( void ) { }
++void CL_BridgeApplyAngles( float *viewangles ) { }
++void CL_BridgeApplyCmd( usercmd_t *cmd, const float *viewangles ) { }
++void CL_BridgeCapture( void ) { }
++void CL_BridgeDemoAngles( float *viewangles ) { }
++
++#endif
 diff --git a/engine/client/cl_main.c b/engine/client/cl_main.c
-index 39e4f9c..7fbc899 100644
+index 39e4f9c..0ae0895 100644
 --- a/engine/client/cl_main.c
 +++ b/engine/client/cl_main.c
-@@ -3894,6 +3894,12 @@ void Host_ClientBegin( void )
+@@ -15,6 +15,7 @@ GNU General Public License for more details.
+ 
+ #include <inttypes.h>
+ #include "common.h"
++#include "bridge.h"
+ #include "client.h"
+ #include "net_encode.h"
+ #include "cl_tent.h"
+@@ -805,8 +806,10 @@ static void CL_CreateCmd( void )
+ 
+ 	qboolean  active = (( cls.signon == SIGNONS ) && !cl.paused && !cls.demoplayback );
+ 	Platform_PreCreateMove();
++	CL_BridgeApplyAngles( cl.viewangles ); // cs2-ai
+ 	clgame.dllFuncs.CL_CreateMove( host.frametime, cmd, active );
+ 	IN_EngineAppendMove( host.frametime, cmd, active );
++	if( !cls.demoplayback ) CL_BridgeApplyCmd( cmd, cl.viewangles ); // cs2-ai
+ 
+ 	CL_PopPMStates();
+ 
+@@ -3894,6 +3897,12 @@ void Host_ClientBegin( void )
  	SteamBroker_Frame();
  }
  
@@ -15,11 +276,27 @@ index 39e4f9c..7fbc899 100644
  /*
  ==================
  Host_ClientFrame
+@@ -3995,6 +4004,7 @@ void CL_Init( void )
+ 	cl.maxclients = 1; // allow to drawing player in menu
+ 	cls.olddemonum = -1;
+ 	cls.demonum = -1;
++	CL_BridgeInit(); // cs2-ai
+ }
+ 
+ /*
 diff --git a/engine/client/cl_view.c b/engine/client/cl_view.c
-index b428096..eb2f92c 100644
+index b428096..5cda967 100644
 --- a/engine/client/cl_view.c
 +++ b/engine/client/cl_view.c
-@@ -332,7 +332,8 @@ qboolean V_PreRender( void )
+@@ -15,6 +15,7 @@ GNU General Public License for more details.
+ 
+ #include "common.h"
+ #include "client.h"
++#include "bridge.h"
+ #include "const.h"
+ #include "entity_types.h"
+ #include "vgui_draw.h"
+@@ -332,7 +333,8 @@ qboolean V_PreRender( void )
  	if( !ref.initialized )
  		return false;
  
@@ -29,6 +306,15 @@ index b428096..eb2f92c 100644
  		return false;
  
  	// if the screen is disabled (loading plaque is up)
+@@ -544,6 +546,8 @@ void V_PostRender( void )
+ 		VGui_Paint();
+ 	}
+ 
++	CL_BridgeCapture(); // cs2-ai: grab the frame the player would see (world + HUD, no console/overlays)
++
+ 	switch( cls.scrshot_action )
+ 	{
+ 	case scrshot_inactive:
 diff --git a/engine/client/dll_int/cl_game.c b/engine/client/dll_int/cl_game.c
 index 495245d..6c5de0c 100644
 --- a/engine/client/dll_int/cl_game.c
@@ -43,10 +329,18 @@ index 495245d..6c5de0c 100644
  	pfnConstructTutorMessageDecayBuffer,
  	pfnResetTutorMessageDecayData,
 diff --git a/engine/client/dll_int/cl_pmove.c b/engine/client/dll_int/cl_pmove.c
-index 9ca1f79..ba24fe2 100644
+index 9ca1f79..21beb39 100644
 --- a/engine/client/dll_int/cl_pmove.c
 +++ b/engine/client/dll_int/cl_pmove.c
-@@ -745,7 +745,7 @@ void CL_InitClientMove( void )
+@@ -15,6 +15,7 @@ GNU General Public License for more details.
+ 
+ #include "common.h"
+ #include "client.h"
++#include "bridge.h"
+ #include "const.h"
+ #include "cl_tent.h"
+ #include "pm_local.h"
+@@ -745,7 +746,7 @@ void CL_InitClientMove( void )
  	clgame.pmove->Con_NPrintf = Con_NPrintf;
  	clgame.pmove->Con_DPrintf = Con_DPrintf;
  	clgame.pmove->Con_Printf = Con_Printf;
@@ -55,6 +349,116 @@ index 9ca1f79..ba24fe2 100644
  	clgame.pmove->PM_StuckTouch = pfnStuckTouch;
  	clgame.pmove->PM_PointContents = (void*)PM_CL_PointContents;
  	clgame.pmove->PM_TruePointContents = pfnTruePointContents;
+@@ -985,7 +986,10 @@ void CL_PredictMovement( qboolean repredicting )
+ 		return;
+ 
+ 	if( cls.demoplayback && !repredicting )
++	{
+ 		CL_DemoInterpolateAngles();
++		CL_BridgeDemoAngles( cl.viewangles ); // cs2-ai
++	}
+ 
+ 	CL_SetUpPlayerPrediction( false, false );
+ 
+diff --git a/engine/common/bridge.h b/engine/common/bridge.h
+new file mode 100644
+index 0000000..5dc52ad
+--- /dev/null
++++ b/engine/common/bridge.h
+@@ -0,0 +1,93 @@
++/*
++bridge.h - cs2-ai RL bridge: lockstep action-in / frame-out channel to an external controller
++See /patches/BRIDGE.md in the cs2-ai repo for the protocol.
++
++Launch:  xash3d ... -bridge /path/to/socket -bridge_shm /path/to/frame.shm
++  The engine connects to a unix-domain stream socket (the controller listens),
++  maps the frame file, then every Host_Frame:
++    1. blocks reading one bridge_action_t
++    2. runs the frame, applying the action to the usercmd
++    3. writes the rendered frame (RGB24, top-down) into the shm file
++    4. sends one bridge_state_t
++*/
++#ifndef BRIDGE_H
++#define BRIDGE_H
++
++#include <stdint.h>
++
++#define BRIDGE_ACTION_MAGIC 0x31415343 // "CSA1"
++#define BRIDGE_STATE_MAGIC  0x31535343 // "CSS1"
++#define BRIDGE_MAX_PLAYERS  32
++#define BRIDGE_SHM_HEADER   64          // frame pixels start at this offset in the shm file
++#define BRIDGE_MAX_FRAME    ( 1920 * 1080 * 3 )
++
++// action flags
++#define BRIDGE_ACT_APPLY    ( 1 << 0 ) // override usercmd movement/buttons/angles with this action
++#define BRIDGE_ACT_CAPTURE  ( 1 << 1 ) // capture the rendered frame this step
++#define BRIDGE_ACT_QUIT     ( 1 << 2 ) // shut the engine down
++#define BRIDGE_ACT_SETANGLES ( 1 << 3 ) // demo playback: force the view to setangles (exact angles from a parsed demo)
++
++#pragma pack( push, 4 )
++typedef struct bridge_action_s
++{
++	uint32_t magic;
++	uint32_t seq;
++	uint32_t flags;
++	float    dyaw;          // degrees to add to view yaw this step (positive = turn left, like mouse left)
++	float    dpitch;        // degrees to add to view pitch (positive = look down)
++	float    forwardmove;   // units/s, like cl_forwardspeed (CS: +-400 clamped by maxspeed)
++	float    sidemove;      // positive = right
++	float    upmove;
++	uint32_t buttons;       // IN_* bitmask (in_buttons.h)
++	int32_t  impulse;
++	int32_t  weaponselect;
++	char     cmd[256];      // console command(s) to execute before this frame (empty = none)
++	float    setangles[3];  // with BRIDGE_ACT_SETANGLES: absolute pitch, yaw, roll
++} bridge_action_t;
++
++typedef struct bridge_player_s
++{
++	int32_t connected;
++	int32_t alive;
++	int32_t health;
++	int32_t armor;
++	int32_t frags;
++	int32_t team;           // 1 = T, 2 = CT, 0 = unknown/spectator (from the model/team when available)
++	float   origin[3];
++} bridge_player_t;
++
++typedef struct bridge_state_s
++{
++	uint32_t magic;
++	uint32_t seq;           // echoes the action seq this state answers
++	uint32_t in_game;       // client active and server running
++	uint32_t frame_valid;   // shm holds a frame rendered this step
++	uint32_t width;
++	uint32_t height;
++	uint32_t frame_bytes;
++	uint32_t framecount;
++	uint32_t demoplayback;  // a demo is playing
++	uint32_t pad0;
++	double   time;          // client time (cl.time; during demo playback = the original match clock)
++	int32_t  playernum;     // local player's slot (0-based), -1 if none
++	int32_t  num_players;
++	float    viewangles[3]; // local client's current view angles (pitch, yaw, roll)
++	float    velocity[3];
++	bridge_player_t players[BRIDGE_MAX_PLAYERS];
++} bridge_state_t;
++#pragma pack( pop )
++
++// engine-internal API
++#if !XASH_DEDICATED
++void CL_BridgeInit( void );
++qboolean CL_BridgeActive( void );
++void CL_BridgeBeginFrame( void );
++void CL_BridgeEndFrame( void );
++void CL_BridgeApplyAngles( float *viewangles );          // before CL_CreateMove
++void CL_BridgeApplyCmd( struct usercmd_s *cmd, const float *viewangles ); // after CL_CreateMove
++void CL_BridgeCapture( void );                           // in V_PostRender, before 2D overlays
++void CL_BridgeDemoAngles( float *viewangles );           // after demo angle interpolation
++#endif
++int SV_BridgeFillPlayers( bridge_player_t *out, int max ); // server side, returns maxclients
++
++#endif // BRIDGE_H
 diff --git a/engine/common/common.h b/engine/common/common.h
 index 8d471f1..3e33e60 100644
 --- a/engine/common/common.h
@@ -76,20 +480,29 @@ index 8d471f1..3e33e60 100644
  static inline qboolean Host_IsSinglePlayerGame( void )
  {
 diff --git a/engine/common/host.c b/engine/common/host.c
-index 8b43cfc..7c4d55f 100644
+index 8b43cfc..c1443c2 100644
 --- a/engine/common/host.c
 +++ b/engine/common/host.c
-@@ -77,6 +77,9 @@ CVAR_DEFINE_AUTO( host_limitlocal, "0", 0, "apply cl_cmdrate and rate to loopbac
+@@ -25,6 +25,7 @@ GNU General Public License for more details.
+ #include <emscripten/emscripten.h>
+ #endif
+ #include "common.h"
++#include "bridge.h"
+ #include "base_cmd.h"
+ #include "client.h"
+ #include "server.h"
+@@ -77,6 +78,10 @@ CVAR_DEFINE_AUTO( host_limitlocal, "0", 0, "apply cl_cmdrate and rate to loopbac
  CVAR_DEFINE( host_maxfps, "fps_max", "72", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "host fps upper limit" );
  CVAR_DEFINE_AUTO( fps_override, "0", FCVAR_FILTERABLE, "unlock higher framerate values, not supported" );
  static CVAR_DEFINE_AUTO( host_framerate, "0", FCVAR_FILTERABLE, "locks frame timing to this value in seconds" );
 +// cs2-ai: lockstep mode (see patches/LOCKSTEP.md)
 +static CVAR_DEFINE_AUTO( host_lockstep, "1", FCVAR_FILTERABLE, "when host_framerate > 0: every loop iteration is exactly one host_framerate tick (server tick + client frame + render), no fps cap, no sleeping" );
++static CVAR_DEFINE_AUTO( host_lockstep_demos, "0", FCVAR_FILTERABLE, "cs2-ai: also run demo playback in lockstep (fixed tick, as fast as possible)" );
 +static CVAR_DEFINE_AUTO( host_lockstep_report, "0", 0, "if > 0, print lockstep loop speed (frames per wall-second, game-speed multiple) every N wall-seconds" );
  static CVAR_DEFINE( host_sleeptime, "sleeptime", "1", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "milliseconds to sleep for each frame. higher values reduce fps accuracy" );
  static CVAR_DEFINE_AUTO( host_sleeptime_debug, "0", 0, "print sleeps between frames" );
  CVAR_DEFINE_AUTO( host_allow_materials, "0", FCVAR_LATCH|FCVAR_ARCHIVE, "allow texture replacements from materials/ folder" );
-@@ -625,11 +628,101 @@ Host_FilterTime
+@@ -625,11 +630,103 @@ Host_FilterTime
  Returns false if the time is too short to run a frame
  ===================
  */
@@ -99,7 +512,9 @@ index 8b43cfc..7c4d55f 100644
 +		return false;
 +
 +	// demos must be played back and recorded with the stock timing
-+	if( !Host_IsDedicated( ) && ( CL_IsPlaybackDemo( ) || CL_IsRecordDemo( )))
++	if( !Host_IsDedicated( ) && CL_IsRecordDemo( ))
++		return false;
++	if( !Host_IsDedicated( ) && CL_IsPlaybackDemo( ) && !host_lockstep_demos.value )
 +		return false;
 +
 +	return true;
@@ -191,8 +606,24 @@ index 8b43cfc..7c4d55f 100644
  	host.realtime += time * scale;
  	double dt = host.realtime - oldtime;
  
-@@ -677,6 +770,8 @@ void Host_Frame( double time )
+@@ -667,6 +764,9 @@ void Host_Frame( double time )
+ 	if( host.framecount == 0 )
+ 		Con_DPrintf( "Time to first frame: %.3f seconds\n", t1 - host.starttime );
  
++#if !XASH_DEDICATED
++	CL_BridgeBeginFrame(); // cs2-ai: block for the controller's action
++#endif
+ 	Host_InputFrame ();  // input frame
+ 	Host_ClientBegin (); // begin client
+ 	Host_GetCommands (); // dedicated in
+@@ -675,8 +775,14 @@ void Host_Frame( double time )
+ 	HTTP_Run();			 // both server and client
+ 	XRcon_Frame();
+ 
++#if !XASH_DEDICATED
++	CL_BridgeEndFrame(); // cs2-ai: send state for this frame
++#endif
++
  	host.framecount++;
  	host.pureframetime = Platform_DoubleTime() - t1;
 +
@@ -200,12 +631,13 @@ index 8b43cfc..7c4d55f 100644
  }
  
  /*
-@@ -1211,6 +1306,8 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
+@@ -1211,6 +1317,9 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
  	Cvar_RegisterVariable( &host_maxfps );
  	Cvar_RegisterVariable( &fps_override );
  	Cvar_RegisterVariable( &host_framerate );
 +	Cvar_RegisterVariable( &host_lockstep );
 +	Cvar_RegisterVariable( &host_lockstep_report );
++	Cvar_RegisterVariable( &host_lockstep_demos );
  	Cvar_RegisterVariable( &host_sleeptime );
  	Cvar_RegisterVariable( &host_sleeptime_debug );
  	Cvar_RegisterVariable( &host_gameloaded );
@@ -321,14 +753,82 @@ index f9f4bce..a9065d9 100644
  
  	if( glw_state.software )
  	{
+diff --git a/engine/ref_api.h b/engine/ref_api.h
+index e42f0d8..ff9713e 100644
+--- a/engine/ref_api.h
++++ b/engine/ref_api.h
+@@ -666,6 +666,9 @@ typedef struct ref_interface_s
+ 
+ 	// vgui drawing implementation
+ 	void	(*VGUI_SetupDrawing)( qboolean rect );
++
++	// cs2-ai: read the current back buffer as RGB24, top-down. Returns bytes written (0 on failure).
++	size_t	(*VID_GetFrameRGB)( byte *dest, size_t destsize, int *width, int *height );
+ } ref_interface_t;
+ 
+ typedef int (*REFAPI)( int version, ref_interface_t *pFunctionTable, ref_api_t* engfuncs, ref_globals_t *pGlobals );
 diff --git a/engine/server/sv_main.c b/engine/server/sv_main.c
-index 985e438..f57e751 100644
+index 985e438..9e4985e 100644
 --- a/engine/server/sv_main.c
 +++ b/engine/server/sv_main.c
-@@ -672,6 +672,12 @@ static void SV_UpdateStatusLine( void )
+@@ -17,6 +17,7 @@ GNU General Public License for more details.
+ #include "server.h"
+ #include "net_encode.h"
+ #include "platform/platform.h"
++#include "bridge.h"
+ 
+ // server cvars
+ CVAR_DEFINE_AUTO( sv_lan, "0", 0, "server is a lan server ( no heartbeat, no authentication, no non-class C addresses, 9999.0 rate, etc." );
+@@ -672,6 +673,58 @@ static void SV_UpdateStatusLine( void )
  #endif // XASH_PLATFORM_HAVE_STATUS
  }
  
++
++// cs2-ai: RL bridge, fill per-player stats (reward bookkeeping only, never fed to the agent)
++static int SV_BridgeTeamFromModel( const char *model )
++{
++	static const char *t_models[] = { "terror", "leet", "arctic", "guerilla", "militia" };
++	static const char *ct_models[] = { "urban", "gsg9", "sas", "gign", "vip", "spetsnaz" };
++	int i;
++
++	for( i = 0; i < ARRAYSIZE( t_models ); i++ )
++		if( !Q_stricmp( model, t_models[i] )) return 1;
++	for( i = 0; i < ARRAYSIZE( ct_models ); i++ )
++		if( !Q_stricmp( model, ct_models[i] )) return 2;
++	return 0;
++}
++
++int SV_BridgeFillPlayers( bridge_player_t *out, int max )
++{
++	int i, n;
++
++	memset( out, 0, sizeof( *out ) * max );
++
++	if( !SV_Active( ) || !svs.clients )
++		return 0;
++
++	n = Q_min( svs.maxclients, max );
++
++	for( i = 0; i < n; i++ )
++	{
++		sv_client_t *cl = &svs.clients[i];
++		edict_t *ed = cl->edict;
++
++		if( cl->state < cs_spawned || !ed || ed->free )
++			continue;
++
++		out[i].connected = 1;
++		out[i].alive = ed->v.deadflag == DEAD_NO && ed->v.health > 0.0f;
++		out[i].health = (int)ed->v.health;
++		out[i].armor = (int)ed->v.armorvalue;
++		out[i].frags = (int)ed->v.frags;
++		out[i].team = SV_BridgeTeamFromModel( Info_ValueForKey( cl->userinfo, "model" ));
++		VectorCopy( ed->v.origin, out[i].origin );
++	}
++
++	return n;
++}
++
 +// cs2-ai: for host_lockstep_report
 +double SV_LockstepTime( void )
 +{
@@ -351,3 +851,137 @@ index f146b9f..496f9ce 100644
  	svgame.pmove->PM_StuckTouch = pfnStuckTouch;
  	svgame.pmove->PM_PointContents = pfnPointContents;
  	svgame.pmove->PM_TruePointContents = pfnTruePointContents;
+diff --git a/ref/gl/gl_backend.c b/ref/gl/gl_backend.c
+index 8b88b8e..673e5e7 100644
+--- a/ref/gl/gl_backend.c
++++ b/ref/gl/gl_backend.c
+@@ -555,6 +555,42 @@ static const envmap_t r_envMapInfo[6] =
+ {{ 90,   0,  90}, 0 }
+ };
+ 
++/*
++===============
++VID_GetFrameRGB
++
++cs2-ai: read back the current frame for the RL bridge (RGB24, top-down)
++===============
++*/
++size_t VID_GetFrameRGB( byte *dest, size_t destsize, int *width, int *height )
++{
++	static byte *tmp;
++	static size_t tmpsize;
++	int w = gpGlobals->width, h = gpGlobals->height;
++	size_t rowbytes = (size_t)w * 3, need = rowbytes * h;
++
++	if( width ) *width = w;
++	if( height ) *height = h;
++	if( !dest || need > destsize || w <= 0 || h <= 0 )
++		return 0;
++
++	if( tmpsize < need )
++	{
++		tmp = realloc( tmp, need );
++		tmpsize = tmp ? need : 0;
++		if( !tmp ) return 0;
++	}
++
++	pglPixelStorei( GL_PACK_ALIGNMENT, 1 );
++	pglReadPixels( 0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, tmp );
++
++	// GL is bottom-up
++	for( int y = 0; y < h; y++ )
++		memcpy( dest + rowbytes * y, tmp + rowbytes * ( h - 1 - y ), rowbytes );
++
++	return need;
++}
++
+ qboolean VID_ScreenShot( const char *filename, int shot_type )
+ {
+ 	uint flags = IMAGE_FLIP_Y;
+diff --git a/ref/gl/gl_context.c b/ref/gl/gl_context.c
+index e94ae60..848128d 100644
+--- a/ref/gl/gl_context.c
++++ b/ref/gl/gl_context.c
+@@ -567,5 +567,7 @@ const ref_interface_t gReffuncs =
+ 	R_FillTriAPI,
+ 
+ 	VGUI_SetupDrawing,
++
++	VID_GetFrameRGB,
+ };
+ 
+diff --git a/ref/gl/gl_local.h b/ref/gl/gl_local.h
+index 1a9b439..9b6bc3f 100644
+--- a/ref/gl/gl_local.h
++++ b/ref/gl/gl_local.h
+@@ -510,6 +510,7 @@ void GL_InitExtensions( void );
+ void GL_ClearExtensions( void );
+ void GAME_EXPORT *GL_GetProcAddress( const char *name );
+ int GL_LoadTexture( const char *name, const byte *buf, size_t size, int flags );
++size_t VID_GetFrameRGB( byte *dest, size_t destsize, int *width, int *height );
+ qboolean VID_ScreenShot( const char *filename, int shot_type );
+ qboolean VID_CubemapShot( const char *base, uint size, const float *vieworg, qboolean skyshot );
+ void R_GammaChanged( qboolean do_reset_gamma );
+diff --git a/ref/soft/r_context.c b/ref/soft/r_context.c
+index 5d6dec1..7a622da 100644
+--- a/ref/soft/r_context.c
++++ b/ref/soft/r_context.c
+@@ -541,5 +541,7 @@ const ref_interface_t gReffuncs =
+ 	R_FillTriAPI,
+ 
+ 	VGUI_SetupDrawing,
++
++	VID_GetFrameRGB,
+ };
+ 
+diff --git a/ref/soft/r_glblit.c b/ref/soft/r_glblit.c
+index 863d5b4..5b1ac14 100644
+--- a/ref/soft/r_glblit.c
++++ b/ref/soft/r_glblit.c
+@@ -738,6 +738,34 @@ static uint32_t Get8888PixelAt( int u, int start )
+ 	return s | 0xFF000000;
+ }
+ 
++// cs2-ai: read back the current frame for the RL bridge (RGB24, top-down)
++size_t GAME_EXPORT VID_GetFrameRGB( byte *dest, size_t destsize, int *width, int *height )
++{
++	int w = vid.width, h = vid.height;
++	size_t need = (size_t)w * h * 3;
++
++	if( width ) *width = w;
++	if( height ) *height = h;
++	if( !dest || need > destsize || w <= 0 || h <= 0 || swblit.rotate )
++		return 0;
++
++	for( int v = 0; v < h; v++ )
++	{
++		uint start = vid.rowbytes * v;
++		byte *d = dest + (size_t)w * 3 * v;
++
++		for( int u = 0; u < w; u++ )
++		{
++			uint32_t px = Get8888PixelAt( u, start ); // 0xAARRGGBB
++			*d++ = ( px >> 16 ) & 0xFF;
++			*d++ = ( px >> 8 ) & 0xFF;
++			*d++ = px & 0xFF;
++		}
++	}
++
++	return need;
++}
++
+ qboolean GAME_EXPORT VID_ScreenShot( const char *filename, int shot_type )
+ {
+ 	uint flags = IMAGE_FLIP_Y;
+diff --git a/ref/soft/r_local.h b/ref/soft/r_local.h
+index 1a7efd6..d3ac2c5 100644
+--- a/ref/soft/r_local.h
++++ b/ref/soft/r_local.h
+@@ -443,6 +443,7 @@ void GL_InitExtensions( void );
+ void GL_ClearExtensions( void );
+ void VID_CheckChanges( void );
+ int GL_LoadTexture( const char *name, const byte *buf, size_t size, int flags );
++size_t VID_GetFrameRGB( byte *dest, size_t destsize, int *width, int *height );
+ qboolean VID_ScreenShot( const char *filename, int shot_type );
+ qboolean VID_CubemapShot( const char *base, uint size, const float *vieworg, qboolean skyshot );
+ void R_GammaChanged( qboolean do_reset_gamma );

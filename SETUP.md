@@ -68,3 +68,17 @@ cd game && ./xash -game cstrike +sv_lan 1 +maxplayers 12 +host_framerate 0.01 +m
 ```
 
 Bots join automatically (YaPB default quota). `log on` in the console writes kills/rounds to `cstrike/logs/`.
+
+## Python environment (Phase 1)
+
+```bash
+uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e .
+```
+
+`cs16env` drives the engine in `game-dev/` (built from the patched `third_party/xash3d-fwgs`, see `patches/BRIDGE.md`). Everything runs muted and in a hidden window.
+
+```bash
+.venv/bin/python tests/random_episodes.py 100 dm_dust2 10        # stability check
+scripts/fetch_pov_demos.sh data/demos/pov_list.txt                # pro POV demos from archive.org
+scripts/make_all_datasets.sh                                      # POV demos -> data/datasets/
+```

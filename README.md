@@ -1,32 +1,40 @@
-# CS2 AI
+# counterstrike-ai
 
-**Question:** What is the highest level of Counter-Strike 2 play a computer can reach when it is given exactly what a human gets — pixels in, keyboard and mouse out, human-like reaction latency — and nothing more?
+**Question:** What is the highest level of Counter-Strike play a computer can reach when it is given exactly what a human gets — pixels in, keyboard and mouse out, human-like reaction latency — and nothing more?
 
-This is an educational research project to find and demonstrate that frontier. Any form of AI is fair game (learned policies, world models, LLM/VLM planners, hybrids) as long as the fairness constraints hold. Aimbots that read game memory already "beat humans"; that is not the question.
+An educational research project to find and demonstrate that frontier. Any form of AI is fair game (learned policies, world models, LLM/VLM planners, hybrids) as long as the fairness constraints hold. Aimbots that read game memory already "beat humans"; that is not the question.
+
+We use **Counter-Strike 1.6** on the open-source Xash3D FWGS engine rather than CS2: it is the only version where the engine can be patched to run headless, in lockstep, faster than realtime — the precondition for reinforcement learning, the only method that has ever produced superhuman pixel-based FPS play. See [ROADMAP.md](ROADMAP.md) for the reasoning.
 
 ## Ground rules
 
-- **Offline only.** LAN dedicated server launched with `-insecure`, throwaway Steam account, OS-level screen capture, driver-level input. The agent never touches VAC-secured or third-party matchmaking servers.
-- **Human-equivalent observation.** Screen pixels only. No Game State Integration or demo data feeds the policy at inference time (GSI is used only for rewards and episode boundaries during training).
-- **Human-equivalent actuation.** Added observation delay (~250 ms, per DeepMind FTW / OpenAI Five precedent), action-rate cap, mouse-speed envelope inside measured pro ranges.
+- **Offline only.** Local listen/dedicated servers with bots or LAN humans. Never VAC-secured or public servers.
+- **Human-equivalent observation.** The rendered screen (world + HUD) only. Server state is used for rewards and episode bookkeeping, never as input.
+- **Human-equivalent actuation.** 200 ms observation delay, 25 Hz decisions, turn rate capped at 1200°/s (from pro demo statistics); actions are ordinary usercmds, exactly what a mouse and keyboard produce.
 
-## Where things stand (Nov 2026)
+## Status
 
-See [`reports/AI agents playing Counter-Strike.md`](reports/AI%20agents%20playing%20Counter-Strike.md) for the full deep-research report. Short version:
+- **Phase 0 — done.** Open-source CS 1.6 stack builds natively; lockstep engine patch (~150× realtime server, ~10–18× per rendering client); pro demo sources found; GoldSrc demo parser. [PHASE0_RESULTS.md](PHASE0_RESULTS.md)
+- **Phase 1 — environment + data.** In-engine bridge (action in, frame out, lockstep), Gymnasium env `CS16Env` with scenarios and fairness layer, pro-demo → (frame, pro action) dataset generator. [PHASE1_RESULTS.md](PHASE1_RESULTS.md), [patches/BRIDGE.md](patches/BRIDGE.md)
 
-- No pixels-in agent has beaten humans at CS at any skill level. The ceiling is still Pearce & Zhu (2021): behavioural cloning on 95 h of CS:GO deathmatch, ~0.59 K/D vs humans.
-- Frontier LLM/VLMs score ~0 on real-time shooters (seconds per decision). They are viable only as a slow planner, never in the aim loop.
-- The 2026 opening: open multi-game BC foundation models (Open Pixels2Play, 8,300 h, keyboard+mouse native) and terabyte-scale CS2 pro-POV datasets (OpenCS2) that nobody has yet trained a CS player on.
+Background research: [reports/AI agents playing Counter-Strike.md](reports/AI%20agents%20playing%20Counter-Strike.md).
 
-## Planned phases
+## Quick start (after [SETUP.md](SETUP.md))
 
-1. **Behavioural cloning** — fine-tune Open-P2P (300M–600M) on OpenCS2 + self-recorded Dust2 deathmatch at 20 Hz; DAgger corrections. Target: built-in-bot / casual-human level.
-2. **Beyond BC** — RL in-engine (parallel clients) or inside a learned CS world model; optional ~1 Hz VLM planner issuing skill chunks.
-3. **Evaluation** — Pearce-style KPM/K-D vs bots; FTW-style handicapped matches vs humans pooled by Premier tier; third-person Turing test.
+```python
+from cs16env import CS16Env
+env = CS16Env("dm_dust2")          # hidden window, muted, 320x240
+obs, info = env.reset()
+obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
+```
 
 ## Layout
 
 ```
-reports/         research reports
-research_notes/  raw sourced notes behind each report
+cs16env/         Python package: bridge (engine I/O), env (Gymnasium), scenarios, dataset loader
+scripts/         demo parser/converter, dataset generator, benchmarks
+patches/         our engine patch + docs (lockstep, bridge)
+tests/           stability test
+third_party/     pinned upstream sources (not committed; see PINNED.md)
+reports/, research_notes/   background research
 ```

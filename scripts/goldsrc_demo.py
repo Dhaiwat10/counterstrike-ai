@@ -80,6 +80,7 @@ class NetFrame:
     """One type 0/1 frame: what the client saw/sent at this instant."""
     time: float
     frame: int
+    cltime: float  # refdef.time: the client clock of the original match (matches engine cl.time on playback)
     # refdef
     vieworg: tuple
     viewangles: tuple
@@ -169,7 +170,7 @@ def _net_frame(f: BinaryIO, t: float, fr: int, keep_msg: bool) -> NetFrame:
     cmd_angles = uc[2:5]
     fwd, side, up = uc[5:8]
     buttons, weaponselect = uc[9], uc[11]
-    return NetFrame(t, fr, vieworg, viewangles, simorg, simvel, cl_viewangles, punchangle,
+    return NetFrame(t, fr, rp[16], vieworg, viewangles, simorg, simvel, cl_viewangles, punchangle,
                     health, onground, spectator, playernum, msec, cmd_angles, fwd, side, up,
                     buttons, weaponselect, msg if keep_msg else b"")
 
@@ -256,7 +257,7 @@ def summarize(path: str) -> None:
 def export_csv(path: str, out: str) -> None:
     f, hdr, entries = open_demo(path)
     play = entries[-1] if len(entries) > 1 else entries[0]
-    cols = ["time", "frame", "health", "onground", "pos_x", "pos_y", "pos_z", "vel_x", "vel_y", "vel_z",
+    cols = ["time", "frame", "cltime", "health", "onground", "pos_x", "pos_y", "pos_z", "vel_x", "vel_y", "vel_z",
             "pitch", "yaw", "punch_pitch", "punch_yaw", "msec", "forwardmove", "sidemove", "upmove",
             "buttons", "weaponselect"] + list(BUTTONS)
     n = 0
@@ -267,7 +268,7 @@ def export_csv(path: str, out: str) -> None:
             d = fr.data
             if not isinstance(d, NetFrame):
                 continue
-            w.writerow([f"{d.time:.4f}", d.frame, d.health, d.onground, *(f"{x:.2f}" for x in d.simorg),
+            w.writerow([f"{d.time:.4f}", d.frame, f"{d.cltime:.4f}", d.health, d.onground, *(f"{x:.2f}" for x in d.simorg),
                         *(f"{x:.2f}" for x in d.simvel), f"{d.cmd_viewangles[0]:.3f}", f"{d.cmd_viewangles[1]:.3f}",
                         f"{d.punchangle[0]:.3f}", f"{d.punchangle[1]:.3f}", d.msec, f"{d.forwardmove:.1f}",
                         f"{d.sidemove:.1f}", f"{d.upmove:.1f}", d.buttons, d.weaponselect,
