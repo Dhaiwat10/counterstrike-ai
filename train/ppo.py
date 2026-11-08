@@ -281,6 +281,11 @@ def main():
     ap.add_argument("--ent", type=float, default=0.01, help="coef on mean normalised entropy of learned heads")
     ap.add_argument("--ent-yaw-mult", type=float, default=1.0,
                     help="extra exploration on the turning (yaw) head: its entropy term is multiplied by this")
+    ap.add_argument("--kl-prior", default="", help="imitation checkpoint: penalise drifting from its turning habits (KL)")
+    ap.add_argument("--kl-coef", type=float, default=0.05, help="initial weight of KL(prior || policy) on --kl-heads")
+    ap.add_argument("--kl-min", type=float, default=0.01, help="weight after decay")
+    ap.add_argument("--kl-decay-steps", type=float, default=1.5e6, help="linear decay from --kl-coef to --kl-min")
+    ap.add_argument("--kl-heads", default="yaw", help="heads the KL pull applies to")
     ap.add_argument("--no-contest", type=float, default=0.0,
                     help="moving-bot stages: end a round as no-contest (neutral, not counted) if the bot is out of sight this many seconds")
     ap.add_argument("--rehearsal", type=float, default=0.0,
@@ -351,6 +356,17 @@ def main():
         model.load_state_dict({k: v.float() for k, v in resume["model"].items()})
     model.to(dev)
     model_args = dict(hw=list(hw), chans=list(chans), fovea=fovea, active_heads=heads)
+    prior = None
+    kl_idx = [HEADS.index(h.strip()) for h in a.kl_heads.split(",") if h.strip()]
+    if a.kl_prior:
+        pk = torch.load(a.kl_prior, map_location="cpu")
+        pa = pk["args"]
+        prior = Policy(in_hw=tuple(pa["hw"]), chans=tuple(pa["chans"]), fovea=int(pa.get("fovea", 0)))
+        prior.load_state_dict({k: v.float() for k, v in pk["model"].items()}, strict=False)
+        prior.to(dev).eval()
+        for q in prior.parameters():
+            q.requires_grad_(False)
+        assert prior.fovea == fovea, "prior and policy must see the same inputs"
     opt = torch.optim.Adam(model.parameters(), lr=a.lr, eps=1e-5)
     if resume is not None and "opt" in resume:
         opt.load_state_dict(resume["opt"])
@@ -470,6 +486,14 @@ def main():
             steps += N * T
 
             adv, ret = gae(R, V, V_next, TERM, a.gamma, a.lam)
+            prior_lp = None
+            kl_coef = 0.0
+            if prior is not None:  # frozen imitation policy's turning distribution on this rollout (once, no grad)
+                kl_coef = max(a.kl_min, a.kl_coef - (a.kl_coef - a.kl_min) * (steps - steps0) / max(1.0, a.kl_decay_steps))
+                with torch.no_grad(), torch.autocast(dev.type, dtype=torch.bfloat16, enabled=dev.type != "cpu"):
+                    plg, _, _ = seq_forward(prior, P, Fv if fovea else None, prior.initial_state(N, dev), S)
+                parts = Policy.split(plg.float())
+                prior_lp = [F.log_softmax(parts[h], -1) for h in kl_idx]
 
             # ---------------- update
             model.train()
@@ -502,6 +526,12 @@ def main():
                     ratio = (lp - LP[j]).exp()
                     pg = -torch.min(ratio * adv_j, ratio.clamp(1 - a.clip, 1 + a.clip) * adv_j).mean()
                     loss = pg + a.vf * vloss - a.ent * ent_w.mean() * head_w.mean() + a.aux * xloss
+                    if prior_lp is not None:  # KL(prior || policy): penalises near-zero probability where the pros had mass
+                        lparts = Policy.split(lg.float())
+                        kl = sum((plp[j].exp() * (plp[j] - F.log_softmax(lparts[h], -1))).sum(-1).mean()
+                                 for plp, h in zip(prior_lp, kl_idx))
+                        loss = loss + kl_coef * kl
+                        stats["kl_prior"].append(kl.item())
                     opt.zero_grad(set_to_none=True)
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
@@ -556,7 +586,7 @@ def main():
                        if any(e.get("acquire") is not None for e in E) else None,
                        stage=stage, gate=float(gate), passes=passes, window_fill=len(win),
                        kill_rehearsal=float(np.mean([e["kills"] > 0 for e in reh])) if reh else None,
-                       no_contest_rate=float(np.mean(nc)) if nc else None,
+                       no_contest_rate=float(np.mean(nc)) if nc else None, kl_coef=kl_coef,
                        **{f"kill_{b}": float(np.mean([e["kills"] > 0 for e in E if band_of(e["dist"]) == b]))
                           for b in ("close", "medium", "long") if any(band_of(e["dist"]) == b for e in E)},
                        **{f"kill_ang_{b}": float(np.mean([e["kills"] > 0 for e in E if angle_band(e.get("offset", 0)) == b]))

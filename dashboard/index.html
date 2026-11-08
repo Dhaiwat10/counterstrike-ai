@@ -121,6 +121,7 @@ function card(r) {
       <div class="stat"><div class="v">${L.acquire_time_med != null ? num(L.acquire_time_med, 2) + ' s' : '–'}</div><div class="l">time to get on target (median; lower = faster flicks)</div></div>
       <div class="stat"><div class="v">${pct(L.acquire_rate)}</div><div class="l">rounds where it got on target</div></div>
       <div class="stat"><div class="v">${pct(L.kill_rehearsal)}</div><div class="l">kill rate on rehearsal rounds (earlier stages; should stay high)</div></div>
+      <div class="stat"><div class="v">${pct(L.no_contest_rate)}</div><div class="l">no-contest rounds (bot walked out of sight; not counted)</div></div>
       <div class="stat"><div class="v">${L.steps ? (L.steps / 1e6).toFixed(2) + 'M' : '–'}</div><div class="l">total steps</div></div>
       <div class="stat"><div class="v">${num(L.sps, 0)}</div><div class="l">steps / s</div></div>
     </div>

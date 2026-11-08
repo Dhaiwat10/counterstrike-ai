@@ -105,3 +105,11 @@ Archived in `checkpoints/_baseline/`.
   entropy term weighted 5x (`--ent-yaw-mult 5`), and 10% rehearsal rounds that replay a random earlier stage (`--rehearsal
   0.1`; tracked as kill_rehearsal, never counted for promotion). Smoke test: rehearsal rounds 71-75% kills. Next check:
   big-turn probe ~1 h after the switch; if still ~0.1%, the KL pull toward the imitation policy.
+- **Exploration fix result (04:14):** big-turn probability 0.13% (unchanged) an hour after the 5x yaw entropy weight;
+  acquisition median improved 0.84 -> 0.72 s (more efficient sweeping, still no flicks). Entropy bonuses barely move
+  near-zero-probability actions (gradient ~ proportional to p), so per the agreed plan:
+- **KL pull toward the imitation prior on the turning head** (`--kl-prior checkpoints/bc_fov80/best.pt`, KL(prior||policy),
+  0.05 decaying to 0.01 over 1.5M steps; prior log-probs computed once per rollout). Smoke test: KL 1.8 -> 0.6-1.0 in minutes.
+- **No-contest rule active** for free-roaming-bot stages (bot out of sight >0.5 s -> neutral round, not counted in stats,
+  promotion or exams). Measured at stage 11: bot left sight in 32% of rounds; 12 of 13 timeouts were such rounds; contested
+  kill rate 58-61% vs 47% raw. Applied together at stage 12 from 4.67M steps (~17% slower training).
