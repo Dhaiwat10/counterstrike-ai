@@ -84,3 +84,9 @@ Archived in `checkpoints/_baseline/`.
   mark. Aim stages draw from a **10-degree band at the frontier** ([max-10, max], stage 9 = 25-35 deg), with 20% easier
   "review" rounds that do not count for promotion; delay/distance stages keep a 15-45 deg mix. Exams test the band only.
   aim_bc was put back to stage 9 under these rules (2.30M steps).
+- **Flick rewards** (user, 2026-11-09 ~01:00, after the diagnosis showed slow acquisition: 29% of stage-9 rounds never got
+  within 3 deg, median 0.84 s to get on target, two thirds of deaths never on target): potential-based shaping pays for
+  degrees closed but not for speed, so creeping was free. Added (training only) an off-target cost of 0.0015 per degree
+  per step (creeping 30 deg over 20 steps ~ -0.5, snapping ~ -0.05) and a fast-acquisition bonus of 0.3 x max(0, 1 - t/1 s)
+  the first time the crosshair is within 3 deg. Offline check on the same spawns: snapper +0.26 vs creeper -0.63.
+  Applied at stage 9 from 2.85M steps; tracking `acquire_time_med` (baseline 0.84 s) on the dashboard.

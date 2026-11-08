@@ -85,6 +85,14 @@ class CS16Env(gym.Env):
         self.time_penalty = 0.0        # training only: reward per agent step until the round ends
         self.hurt_penalty = 0.0        # training only: reward per HP the agent loses
         self.shaping_gamma = 0.99      # potential-based shaping uses gamma * Phi(s') - Phi(s)
+        # training only, teach FLICKS: every step costs offtarget_cost per degree of aim error (creeping accumulates far
+        # more than snapping), and the first time the crosshair gets within acquire_deg of the enemy in a round pays
+        # acquire_bonus * max(0, 1 - t / acquire_window) (a fast snap pays, a slow creep pays ~nothing)
+        self.offtarget_cost = 0.0
+        self.acquire_bonus = 0.0
+        self.acquire_deg = 3.0
+        self.acquire_window = 1.0
+        self._acquired_t = None
         self.episode_seconds = self.scn.episode_seconds  # can grow with the arena distance
         self._ep_dist = 0.0
         self.bot_level = 3             # arena: 0 frozen & passive, 1 strafing (scripted) & passive, 2 frozen & shoots, 3 normal
@@ -142,6 +150,7 @@ class CS16Env(gym.Env):
             s = self._arena_place()
         s = b.step(apply=True, capture=True)  # one neutral step to get a fresh frame
         self._ep_start = s.time
+        self._acquired_t = None
         self._snap = self._snapshot(s)
         self._kills = self._deaths = 0
         self._damage = 0
@@ -190,6 +199,14 @@ class CS16Env(gym.Env):
             (t0, e0), (t1, e1) = aim0, self._snap["aim"]
             if t0 is not None and t0 == t1 and abs(e0 - e1) < 90.0:
                 reward += self.aim_shaping * (e0 - self.shaping_gamma * e1)
+        t1, e1 = self._snap["aim"]
+        if e1 is not None:
+            if self.offtarget_cost:
+                reward -= self.offtarget_cost * min(e1, 45.0)
+            if self._acquired_t is None and e1 < self.acquire_deg:
+                self._acquired_t = s.time - self._ep_start
+                if self.acquire_bonus:
+                    reward += self.acquire_bonus * max(0.0, 1.0 - self._acquired_t / self.acquire_window)
         if a[4] and self.bullet_cost:
             reward -= self.bullet_cost
         reward -= self.time_penalty
@@ -373,7 +390,7 @@ class CS16Env(gym.Env):
 
     def _snapshot(self, s):
         me = s.playernum
-        tgt, err = self._aim_error(s) if self.aim_shaping else (None, None)
+        tgt, err = self._aim_error(s) if (self.aim_shaping or self.offtarget_cost or self.acquire_bonus) else (None, None)
         return {
             "aim": (tgt, err),
             "frags": self._me(s).frags,
@@ -417,5 +434,6 @@ class CS16Env(gym.Env):
             "alive": bool(me.alive),
             "spawn_dist": self._ep_dist,
             "spawn_offset": self._ep_offset,
+            "acquire_time": self._acquired_t,
             "aux": self._aux_queue[0] if getattr(self, "_aux_queue", None) else np.zeros(3, np.float32),
         }

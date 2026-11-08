@@ -47,6 +47,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
     env = CS16Env(scenario, reaction_delay=knobs["delay"])
     env.aim_shaping, env.bullet_cost, env.rw_dmg = rewards["aim_shaping"], rewards["bullet_cost"], rewards["damage"]
     env.shaping_gamma = rewards["gamma"]
+    env.offtarget_cost, env.acquire_bonus = rewards.get("offtarget", 0.0), rewards.get("acquire", 0.0)
 
     def set_knobs(k):
         env.arena_max_offset, env.arena_max_dist = k["offset"], k["dist"]
@@ -77,7 +78,8 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
                 ep, final = None, None
                 if term or trunc:
                     ep = dict(ret=ep_ret, kills=info["kills"], deaths=info["deaths"], damage=info["damage"],
-                              time=info["time"], timeout=bool(trunc), dist=info["spawn_dist"], offset=info["spawn_offset"])
+                              time=info["time"], timeout=bool(trunc), dist=info["spawn_dist"], offset=info["spawn_offset"],
+                              acquire=info.get("acquire_time"))
                     ep_ret = 0.0
                     if trunc:
                         final = views(obs)  # bootstrap V(final obs) on a time-limit cut
@@ -265,6 +267,10 @@ def main():
     ap.add_argument("--time-penalty-round", type=float, default=0.5,
                     help="total penalty for a round that runs to the time limit without a kill (spread per step)")
     ap.add_argument("--hurt-penalty", type=float, default=0.01, help="per HP lost, once the bot can shoot")
+    ap.add_argument("--offtarget-cost", type=float, default=0.0,
+                    help="per degree of aim error per step (teaches fast acquisition; creeping costs ~10x a snap)")
+    ap.add_argument("--acquire-bonus", type=float, default=0.0,
+                    help="first time within 3 deg in a round: bonus * max(0, 1 - t/1s)")
     ap.add_argument("--damage-reward", type=float, default=0.01, help="per HP of damage dealt")
     ap.add_argument("--death-penalty", type=float, default=1.0, help="once the bot can shoot (0 while passive)")
     ap.add_argument("--value-warmup", type=int, default=20, help="updates that train only value + aux heads (BC init)")
@@ -332,7 +338,8 @@ def main():
     stage_eps = 0  # engagements played at the current stage
     low_windows = 0
     rewards = dict(aim_shaping=a.aim_shaping, bullet_cost=a.bullet_cost, damage=a.damage_reward, death=a.death_penalty,
-                   time_round=a.time_penalty_round, hurt=a.hurt_penalty, gamma=a.gamma, review=a.review_frac)
+                   time_round=a.time_penalty_round, hurt=a.hurt_penalty, gamma=a.gamma, review=a.review_frac,
+                   offtarget=a.offtarget_cost, acquire=a.acquire_bonus)
     venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, rewards, seed=a.seed * 100)
     N, T = a.envs, a.rollout
 
@@ -506,6 +513,9 @@ def main():
                        dmg_per_ep=float(np.mean([e["damage"] for e in E])) if E else 0.0,
                        ret_per_ep=float(np.mean([e["ret"] for e in E])) if E else 0.0,
                        ep_len_s=float(np.mean([e["time"] for e in E])) if E else 0.0,
+                       acquire_rate=float(np.mean([e.get("acquire") is not None for e in E])) if E else 0.0,
+                       acquire_time_med=float(np.median([e["acquire"] for e in E if e.get("acquire") is not None]))
+                       if any(e.get("acquire") is not None for e in E) else None,
                        stage=stage, gate=float(gate), passes=passes, window_fill=len(win),
                        **{f"kill_{b}": float(np.mean([e["kills"] > 0 for e in E if band_of(e["dist"]) == b]))
                           for b in ("close", "medium", "long") if any(band_of(e["dist"]) == b for e in E)},
