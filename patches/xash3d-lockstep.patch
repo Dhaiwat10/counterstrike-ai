@@ -240,6 +240,25 @@ index 0000000..d28d5dc
 +void CL_BridgeDemoAngles( float *viewangles ) { }
 +
 +#endif
+diff --git a/engine/client/cl_demo.c b/engine/client/cl_demo.c
+index e1c46ca..5c9d5ca 100644
+--- a/engine/client/cl_demo.c
++++ b/engine/client/cl_demo.c
+@@ -940,7 +940,13 @@ qboolean CL_DemoReadMessage( byte *buffer, size_t *length )
+ 		return false;
+ 	}
+ 
+-	if(( !cl.background && ( cl.paused || cls.key_dest != key_game )) || cls.key_dest == key_console )
++	// cs2-ai: in lockstep (headless dataset generation) keep reading through match pauses and UI focus
++	// changes; otherwise the demo never reaches its own svc_setpause 0 and playback freezes forever.
++	if( Host_IsLockstep( ))
++	{
++		cl.paused = false;
++	}
++	else if(( !cl.background && ( cl.paused || cls.key_dest != key_game )) || cls.key_dest == key_console )
+ 	{
+ 		demo.starttime += host.frametime;
+ 		return false; // paused
 diff --git a/engine/client/cl_main.c b/engine/client/cl_main.c
 index 39e4f9c..0ae0895 100644
 --- a/engine/client/cl_main.c

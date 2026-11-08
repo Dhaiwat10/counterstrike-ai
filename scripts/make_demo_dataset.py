@@ -25,6 +25,7 @@ import argparse
 import bisect
 import io
 import json
+import re
 import shutil
 import sys
 import time
@@ -87,9 +88,13 @@ def main():
     print(f"{src.name}: map={hdr.map_name} {len(P)} client frames, clock {ct[0]:.2f}..{ct[-1]:.2f}")
 
     game = REPO / "game-dev"
+    maps = [game / d / "maps" / f"{hdr.map_name}.bsp" for d in ("cstrike", "valve")]
+    if not any(m.exists() or m.with_name(m.name.lower()).exists() for m in maps):
+        raise SystemExit(f"map {hdr.map_name} not installed; skipping")
     demo_dir = game / "cstrike" / "demos_pro"
     demo_dir.mkdir(parents=True, exist_ok=True)
-    xdemo = demo_dir / f"ds_{name}.dem"
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", name)[:48]  # engine console chokes on dots/$ in demo names
+    xdemo = demo_dir / f"ds_{safe}.dem"
     conv.convert(str(src), str(xdemo))
 
     cfg = EngineConfig(width=a.width, height=a.height, renderer=a.renderer, maxplayers=1,
