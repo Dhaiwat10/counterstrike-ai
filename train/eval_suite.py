@@ -37,19 +37,25 @@ def run_exam(env, agent, cfg, seed):
     env.arena_max_offset, env.arena_max_dist = cfg["offset"], cfg["dist"]
     env.arena_min_offset = cfg.get("offset_min", 0.0)
     env.arena_review_frac = 0.0  # exams test the stage's band only
+    env.no_contest_after = 0.5 if cfg["bot"] == 3 else 0.0  # unwinnable rounds (bot out of sight) are not scored
     env.episode_seconds = round_seconds(cfg["dist"])
     obs, info = env.reset(seed=seed)  # same seed -> same sequence of spawn pairs every exam
     rows = []
-    for _ in range(cfg["rounds"]):
+    nc_count = 0
+    while len(rows) < cfg["rounds"] and nc_count < cfg["rounds"]:
         agent.reset()
         done = False
         while not done:
             obs, _, term, trunc, info = env.step(agent.act(obs))
             done = term or trunc
+        if info.get("no_contest"):
+            nc_count += 1
+            obs, info = env.reset()
+            continue
         rows.append(dict(kill=info["kills"] > 0, death=info["deaths"] > 0, damage=info["damage"],
                          time=info["time"], dist=info["spawn_dist"], offset=info["spawn_offset"]))
         obs, info = env.reset()
-    res = dict(rounds=len(rows), kill_rate=float(np.mean([r["kill"] for r in rows])),
+    res = dict(rounds=len(rows), no_contests=nc_count, kill_rate=float(np.mean([r["kill"] for r in rows])),
                death_rate=float(np.mean([r["death"] for r in rows])),
                damage=float(np.mean([r["damage"] for r in rows])),
                time_to_kill=float(np.median([r["time"] for r in rows if r["kill"]])) if any(r["kill"] for r in rows) else None)

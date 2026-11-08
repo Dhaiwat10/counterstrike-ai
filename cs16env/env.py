@@ -93,6 +93,10 @@ class CS16Env(gym.Env):
         self.acquire_deg = 3.0
         self.acquire_window = 1.0
         self._acquired_t = None
+        # arena: end the round as a NO-CONTEST if the bot stays out of line of sight this long (a free-roaming bot
+        # walking behind a wall makes the round unwinnable); 0 = off
+        self.no_contest_after = 0.0
+        self._hidden_steps = 0
         self.episode_seconds = self.scn.episode_seconds  # can grow with the arena distance
         self._ep_dist = 0.0
         self.bot_level = 3             # arena: 0 frozen & passive, 1 strafing (scripted) & passive, 2 frozen & shoots, 3 normal
@@ -151,6 +155,7 @@ class CS16Env(gym.Env):
         s = b.step(apply=True, capture=True)  # one neutral step to get a fresh frame
         self._ep_start = s.time
         self._acquired_t = None
+        self._hidden_steps = 0
         self._snap = self._snapshot(s)
         self._kills = self._deaths = 0
         self._damage = 0
@@ -190,7 +195,8 @@ class CS16Env(gym.Env):
         aim0 = self._snap["aim"]
         for i in range(self.repeat):
             s = b.step(dyaw=dyaw, dpitch=dpitch, forward=fwd, side=side, buttons=buttons,
-                       capture=(i == self.repeat - 1), cmd=self._strafe_tick())
+                       capture=(i == self.repeat - 1),
+                       cmd=self._strafe_tick() + (";" + self._los_cmd() if i == self.repeat - 1 and self.no_contest_after else ""))
             r, died, killed = self._account(s)
             reward += r
             if (died and self.scn.end_on_death) or (killed and self.scn.end_on_kill):
@@ -214,6 +220,11 @@ class CS16Env(gym.Env):
         self._obs_queue.append(frame if frame is not None else self._obs_queue[-1])
         self._aux_queue.append(self._aux_label(s))
         truncated = (s.time - self._ep_start) >= self.episode_seconds and not terminated
+        self._no_contest = False
+        if self.no_contest_after and not terminated and self._me(s).alive and self._others_alive(s):
+            self._hidden_steps = self._hidden_steps + 1 if s.aux[7] < 0.999 else 0  # aux[7] = this step's LoS trace
+            if self._hidden_steps * self.tick * self.repeat >= self.no_contest_after:
+                truncated, self._no_contest = True, True
         return self._obs_queue[0], reward, terminated, truncated, self._info(s)
 
     # ------------------------------------------------------------------ curriculum knobs
@@ -298,6 +309,22 @@ class CS16Env(gym.Env):
         for _ in range(3):
             s = b.step(capture=False)
         return s
+
+    def _los_cmd(self):
+        """World trace from the agent's eye to the nearest live enemy's chest into aux[7] (1 = visible)."""
+        s = self.bridge.state
+        me = s.playernum
+        m = self._me(s)
+        best = None
+        for k, p in enumerate(s.players):
+            if k != me and p.connected and p.alive:
+                d = float(np.linalg.norm(np.array(p.origin) - np.array(m.origin)))
+                if best is None or d < best[0]:
+                    best = (d, p.origin)
+        if best is None or not m.alive:
+            return "cs2ai_trace 7 0 0 0 0 0 0"
+        a, e = np.array(m.origin) + (0, 0, 17), np.array(best[1]) + (0, 0, 10)
+        return f"cs2ai_trace 7 {a[0]:.0f} {a[1]:.0f} {a[2]:.0f} {e[0]:.0f} {e[1]:.0f} {e[2]:.0f}"
 
     def _trace(self, segs):
         """World line traces (<= 3 per bridge step); returns fractions (1 = clear)."""
@@ -434,6 +461,7 @@ class CS16Env(gym.Env):
             "alive": bool(me.alive),
             "spawn_dist": self._ep_dist,
             "spawn_offset": self._ep_offset,
+            "no_contest": bool(getattr(self, "_no_contest", False)),
             "acquire_time": self._acquired_t,
             "aux": self._aux_queue[0] if getattr(self, "_aux_queue", None) else np.zeros(3, np.float32),
         }

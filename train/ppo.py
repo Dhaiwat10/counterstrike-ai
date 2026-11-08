@@ -60,6 +60,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
         bot_shoots = k["bot"] >= 2
         env.rw_death = rewards["death"] if bot_shoots else 0.0
         env.hurt_penalty = rewards["hurt"] if bot_shoots else 0.0
+        env.no_contest_after = rewards.get("no_contest", 0.0) if k["bot"] == 3 else 0.0  # free-roaming bot only
 
     import random
     rng = random.Random(seed)
@@ -89,7 +90,8 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
                 if term or trunc:
                     ep = dict(ret=ep_ret, kills=info["kills"], deaths=info["deaths"], damage=info["damage"],
                               time=info["time"], timeout=bool(trunc), dist=info["spawn_dist"], offset=info["spawn_offset"],
-                              acquire=info.get("acquire_time"), rehearsal=state["rehearsing"])
+                              acquire=info.get("acquire_time"), rehearsal=state["rehearsing"],
+                              no_contest=info.get("no_contest", False))
                     ep_ret = 0.0
                     if trunc:
                         final = views(obs)  # bootstrap V(final obs) on a time-limit cut
@@ -279,6 +281,8 @@ def main():
     ap.add_argument("--ent", type=float, default=0.01, help="coef on mean normalised entropy of learned heads")
     ap.add_argument("--ent-yaw-mult", type=float, default=1.0,
                     help="extra exploration on the turning (yaw) head: its entropy term is multiplied by this")
+    ap.add_argument("--no-contest", type=float, default=0.0,
+                    help="moving-bot stages: end a round as no-contest (neutral, not counted) if the bot is out of sight this many seconds")
     ap.add_argument("--rehearsal", type=float, default=0.0,
                     help="share of rounds that replay a random EARLIER stage (anti-forgetting; not counted for promotion)")
     ap.add_argument("--vf", type=float, default=0.5)
@@ -362,7 +366,7 @@ def main():
     low_windows = 0
     rewards = dict(aim_shaping=a.aim_shaping, bullet_cost=a.bullet_cost, damage=a.damage_reward, death=a.death_penalty,
                    time_round=a.time_penalty_round, hurt=a.hurt_penalty, gamma=a.gamma, review=a.review_frac,
-                   offtarget=a.offtarget_cost, acquire=a.acquire_bonus, rehearsal=a.rehearsal)
+                   offtarget=a.offtarget_cost, acquire=a.acquire_bonus, rehearsal=a.rehearsal, no_contest=a.no_contest)
     venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, rewards, seed=a.seed * 100)
     N, T = a.envs, a.rollout
 
@@ -380,6 +384,7 @@ def main():
     far = collections.deque(maxlen=a.cur_window)  # distance stages: engagements in the newest band
     win = []      # current non-overlapping promotion window (gate-relevant engagements only)
     reh = collections.deque(maxlen=200)  # rehearsal rounds (earlier stages), tracked separately
+    nc = collections.deque(maxlen=200)   # share of current-stage rounds ended as no-contest
     passes = 0    # consecutive windows that cleared the pass mark
     all_eps = 0
     t0 = time.time()
@@ -441,6 +446,10 @@ def main():
                         e = x[6]
                         if e.get("rehearsal"):
                             reh.append(e); all_eps += 1
+                            continue
+                        nc.append(bool(e.get("no_contest")))
+                        if e.get("no_contest"):  # unwinnable (bot walked out of sight): never counted
+                            all_eps += 1
                             continue
                         eps.append(e)
                         all_eps += 1
@@ -547,6 +556,7 @@ def main():
                        if any(e.get("acquire") is not None for e in E) else None,
                        stage=stage, gate=float(gate), passes=passes, window_fill=len(win),
                        kill_rehearsal=float(np.mean([e["kills"] > 0 for e in reh])) if reh else None,
+                       no_contest_rate=float(np.mean(nc)) if nc else None,
                        **{f"kill_{b}": float(np.mean([e["kills"] > 0 for e in E if band_of(e["dist"]) == b]))
                           for b in ("close", "medium", "long") if any(band_of(e["dist"]) == b for e in E)},
                        **{f"kill_ang_{b}": float(np.mean([e["kills"] > 0 for e in E if angle_band(e.get("offset", 0)) == b]))
