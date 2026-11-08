@@ -87,7 +87,7 @@ class CS16Env(gym.Env):
         self.shaping_gamma = 0.99      # potential-based shaping uses gamma * Phi(s') - Phi(s)
         self.episode_seconds = self.scn.episode_seconds  # can grow with the arena distance
         self._ep_dist = 0.0
-        self.bot_level = 2             # arena: 0 = frozen & passive, 1 = frozen & shoots, 2 = normal
+        self.bot_level = 3             # arena: 0 frozen & passive, 1 moving & passive, 2 frozen & shoots, 3 normal
         self._bot_level_applied = None
         self.arena_max_offset = self.scn.arena_max_offset
         self._obs_queue: collections.deque = collections.deque()
@@ -97,6 +97,9 @@ class CS16Env(gym.Env):
     def _boot(self):
         self.bridge = EngineBridge(self.cfg)
         b = self.bridge
+        # crosshair: the default "auto" size rounds to nothing at 320x240; "large" solid green is the
+        # standard CS crosshair at the same fraction of the screen as on a 1080p monitor (~4-5 px)
+        b.command("cl_crosshair_size large; cl_crosshair_translucent 0; cl_crosshair_color \"50 250 50\"; crosshair 1")
         for c in self.scn.setup_commands():
             b.command(c)
         b.command(f"map {self.scn.map}")
@@ -198,13 +201,13 @@ class CS16Env(gym.Env):
         self.delay_steps = int(round(seconds / (self.tick * self.repeat)))
 
     def set_bot_level(self, level: int):
-        """Arena curriculum: 0 frozen & passive, 1 frozen & shoots, 2 moves & shoots (next reset)."""
+        """Arena curriculum: 0 frozen & passive, 1 moving & passive, 2 frozen & shoots, 3 moving & shoots (next reset)."""
         self.bot_level = int(level)
 
     def _apply_bot_level(self):
         if self._bot_level_applied == self.bot_level:
             return
-        freeze, ignore = {0: (1, 1), 1: (1, 0)}.get(self.bot_level, (0, 0))
+        freeze, ignore = {0: (1, 1), 1: (0, 1), 2: (1, 0)}.get(self.bot_level, (0, 0))
         self.bridge.command(f"yb_freeze_bots {freeze}; yb_ignore_enemies {ignore}")
         self._bot_level_applied = self.bot_level
 

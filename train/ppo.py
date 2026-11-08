@@ -52,7 +52,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
         env.set_bot_level(k["bot"])
         env.episode_seconds = round_seconds(k["dist"])
         env.time_penalty = rewards["time_round"] / (env.episode_seconds / (env.tick * env.repeat))
-        bot_shoots = k["bot"] >= 1
+        bot_shoots = k["bot"] >= 2
         env.rw_death = rewards["death"] if bot_shoots else 0.0
         env.hurt_penalty = rewards["hurt"] if bot_shoots else 0.0
 
@@ -126,18 +126,20 @@ class VecEnv:
 
 # ---------------------------------------------------------------------------------- curriculum
 def round_seconds(max_dist: float) -> float:
-    """4 s up close, growing to 8 s at 2000 units (long-range kills need slow, accurate taps)."""
-    return 4.0 + 4.0 * max(0.0, max_dist - 800.0) / 1200.0
+    """8 s up close (time to miss, correct and still get the kill), growing to 10 s at 2000 units."""
+    return 8.0 + 2.0 * max(0.0, max_dist - 800.0) / 1200.0
 
 
 def curriculum_stages():
-    """Ordered stages. Distance comes LAST: the agent must first master close range against a frozen
-    passive bot, then one that shoots, then a normal bot; then larger initial aim error; then the
-    full 200 ms reaction delay -- all within 800 units. Only then does distance grow, one band at a time."""
-    st, k = [], dict(bot=0, offset=10.0, delay=0.0, dist=800.0)
+    """Ordered stages. Distance comes LAST. Within 800 units the bot gets harder first:
+    frozen & passive -> moving & passive -> frozen & shoots back -> moving & shoots back (each needs an
+    80% kill rate); then larger initial aim error; then the full 200 ms reaction delay. Only then does
+    distance grow, one band at a time (60% on the newest band)."""
+    st, k = [], dict(bot=0, offset=10.0, delay=0.0, dist=800.0, gate=0.8)
     st.append(dict(k))
-    for b in (1, 2):
+    for b in (1, 2, 3):
         k["bot"] = b; st.append(dict(k))
+    k["gate"] = 0.6
     for off in (15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0):
         k["offset"] = off; st.append(dict(k))
     for d in (0.04, 0.08, 0.12, 0.16, 0.20):
@@ -297,7 +299,7 @@ def main():
     stages = curriculum_stages()
     stage = a.stage0
     if resume is not None:
-        stage = resume.get("stage", next((i for i, s_ in enumerate(stages) if s_ == resume.get("knobs")), 0))
+        stage = a.stage0 if a.stage0 else 0  # curriculum layout changed between versions: restart at stage 0
     knobs = dict(stages[stage])
     stage_eps = 0  # engagements played at the current stage
     low_windows = 0
@@ -445,7 +447,7 @@ def main():
             gate = np.mean([e["kills"] > 0 for e in gate_eps]) if gate_eps else 0.0
             if not a.no_curriculum and len(eps) >= a.cur_window:
                 move = 0
-                if len(gate_eps) >= a.cur_window and gate > a.cur_up and stage < len(stages) - 1:
+                if len(gate_eps) >= a.cur_window and gate > stages[stage].get("gate", a.cur_up) and stage < len(stages) - 1:
                     move = +1
                 elif stage > 0 and kr < a.cur_down:
                     low_windows = low_windows + 1 if stage_eps >= a.cur_window * (low_windows + 1) else low_windows

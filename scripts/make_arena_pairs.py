@@ -35,6 +35,12 @@ b = EngineBridge(EngineConfig(maxplayers=2)); b.command("map de_dust2")
 b.wait_until(lambda s: s.in_game, max_steps=100000)
 for _ in range(50):
     b.step()
+# snap every spot to the floor (spots recorded mid-jump/on stairs made placed players drop out of view):
+# trace straight down 300 units from the hull centre; a standing player's origin is floor + 36
+for i, p in enumerate(P):
+    s = b.step(cmd=f"cs2ai_trace 0 {p[0]:.1f} {p[1]:.1f} {p[2]:.1f} {p[0]:.1f} {p[1]:.1f} {p[2]-300:.1f}", capture=False)
+    if 0 <= s.aux[0] < 1:
+        P[i, 2] = p[2] - 300 * s.aux[0] + 36.0
 EYE, good = 17, []
 for i in range(len(P)):
     d = np.linalg.norm(P - P[i], axis=1); ok = np.nonzero((d > 250) & (d < 2000))[0]

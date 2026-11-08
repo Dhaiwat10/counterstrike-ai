@@ -51,3 +51,18 @@ Archived in `checkpoints/_baseline/`.
   snapshot, same seed every time: easy (stage-0 conditions, 60 rounds) and full (normal bot, 200 ms delay,
   30 deg error, up to 2000 units, 150 rounds, per range band). The full exam is the number to trust.
 - Baseline before attempt 4 (aim_bc, 134k steps): easy exam 17% kills; full exam 2% kills, 72% deaths.
+
+## Attempt 5 (current) — resumed from attempt-4 weights at 345k steps
+- **Crosshair was invisible**: the default `cl_crosshair_size auto` draws nothing at 320x240 and it was translucent.
+  Now `large`, solid green (~4-5 px, the same share of the screen as the standard crosshair at 1080p).
+- **Spawn spots snapped to the floor**: 456 of 2,294 spots were mid-air (recorded mid-jump / on stairs); placed players
+  dropped 9-87 units and sometimes out of view. After snapping + re-checking line of sight: 4,438 pairs (3,342 <= 800 u),
+  0/40 drops.
+- **Bot ladder (user's order)**: frozen & passive -> moving & passive -> frozen & shoots -> moving & shoots, 80% kill rate
+  to pass each; then aim error, delay, distance at 60% (21 stages).
+- **8 s rounds** at close range (time to miss, correct and still kill), 10 s at 2000 units; time penalty still -0.5/round.
+- Exams now test the run's current and next stage (full-difficulty exam behind `--full`, pointless for now).
+- First minutes after the switch: aim_bc 41% kills on stage 1 (was ~15% without crosshair / with 4 s rounds).
+- Live dashboard: `.venv/bin/python dashboard/server.py` -> http://127.0.0.1:8050
+- Open question (asked): rounds where a moving bot walks out of sight are unwinnable; proposal = end them as no-contest
+  (line-of-sight check each step) before the runs reach the moving stages; alternative = an aim map (user would supply it).

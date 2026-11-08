@@ -46,7 +46,7 @@ check(deaths == 0, f"passive bot never kills the agent (deaths={deaths} over 6 x
 check(moved == 0, f"frozen bot does not move (moved in {moved}/6 episodes)")
 
 # --- 3. reward accounting with scripted perfect aim (bot passive), bullet cost on
-env.aim_shaping = 0.0; env.bullet_cost = 0.003; env.rw_dmg = 0.01
+env.aim_shaping = 0.0; env.bullet_cost = 0.003; env.rw_dmg = 0.01; env.episode_seconds = 8.0  # training rounds are 8 s
 kills = 0; rets = []; dmg = []
 for ep in range(4):
     env.reset(); b_ = env.bridge; R = 0.0; fired = 0; done = False
@@ -81,9 +81,18 @@ lag_ok = all(np.allclose(labels_obs[t], labels_now[t - env.delay_steps]) for t i
 check(env.delay_steps == 5 and lag_ok, f"aux label lags exactly {env.delay_steps} steps like the frame")
 env.close()
 
-# --- 2. normal bot (level 2) moves and fights back
+# --- 2. moving passive bot (level 1) moves but never shoots; normal bot (level 3) moves and shoots
 env = CS16Env("aim_dust2", reaction_delay=0.0)
-env.set_bot_level(2); env.arena_max_offset = 10; env.arena_max_dist = 800
+env.set_bot_level(1); env.arena_max_offset = 10; env.arena_max_dist = 800
+deaths = moved = 0
+for ep in range(6):
+    env.reset(); s = env.bridge.state; b = bot_slot(s); p0 = np.array(s.players[b].origin); done = False
+    while not done:
+        _, r, term, trunc, info = env.step(NOOP); done = term or trunc
+    deaths += info["deaths"]
+    moved += np.linalg.norm(np.array(env.bridge.state.players[b].origin) - p0) > 16
+check(deaths == 0 and moved >= 2, f"moving passive bot moves but never shoots (deaths={deaths}/6, moved={moved}/6)")
+env.set_bot_level(3); env.arena_max_offset = 10; env.arena_max_dist = 800
 deaths = moved = 0
 for ep in range(8):
     env.reset(); s = env.bridge.state; b = bot_slot(s); p0 = np.array(s.players[b].origin); done = False
