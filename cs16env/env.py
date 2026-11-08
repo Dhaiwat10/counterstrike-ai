@@ -82,6 +82,11 @@ class CS16Env(gym.Env):
         # (potential-based, Phi = -angular error; computed from server state, never observed by the agent)
         self.aim_shaping = 0.0
         self.bullet_cost = 0.0         # training only: reward per step spent holding fire
+        self.time_penalty = 0.0        # training only: reward per agent step until the round ends
+        self.hurt_penalty = 0.0        # training only: reward per HP the agent loses
+        self.shaping_gamma = 0.99      # potential-based shaping uses gamma * Phi(s') - Phi(s)
+        self.episode_seconds = self.scn.episode_seconds  # can grow with the arena distance
+        self._ep_dist = 0.0
         self.bot_level = 2             # arena: 0 = frozen & passive, 1 = frozen & shoots, 2 = normal
         self._bot_level_applied = None
         self.arena_max_offset = self.scn.arena_max_offset
@@ -166,6 +171,7 @@ class CS16Env(gym.Env):
         b = self.bridge
         reward = 0.0
         terminated = False
+        aim0 = self._snap["aim"]
         for i in range(self.repeat):
             s = b.step(dyaw=dyaw, dpitch=dpitch, forward=fwd, side=side, buttons=buttons,
                        capture=(i == self.repeat - 1))
@@ -173,12 +179,17 @@ class CS16Env(gym.Env):
             reward += r
             if (died and self.scn.end_on_death) or (killed and self.scn.end_on_kill):
                 terminated = True
+        if self.aim_shaping:  # potential-based: Phi = -angular error, F = gamma * Phi(s') - Phi(s), per agent step
+            (t0, e0), (t1, e1) = aim0, self._snap["aim"]
+            if t0 is not None and t0 == t1 and abs(e0 - e1) < 90.0:
+                reward += self.aim_shaping * (e0 - self.shaping_gamma * e1)
         if a[4] and self.bullet_cost:
             reward -= self.bullet_cost
+        reward -= self.time_penalty
         frame = b.frame()
         self._obs_queue.append(frame if frame is not None else self._obs_queue[-1])
         self._aux_queue.append(self._aux_label(s))
-        truncated = (s.time - self._ep_start) >= self.scn.episode_seconds and not terminated
+        truncated = (s.time - self._ep_start) >= self.episode_seconds and not terminated
         return self._obs_queue[0], reward, terminated, truncated, self._info(s)
 
     # ------------------------------------------------------------------ curriculum knobs
@@ -227,6 +238,7 @@ class CS16Env(gym.Env):
         if self.np_random.random() < 0.5:
             i, j = j, i
         a, e = P[i], P[j]
+        self._ep_dist = float(np.linalg.norm(e - a))
         d = e - a
         yaw = math.degrees(math.atan2(d[1], d[0]))
         pitch = -math.degrees(math.atan2(d[2], math.hypot(d[0], d[1])))  # engine: positive pitch = down
@@ -278,6 +290,7 @@ class CS16Env(gym.Env):
             "aim": (tgt, err),
             "frags": self._me(s).frags,
             "alive": self._me(s).alive,
+            "myhp": self._me(s).health,
             "hp": {i: p.health for i, p in enumerate(s.players) if p.connected and i != me},
             "alive_others": {i: p.alive for i, p in enumerate(s.players) if p.connected and i != me},
         }
@@ -301,10 +314,8 @@ class CS16Env(gym.Env):
         self._damage += dmg
         self._snap = cur
         r = self.rw_kill * killed - self.rw_death * died + self.rw_dmg * dmg
-        if self.aim_shaping:
-            (t0, e0), (t1, e1) = prev["aim"], cur["aim"]
-            if t0 is not None and t0 == t1 and abs(e0 - e1) < 90.0:
-                r += self.aim_shaping * (e0 - e1)
+        if self.hurt_penalty and prev["alive"]:
+            r -= self.hurt_penalty * max(0, prev["myhp"] - max(cur["myhp"], 0))
         return r, died, killed
 
     def _info(self, s):
@@ -316,5 +327,6 @@ class CS16Env(gym.Env):
             "damage": getattr(self, "_damage", 0),
             "health": me.health,
             "alive": bool(me.alive),
+            "spawn_dist": self._ep_dist,
             "aux": self._aux_queue[0] if getattr(self, "_aux_queue", None) else np.zeros(3, np.float32),
         }

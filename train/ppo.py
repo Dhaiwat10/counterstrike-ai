@@ -44,12 +44,17 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
 
     env = CS16Env(scenario, reaction_delay=knobs["delay"])
     env.aim_shaping, env.bullet_cost, env.rw_dmg = rewards["aim_shaping"], rewards["bullet_cost"], rewards["damage"]
+    env.shaping_gamma = rewards["gamma"]
 
     def set_knobs(k):
         env.arena_max_offset, env.arena_max_dist = k["offset"], k["dist"]
         env.set_reaction_delay(k["delay"])
         env.set_bot_level(k["bot"])
-        env.rw_death = 0.0 if k["bot"] == 0 else rewards["death"]
+        env.episode_seconds = round_seconds(k["dist"])
+        env.time_penalty = rewards["time_round"] / (env.episode_seconds / (env.tick * env.repeat))
+        bot_shoots = k["bot"] >= 1
+        env.rw_death = rewards["death"] if bot_shoots else 0.0
+        env.hurt_penalty = rewards["hurt"] if bot_shoots else 0.0
 
     set_knobs(knobs)
     obs, info = env.reset(seed=seed)
@@ -68,7 +73,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
                 ep, final = None, None
                 if term or trunc:
                     ep = dict(ret=ep_ret, kills=info["kills"], deaths=info["deaths"], damage=info["damage"],
-                              time=info["time"], timeout=bool(trunc))
+                              time=info["time"], timeout=bool(trunc), dist=info["spawn_dist"])
                     ep_ret = 0.0
                     if trunc:
                         final = views(obs)  # bootstrap V(final obs) on a time-limit cut
@@ -117,6 +122,33 @@ class VecEnv:
             p.join(timeout=10)
             if p.is_alive():
                 p.kill()
+
+
+# ---------------------------------------------------------------------------------- curriculum
+def round_seconds(max_dist: float) -> float:
+    """4 s up close, growing to 8 s at 2000 units (long-range kills need slow, accurate taps)."""
+    return 4.0 + 4.0 * max(0.0, max_dist - 800.0) / 1200.0
+
+
+def curriculum_stages():
+    """Ordered stages. Distance comes LAST: the agent must first master close range against a frozen
+    passive bot, then one that shoots, then a normal bot; then larger initial aim error; then the
+    full 200 ms reaction delay -- all within 800 units. Only then does distance grow, one band at a time."""
+    st, k = [], dict(bot=0, offset=10.0, delay=0.0, dist=800.0)
+    st.append(dict(k))
+    for b in (1, 2):
+        k["bot"] = b; st.append(dict(k))
+    for off in (15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0):
+        k["offset"] = off; st.append(dict(k))
+    for d in (0.04, 0.08, 0.12, 0.16, 0.20):
+        k["delay"] = d; st.append(dict(k))
+    for dist in (1050.0, 1300.0, 1550.0, 1800.0, 2000.0):
+        k["dist"] = dist; st.append(dict(k))
+    return st
+
+
+def band_of(dist):
+    return "close" if dist < 600 else "medium" if dist < 1200 else "long"
 
 
 # ---------------------------------------------------------------------------------- math
@@ -202,18 +234,21 @@ def main():
     ap.add_argument("--vf", type=float, default=0.5)
     ap.add_argument("--aux", type=float, default=0.5, help="coef of the auxiliary enemy-location loss (0 = off)")
     ap.add_argument("--aim-shaping", type=float, default=0.03, help="reward per degree of crosshair-to-enemy error removed")
-    ap.add_argument("--bullet-cost", type=float, default=0.003, help="reward per step holding fire (negative)")
+    ap.add_argument("--bullet-cost", type=float, default=0.001, help="reward per step holding fire (negative)")
+    ap.add_argument("--time-penalty-round", type=float, default=0.5,
+                    help="total penalty for a round that runs to the time limit without a kill (spread per step)")
+    ap.add_argument("--hurt-penalty", type=float, default=0.01, help="per HP lost, once the bot can shoot")
     ap.add_argument("--damage-reward", type=float, default=0.01, help="per HP of damage dealt")
     ap.add_argument("--death-penalty", type=float, default=1.0, help="once the bot can shoot (0 while passive)")
     ap.add_argument("--value-warmup", type=int, default=20, help="updates that train only value + aux heads (BC init)")
+    ap.add_argument("--resume", default="", help="continue from a PPO checkpoint (weights, optimiser, curriculum stage)")
+    ap.add_argument("--resume-warmup", type=int, default=5, help="value/aux-only updates after resume (rewards may have changed)")
     ap.add_argument("--hours", type=float, default=8.0)
     ap.add_argument("--max-steps", type=int, default=0, help="stop after this many agent steps (0 = by --hours)")
-    ap.add_argument("--bot0", type=int, default=0)
-    ap.add_argument("--delay0", type=float, default=0.0)
-    ap.add_argument("--offset0", type=float, default=10.0)
-    ap.add_argument("--dist0", type=float, default=800.0)
+    ap.add_argument("--stage0", type=int, default=0, help="curriculum stage to start at")
     ap.add_argument("--cur-window", type=int, default=200)
-    ap.add_argument("--cur-up", type=float, default=0.6)
+    ap.add_argument("--cur-up", type=float, default=0.6, help="kill rate needed to advance (distance stages: on the newest band)")
+    ap.add_argument("--cur-down", type=float, default=0.2, help="step back if kill rate stays below this for 2 windows")
     ap.add_argument("--no-curriculum", action="store_true")
     ap.add_argument("--snapshot-every", type=int, default=25, help="updates")
     ap.add_argument("--seed", type=int, default=0)
@@ -245,18 +280,29 @@ def main():
     else:
         hw, chans, fovea = (120, 160), (32, 64, 64), a.fovea
         model = Policy(in_hw=hw, chans=chans, fovea=fovea)
+    resume = torch.load(a.resume, map_location="cpu") if a.resume else None
+    if resume is not None:
+        ra = resume["args"]
+        hw, chans, fovea = tuple(ra["hw"]), tuple(ra["chans"]), int(ra["fovea"])
+        model = Policy(in_hw=hw, chans=chans, fovea=fovea)
+        model.load_state_dict({k: v.float() for k, v in resume["model"].items()})
     model.to(dev)
     model_args = dict(hw=list(hw), chans=list(chans), fovea=fovea, active_heads=heads)
     opt = torch.optim.Adam(model.parameters(), lr=a.lr, eps=1e-5)
+    if resume is not None and "opt" in resume:
+        opt.load_state_dict(resume["opt"])
     warm_params = list(model.value.parameters()) + list(model.aux.parameters())
     wopt = torch.optim.Adam(warm_params, lr=1e-3)
 
-    knobs = dict(bot=a.bot0, delay=a.delay0, offset=a.offset0, dist=a.dist0)
-    cur_order = ["bot", "offset", "dist", "delay"]
-    cur_max = dict(bot=2, offset=45.0, dist=2000.0, delay=0.20)
-    cur_step = dict(bot=1, offset=5.0, dist=250.0, delay=0.04)
-    cur_i = 0
-    rewards = dict(aim_shaping=a.aim_shaping, bullet_cost=a.bullet_cost, damage=a.damage_reward, death=a.death_penalty)
+    stages = curriculum_stages()
+    stage = a.stage0
+    if resume is not None:
+        stage = resume.get("stage", next((i for i, s_ in enumerate(stages) if s_ == resume.get("knobs")), 0))
+    knobs = dict(stages[stage])
+    stage_eps = 0  # engagements played at the current stage
+    low_windows = 0
+    rewards = dict(aim_shaping=a.aim_shaping, bullet_cost=a.bullet_cost, damage=a.damage_reward, death=a.death_penalty,
+                   time_round=a.time_penalty_round, hurt=a.hurt_penalty, gamma=a.gamma)
     venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, rewards, seed=a.seed * 100)
     N, T = a.envs, a.rollout
 
@@ -271,12 +317,15 @@ def main():
     start_flag = torch.ones(N, device=dev)
 
     eps = collections.deque(maxlen=a.cur_window)
+    far = collections.deque(maxlen=a.cur_window)  # distance stages: engagements in the newest band
     all_eps = 0
     t0 = time.time()
-    steps = 0
-    update = 0
+    steps = resume.get("steps", 0) if resume is not None else 0
+    update = resume.get("update", 0) if resume is not None else 0
+    update0 = update
     emit(dict(event="start", device=str(dev), envs=N, rollout=T, init=a.init, fovea=fovea, heads=heads,
-              knobs=knobs, rewards=rewards, params=sum(p.numel() for p in model.parameters())))
+              knobs=knobs, stage=stage, n_stages=len(stages), resume=a.resume, rewards=rewards,
+              params=sum(p.numel() for p in model.parameters())))
 
     try:
         while True:
@@ -325,8 +374,13 @@ def main():
                 start_flag = TERM[:, t].clone()
                 for x in res:
                     if x[6] is not None:
-                        eps.append(x[6])
+                        e = x[6]
+                        eps.append(e)
                         all_eps += 1
+                        stage_eps += 1
+                        prev_max = stages[stage - 1]["dist"] if stage > 0 else 0.0
+                        if knobs["dist"] > 800.0 and e["dist"] > prev_max:
+                            far.append(e)
             with torch.no_grad():
                 keep = (1.0 - start_flag).view(1, N, 1)
                 _, vlast, _ = model(cur_p[:, None], (state[0] * keep, state[1] * keep),
@@ -341,7 +395,8 @@ def main():
             # ---------------- update
             model.train()
             tu = time.time()
-            warm = bool(a.init) and update < a.value_warmup
+            warm = (bool(a.init) and not a.resume and update < a.value_warmup) or \
+                   (bool(a.resume) and update - update0 < a.resume_warmup)
             stats = collections.defaultdict(list)
             idx = np.arange(N)
             mb = max(1, N // a.minibatches)
@@ -386,16 +441,21 @@ def main():
 
             # ---------------- curriculum
             kr = np.mean([e["kills"] > 0 for e in eps]) if eps else 0.0
-            if not a.no_curriculum and len(eps) >= a.cur_window and kr > a.cur_up:
-                for _ in range(len(cur_order)):
-                    k = cur_order[cur_i % len(cur_order)]
-                    cur_i += 1
-                    if knobs[k] < cur_max[k] - 1e-9:
-                        knobs[k] = round(min(cur_max[k], knobs[k] + cur_step[k]), 3)
-                        venv.set_knobs(knobs)
-                        eps.clear()
-                        emit(dict(event="curriculum", update=update, steps=steps, knobs=dict(knobs)))
-                        break
+            gate_eps = far if knobs["dist"] > 800.0 else eps  # distance stages: judge on the newest band only
+            gate = np.mean([e["kills"] > 0 for e in gate_eps]) if gate_eps else 0.0
+            if not a.no_curriculum and len(eps) >= a.cur_window:
+                move = 0
+                if len(gate_eps) >= a.cur_window and gate > a.cur_up and stage < len(stages) - 1:
+                    move = +1
+                elif stage > 0 and kr < a.cur_down:
+                    low_windows = low_windows + 1 if stage_eps >= a.cur_window * (low_windows + 1) else low_windows
+                    move = -1 if low_windows >= 2 else 0
+                if move:
+                    stage += move
+                    knobs = dict(stages[stage])
+                    venv.set_knobs(knobs)
+                    eps.clear(); far.clear(); stage_eps = 0; low_windows = 0
+                    emit(dict(event="curriculum", update=update, steps=steps, stage=stage, move=move, knobs=dict(knobs)))
 
             el = time.time() - t0
             E = list(eps)
@@ -405,6 +465,9 @@ def main():
                        dmg_per_ep=float(np.mean([e["damage"] for e in E])) if E else 0.0,
                        ret_per_ep=float(np.mean([e["ret"] for e in E])) if E else 0.0,
                        ep_len_s=float(np.mean([e["time"] for e in E])) if E else 0.0,
+                       stage=stage, gate=float(gate),
+                       **{f"kill_{b}": float(np.mean([e["kills"] > 0 for e in E if band_of(e["dist"]) == b]))
+                          for b in ("close", "medium", "long") if any(band_of(e["dist"]) == b for e in E)},
                        fire_frac=fire, expl_var=ev, knobs=dict(knobs), sps=steps / el,
                        roll_s=round(t_roll, 2), upd_s=round(t_upd, 2),
                        **{k: float(np.mean(v)) for k, v in stats.items()})
@@ -412,15 +475,15 @@ def main():
                 emit(rec)
             if update % a.snapshot_every == 0:
                 torch.save(dict(model={k: v.half() if v.is_floating_point() else v for k, v in model.state_dict().items()},
-                                args=model_args, steps=steps, update=update, knobs=dict(knobs)),
+                                args=model_args, steps=steps, update=update, knobs=dict(knobs), stage=stage),
                            out / "snapshots" / f"update_{update:06d}.pt")
                 torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), args=model_args, steps=steps,
-                                update=update, knobs=dict(knobs)), out / "last.pt")
+                                update=update, knobs=dict(knobs), stage=stage), out / "last.pt")
             if (a.max_steps and steps >= a.max_steps) or el > a.hours * 3600:
                 break
     finally:
-        torch.save(dict(model=model.state_dict(), args=model_args, steps=steps, update=update, knobs=dict(knobs)),
-                   out / "last.pt")
+        torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), args=model_args, steps=steps, update=update,
+                        knobs=dict(knobs), stage=stage), out / "last.pt")
         emit(dict(event="done", steps=steps, updates=update, episodes=all_eps, knobs=dict(knobs)))
         venv.close()
 

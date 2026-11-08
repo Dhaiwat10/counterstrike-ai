@@ -26,7 +26,7 @@ found, and we verified:
    (~0.1/episode), firing was free, no direct visual supervision.
 Archived in `checkpoints/_baseline/`.
 
-## Attempt 3 (current) — fixes
+## Attempt 3 — fixes (ran ~0.2M steps, then resumed as attempt 4)
 - Timeouts bootstrap V(final observation); only kills/deaths end the return (unit-tested, `tests/test_ppo_math.py`).
 - Only yaw, pitch and fire are learned in the arena; other heads fixed to "no input".
 - Entropy = mean over learned heads of entropy / log(options), coef 0.01.
@@ -36,3 +36,18 @@ Archived in `checkpoints/_baseline/`.
   server state, delayed in lockstep with the frame).
 - Env integration checks: `tests/test_arena_env.py` (frozen bot never moves/shoots, normal bot does,
   scripted perfect aim kills, labels lag exactly like frames).
+
+## Attempt 4 (current) — incentive review, resumed from attempt-3 weights at ~208k steps
+- **Idling was the safest choice**: after the timeout fix a round that ran out was worth 0 while missing
+  cost bullets, so firing fell from 16% to 5% of steps. Added a time penalty spread per step so a full round
+  without a kill totals -0.5 (scaled with round length); bullet cost cut 0.003 -> 0.001.
+- Penalty for HP lost (-0.01/HP) once the bot can shoot; death -1 stays worse than a full round of time penalty.
+- Shaping now textbook potential-based: F = gamma * Phi(s') - Phi(s), per agent step.
+- **Curriculum is staged, distance last** (`train/ppo.py: curriculum_stages`, 20 stages): at <=800 units
+  first bot frozen&passive -> frozen&shoots -> normal; then aim error 10 -> 45 deg; then reaction delay
+  0 -> 200 ms; only then distance 800 -> 2000 in 250-unit bands, each gated on a 60% kill rate *in the newest band*.
+  Rounds grow from 4 s to 8 s with distance. Steps back a stage after 2 windows below 20%.
+- **Fixed exam** (`train/eval_suite.py`, results in `results/phase3/exam_<run>.jsonl`), every 30 min on the newest
+  snapshot, same seed every time: easy (stage-0 conditions, 60 rounds) and full (normal bot, 200 ms delay,
+  30 deg error, up to 2000 units, 150 rounds, per range band). The full exam is the number to trust.
+- Baseline before attempt 4 (aim_bc, 134k steps): easy exam 17% kills; full exam 2% kills, 72% deaths.
