@@ -1,0 +1,16 @@
+# Valve game content + built binaries live here; never commit
+game/
+game-dev/
+
+# vendored upstream sources (pinned in third_party/PINNED.md, our changes in patches/)
+third_party/*/
+
+# data / checkpoints (demos are third-party content; labels are derived)
+data/
+checkpoints/
+*.h5
+*.npz
+
+__pycache__/
+.venv/
+.DS_Store

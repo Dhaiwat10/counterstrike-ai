@@ -1,0 +1,353 @@
+diff --git a/engine/client/cl_main.c b/engine/client/cl_main.c
+index 39e4f9c..7fbc899 100644
+--- a/engine/client/cl_main.c
++++ b/engine/client/cl_main.c
+@@ -3894,6 +3894,12 @@ void Host_ClientBegin( void )
+ 	SteamBroker_Frame();
+ }
+ 
++// cs2-ai: for host_lockstep_report
++double CL_LockstepTime( void )
++{
++	return cl.time;
++}
++
+ /*
+ ==================
+ Host_ClientFrame
+diff --git a/engine/client/cl_view.c b/engine/client/cl_view.c
+index b428096..eb2f92c 100644
+--- a/engine/client/cl_view.c
++++ b/engine/client/cl_view.c
+@@ -332,7 +332,8 @@ qboolean V_PreRender( void )
+ 	if( !ref.initialized )
+ 		return false;
+ 
+-	if( host.status == HOST_SLEEP )
++	// cs2-ai: keep rendering a minimized window in lockstep mode
++	if( host.status == HOST_SLEEP && !Host_IsLockstep( ))
+ 		return false;
+ 
+ 	// if the screen is disabled (loading plaque is up)
+diff --git a/engine/client/dll_int/cl_game.c b/engine/client/dll_int/cl_game.c
+index 495245d..6c5de0c 100644
+--- a/engine/client/dll_int/cl_game.c
++++ b/engine/client/dll_int/cl_game.c
+@@ -3882,7 +3882,7 @@ static cl_enginefunc_t gEngfuncs =
+ 	pfnIsCareerMatch,
+ 	pfnPlaySoundVoiceByName,
+ 	pfnMP3_InitStream,
+-	Sys_DoubleTime,
++	Sys_GameDoubleTime, // cs2-ai: GetAbsoluteTime, game clock in lockstep
+ 	pfnProcessTutorMessageDecayBuffer,
+ 	pfnConstructTutorMessageDecayBuffer,
+ 	pfnResetTutorMessageDecayData,
+diff --git a/engine/client/dll_int/cl_pmove.c b/engine/client/dll_int/cl_pmove.c
+index 9ca1f79..ba24fe2 100644
+--- a/engine/client/dll_int/cl_pmove.c
++++ b/engine/client/dll_int/cl_pmove.c
+@@ -745,7 +745,7 @@ void CL_InitClientMove( void )
+ 	clgame.pmove->Con_NPrintf = Con_NPrintf;
+ 	clgame.pmove->Con_DPrintf = Con_DPrintf;
+ 	clgame.pmove->Con_Printf = Con_Printf;
+-	clgame.pmove->Sys_FloatTime = Sys_DoubleTime;
++	clgame.pmove->Sys_FloatTime = Sys_GameDoubleTime;
+ 	clgame.pmove->PM_StuckTouch = pfnStuckTouch;
+ 	clgame.pmove->PM_PointContents = (void*)PM_CL_PointContents;
+ 	clgame.pmove->PM_TruePointContents = pfnTruePointContents;
+diff --git a/engine/common/common.h b/engine/common/common.h
+index 8d471f1..3e33e60 100644
+--- a/engine/common/common.h
++++ b/engine/common/common.h
+@@ -873,6 +873,15 @@ static inline connprotocol_t CL_Protocol( void )
+ }
+ #endif
+ 
++// cs2-ai: true when host_framerate lockstep mode is active (see host.c)
++qboolean Host_IsLockstep( void );
++double SV_LockstepTime( void );
++#if !XASH_DEDICATED
++double CL_LockstepTime( void );
++#else
++static inline double CL_LockstepTime( void ) { return 0.0; }
++#endif
++
+ // true in singleplayer only but not specific to local game
+ static inline qboolean Host_IsSinglePlayerGame( void )
+ {
+diff --git a/engine/common/host.c b/engine/common/host.c
+index 8b43cfc..7c4d55f 100644
+--- a/engine/common/host.c
++++ b/engine/common/host.c
+@@ -77,6 +77,9 @@ CVAR_DEFINE_AUTO( host_limitlocal, "0", 0, "apply cl_cmdrate and rate to loopbac
+ CVAR_DEFINE( host_maxfps, "fps_max", "72", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "host fps upper limit" );
+ CVAR_DEFINE_AUTO( fps_override, "0", FCVAR_FILTERABLE, "unlock higher framerate values, not supported" );
+ static CVAR_DEFINE_AUTO( host_framerate, "0", FCVAR_FILTERABLE, "locks frame timing to this value in seconds" );
++// cs2-ai: lockstep mode (see patches/LOCKSTEP.md)
++static CVAR_DEFINE_AUTO( host_lockstep, "1", FCVAR_FILTERABLE, "when host_framerate > 0: every loop iteration is exactly one host_framerate tick (server tick + client frame + render), no fps cap, no sleeping" );
++static CVAR_DEFINE_AUTO( host_lockstep_report, "0", 0, "if > 0, print lockstep loop speed (frames per wall-second, game-speed multiple) every N wall-seconds" );
+ static CVAR_DEFINE( host_sleeptime, "sleeptime", "1", FCVAR_ARCHIVE|FCVAR_FILTERABLE, "milliseconds to sleep for each frame. higher values reduce fps accuracy" );
+ static CVAR_DEFINE_AUTO( host_sleeptime_debug, "0", 0, "print sleeps between frames" );
+ CVAR_DEFINE_AUTO( host_allow_materials, "0", FCVAR_LATCH|FCVAR_ARCHIVE, "allow texture replacements from materials/ folder" );
+@@ -625,11 +628,101 @@ Host_FilterTime
+ Returns false if the time is too short to run a frame
+ ===================
+ */
++qboolean Host_IsLockstep( void )
++{
++	if( host_framerate.value <= 0.0f || !host_lockstep.value )
++		return false;
++
++	// demos must be played back and recorded with the stock timing
++	if( !Host_IsDedicated( ) && ( CL_IsPlaybackDemo( ) || CL_IsRecordDemo( )))
++		return false;
++
++	return true;
++}
++
++/*
++===================
++Host_LockstepReport
++
++cs2-ai: periodically print how fast the lockstep loop runs
++===================
++*/
++static void Host_LockstepReport( void )
++{
++	static double walltime, gametime, svtime, cltime;
++	static int frames;
++	double now;
++
++	if( host_lockstep_report.value <= 0.0f || !Host_IsLockstep( ))
++	{
++		walltime = 0.0;
++		return;
++	}
++
++	// only count frames that actually simulate + draw the game
++	if( !CL_IsInGame( ) || !SV_Active( ))
++	{
++		walltime = 0.0;
++		return;
++	}
++
++	now = Platform_DoubleTime();
++
++	if( walltime == 0.0 )
++	{
++		walltime = now;
++		gametime = host.realtime;
++		svtime = SV_LockstepTime();
++		cltime = CL_LockstepTime();
++		frames = 0;
++		return;
++	}
++
++	frames++;
++
++	if( now - walltime >= host_lockstep_report.value )
++	{
++		double dt = now - walltime;
++		double fps = frames / dt;
++
++		Con_Printf( "lockstep: %d frames in %.2fs wall = %.1f fps, game %.2fs -> %.2fx realtime (tick %.4f; sv.time +%.2f cl.time +%.2f, cl-sv %+.3f)\n",
++			frames, dt, fps, host.realtime - gametime, ( host.realtime - gametime ) / dt, host_framerate.value,
++			SV_LockstepTime() - svtime, CL_LockstepTime() - cltime, Host_IsDedicated() ? 0.0 : CL_LockstepTime() - SV_LockstepTime( ));
++
++		walltime = now;
++		gametime = host.realtime;
++		svtime = SV_LockstepTime();
++		cltime = CL_LockstepTime();
++		frames = 0;
++	}
++}
++
+ static qboolean Host_FilterTime( double time )
+ {
+ 	static double	oldtime;
+ 	double scale = sys_timescale.value;
+ 
++	// cs2-ai: lockstep mode for RL. Every loop iteration advances the game
++	// by exactly one fixed tick of host_framerate seconds with no fps cap and
++	// no sleeping, for dedicated and listen servers alike. host.realtime
++	// becomes game time, so everything keyed off it (cl.time, sv.time, netchan,
++	// interpolation, prediction, cmd/update rates) stays consistent.
++	if( Host_IsLockstep( ))
++	{
++#if !XASH_DEDICATED
++		if( !Host_IsDedicated( ) && gl_vsync.value )
++		{
++			Con_Printf( "lockstep: disabling gl_vsync\n" );
++			Cvar_SetValue( "gl_vsync", 0.0f );
++		}
++#endif
++		host.frametime = host_framerate.value;
++		host.realframetime = host.frametime;
++		host.realtime += host.frametime;
++		oldtime = host.realtime;
++		return true;
++	}
++
+ 	host.realtime += time * scale;
+ 	double dt = host.realtime - oldtime;
+ 
+@@ -677,6 +770,8 @@ void Host_Frame( double time )
+ 
+ 	host.framecount++;
+ 	host.pureframetime = Platform_DoubleTime() - t1;
++
++	Host_LockstepReport();
+ }
+ 
+ /*
+@@ -1211,6 +1306,8 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
+ 	Cvar_RegisterVariable( &host_maxfps );
+ 	Cvar_RegisterVariable( &fps_override );
+ 	Cvar_RegisterVariable( &host_framerate );
++	Cvar_RegisterVariable( &host_lockstep );
++	Cvar_RegisterVariable( &host_lockstep_report );
+ 	Cvar_RegisterVariable( &host_sleeptime );
+ 	Cvar_RegisterVariable( &host_sleeptime_debug );
+ 	Cvar_RegisterVariable( &host_gameloaded );
+diff --git a/engine/common/system.c b/engine/common/system.c
+index 76902a5..82e4f20 100644
+--- a/engine/common/system.c
++++ b/engine/common/system.c
+@@ -67,6 +67,23 @@ double GAME_EXPORT Sys_DoubleTime( void )
+ 	return Platform_DoubleTime();
+ }
+ 
++/*
++================
++Sys_GameDoubleTime
++
++cs2-ai: absolute time handed to game/client dlls (pmove->Sys_FloatTime,
++GetAbsoluteTime). In lockstep mode the wall clock runs at a different rate
++than the game, so return game time to keep e.g. PM_CheckStuck rate limits
++deterministic.
++================
++*/
++double GAME_EXPORT Sys_GameDoubleTime( void )
++{
++	if( Host_IsLockstep( ))
++		return host.realtime;
++	return Platform_DoubleTime();
++}
++
+ /*
+ ===============
+ Sys_FloatTime
+diff --git a/engine/common/system.h b/engine/common/system.h
+index ef6270f..37d1ddb 100644
+--- a/engine/common/system.h
++++ b/engine/common/system.h
+@@ -52,7 +52,8 @@ typedef struct dll_info_s
+ 
+ extern int error_on_exit;
+ double GAME_EXPORT Sys_DoubleTime( void ); // only for binary compatibility, use Platform_DoubleTime instead
+-float GAME_EXPORT Sys_FloatTime( void ); // only for binary compatibility, use Platform_DoubleTime instead
++float GAME_EXPORT Sys_FloatTime( void );
++double GAME_EXPORT Sys_GameDoubleTime( void ); // cs2-ai: game clock in lockstep mode, wall clock otherwise // only for binary compatibility, use Platform_DoubleTime instead
+ double Sys_GetCPUUsage( void ); // process CPU usage as fraction of one core, 0.0 if unsupported
+ char *Sys_GetClipboardData( void );
+ const char *Sys_GetCurrentUser( void );
+diff --git a/engine/platform/sdl2/vid_sdl2.c b/engine/platform/sdl2/vid_sdl2.c
+index f9f4bce..a9065d9 100644
+--- a/engine/platform/sdl2/vid_sdl2.c
++++ b/engine/platform/sdl2/vid_sdl2.c
+@@ -191,6 +191,25 @@ void *SW_LockBuffer( void )
+ 
+ void SW_UnlockBuffer( void )
+ {
++	// cs2-ai: -nopresent renders the software framebuffer but never shows it
++	// on screen. Presenting through the macOS compositor is paced at the
++	// display refresh rate (or ~120 Hz for hidden windows), which dominated
++	// the frame time. Screenshots / framebuffer reads still work.
++	static int nopresent = -1;
++	if( nopresent < 0 )
++		nopresent = Sys_CheckParm( "-nopresent" ) ? 1 : 0;
++
++	if( nopresent )
++	{
++		if( sw.renderer )
++			SDL_UnlockTexture( sw.tex );
++		else if( sw.surf )
++			SDL_UnlockSurface( sw.surf );
++		else
++			SDL_UnlockSurface( sw.win );
++		return;
++	}
++
+ 	if( sw.renderer )
+ 	{
+ 		SDL_Rect src =
+@@ -669,9 +688,23 @@ static rserr_t VID_CreateWindow( const int input_width, const int input_height,
+ 
+ 	// TODO: disabled for Windows for now
+ #if !XASH_WIN32
+-	SetBits( flags, SDL_WINDOW_ALLOW_HIGHDPI );
++	// cs2-ai: -nohighdpi renders at exactly width x height pixels on Retina
++	if( !Sys_CheckParm( "-nohighdpi" ))
++		SetBits( flags, SDL_WINDOW_ALLOW_HIGHDPI );
+ #endif // !XASH_WIN32
+ 
++	// cs2-ai: the software renderer presents through an SDL window surface
++	// whose (Metal) renderer vsyncs by default under sdl2-compat/SDL3, capping
++	// fps at the display refresh rate. Stock soft renderer has no vsync option
++	// and config isn't loaded yet here, so default it off (the SDL_RENDER_VSYNC
++	// environment variable still overrides this).
++	if( glw_state.software )
++		SDL_SetHint( SDL_HINT_RENDER_VSYNC, "0" );
++
++	// cs2-ai: -offscreen places the window outside the visible desktop
++	if( Sys_CheckParm( "-offscreen" ))
++		rect.x = rect.y = -16000;
++
+ 	if( !glw_state.software )
+ 		SetBits( flags, SDL_WINDOW_OPENGL );
+ 
+@@ -698,8 +731,12 @@ static rserr_t VID_CreateWindow( const int input_width, const int input_height,
+ 	}
+ 
+ 	VID_SetWindowIcon( host.hWnd );
+-	SDL_ShowWindow( host.hWnd );
+-	SDL_RaiseWindow( host.hWnd );
++	// cs2-ai: -hiddenwindow never shows the window (for headless-ish rendering)
++	if( !Sys_CheckParm( "-hiddenwindow" ))
++	{
++		SDL_ShowWindow( host.hWnd );
++		SDL_RaiseWindow( host.hWnd );
++	}
+ 
+ 	if( glw_state.software )
+ 	{
+diff --git a/engine/server/sv_main.c b/engine/server/sv_main.c
+index 985e438..f57e751 100644
+--- a/engine/server/sv_main.c
++++ b/engine/server/sv_main.c
+@@ -672,6 +672,12 @@ static void SV_UpdateStatusLine( void )
+ #endif // XASH_PLATFORM_HAVE_STATUS
+ }
+ 
++// cs2-ai: for host_lockstep_report
++double SV_LockstepTime( void )
++{
++	return sv.time;
++}
++
+ /*
+ ==================
+ Host_ServerFrame
+diff --git a/engine/server/sv_pmove.c b/engine/server/sv_pmove.c
+index f146b9f..496f9ce 100644
+--- a/engine/server/sv_pmove.c
++++ b/engine/server/sv_pmove.c
+@@ -462,7 +462,7 @@ void SV_InitClientMove( void )
+ 	svgame.pmove->Con_NPrintf = Con_NPrintf;
+ 	svgame.pmove->Con_DPrintf = Con_DPrintf;
+ 	svgame.pmove->Con_Printf = Con_Printf;
+-	svgame.pmove->Sys_FloatTime = Sys_DoubleTime;
++	svgame.pmove->Sys_FloatTime = Sys_GameDoubleTime;
+ 	svgame.pmove->PM_StuckTouch = pfnStuckTouch;
+ 	svgame.pmove->PM_PointContents = pfnPointContents;
+ 	svgame.pmove->PM_TruePointContents = pfnTruePointContents;
