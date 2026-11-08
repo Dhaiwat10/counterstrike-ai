@@ -104,7 +104,11 @@ def main():
         t_end = ct[-1] if not a.max_seconds else min(ct[-1], s.time + a.max_seconds)
         k = 0
         last_time = s.time
+        stuck = 0  # consecutive ticks without the demo clock advancing
         while s.demoplayback and last_time < t_end:
+            if stuck > 1000:  # 10 s of game time frozen: playback hung (seen on zeus_vs_mtw); keep what we have
+                print(f"  playback stalled at match t={last_time:.1f}/{t_end:.0f}; saving partial dataset", flush=True)
+                break
             # predict the clock of the frame about to be rendered and force the parsed view
             t_next = last_time + tick
             i = max(0, bisect.bisect_right(ct, t_next) - 1)
@@ -113,7 +117,9 @@ def main():
             k += 1
             if s.time <= last_time:  # demo not advancing (loading / between segments)
                 last_time = s.time
+                stuck += 1
                 continue
+            stuck = 0
             last_time = s.time
             if not (capture and s.frame_valid):
                 continue
@@ -142,7 +148,7 @@ def main():
     np.savez_compressed(out / "data.npz", offsets=np.array(offs, np.int64), lengths=np.array(lens, np.int32),
                         labels=L, label_names=np.array(LABELS))
     meta = dict(source=str(src), map=hdr.map_name, width=a.width, height=a.height, every_ticks=a.every,
-                hz=1.0 / (tick * a.every), frames=len(L), match_seconds=float(L[-1, 0] - L[0, 0]) if len(L) else 0,
+                hz=1.0 / (tick * a.every), frames=len(L), stalled=bool(stuck > 1000), match_seconds=float(L[-1, 0] - L[0, 0]) if len(L) else 0,
                 wall_seconds=time.time() - t_wall, jpeg_quality=a.quality, labels=LABELS)
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
     xdemo.unlink(missing_ok=True)
