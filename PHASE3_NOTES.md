@@ -90,3 +90,9 @@ Archived in `checkpoints/_baseline/`.
   per step (creeping 30 deg over 20 steps ~ -0.5, snapping ~ -0.05) and a fast-acquisition bonus of 0.3 x max(0, 1 - t/1 s)
   the first time the crosshair is within 3 deg. Offline check on the same spawns: snapper +0.26 vs creeper -0.63.
   Applied at stage 9 from 2.85M steps; tracking `acquire_time_med` (baseline 0.84 s) on the dashboard.
+- **Why flicks don't come back (diagnosis, 2026-11-09 ~01:30):** in the first 10 decisions of every stage-9 round the agent
+  never turns more than 4 deg/step (0 of 1,000 decisions use the 8-48 deg/step bins). The policy's probability of a big
+  turn (>= 8 deg/step) at round start: imitation model 10.4%, RL agent 0.1% -- RL trained flicking out (likely early,
+  when random big turns mostly lost the target), so the flick rewards rarely get sampled. Matched comparison on identical
+  spawns: acquisition on already-won rounds 0.62 -> 0.60 s; overshoot unchanged (22% -> 21%). Options: per-head exploration
+  bonus on yaw, KL-to-imitation-prior on the yaw head, or forced big-turn exploration.

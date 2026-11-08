@@ -18,6 +18,7 @@ import numpy as np
 
 from cs16env import CS16Env
 from train.eval_agent import TorchAgent
+from cs16env.env import YAW_TABLE
 from train.ppo import curriculum_stages, round_seconds
 
 
@@ -41,12 +42,15 @@ def run(snapshot, stage, rounds, seed=777):
             t = 0; done = False
             flick_t = None; min_err = err0; overshoot = False; shots = 0; hits = 0
             first_dmg_dealt = first_dmg_taken = None; prev_dmg = 0
+            turns = []  # |yaw| chosen per decision (deg per 40 ms step), first 10 decisions
             while not done:
                 a = agent.act(obs)
                 obs, r, term, trunc, info = env.step(a)
                 t += 1; done = term or trunc
                 tgt, err = env._aim_error(env.bridge.state)
                 shots += int(a[4])
+                if len(turns) < 10:
+                    turns.append(abs(float(YAW_TABLE[a[0]])))
                 if info["damage"] > prev_dmg:
                     hits += 1
                     first_dmg_dealt = first_dmg_dealt or t * 0.04
@@ -64,7 +68,8 @@ def run(snapshot, stage, rounds, seed=777):
                 time=round(info["time"], 2), start_err=round(float(err0 or 0), 1), dist=round(info["spawn_dist"]),
                 flick_time=flick_t, min_err=round(float(min_err or 0), 1), overshoot=overshoot,
                 shots=shots, hits=hits, damage=info["damage"],
-                first_dmg_dealt=first_dmg_dealt, first_dmg_taken=first_dmg_taken))
+                first_dmg_dealt=first_dmg_dealt, first_dmg_taken=first_dmg_taken, turns=turns,
+                first_big_turn=next((i for i, x in enumerate(turns) if x >= 8.0), None)))
             obs, info = env.reset()
     finally:
         env.close()
@@ -87,6 +92,11 @@ def summarize(rows):
         deaths_never_on_target=sum(1 for r in deaths if r["flick_time"] is None) / max(1, len(deaths)),
         timeouts_never_on_target=sum(1 for r in O["timeout"] if r["flick_time"] is None) / max(1, len(O["timeout"])),
         kill_time_median=float(np.median([r["time"] for r in O["kill"]])) if O["kill"] else None,
+        big_turn_share_first10=float(np.mean([x >= 16.0 for r in rows for x in r["turns"]])),
+        max_turn_first10_median=float(np.median([max(r["turns"]) for r in rows if r["turns"]])),
+        decisions_to_first_turn_8deg_median=float(np.median([r["first_big_turn"] for r in rows if r["first_big_turn"] is not None]))
+        if any(r["first_big_turn"] is not None for r in rows) else None,
+        never_turned_8deg_in_first10=float(np.mean([r["first_big_turn"] is None for r in rows])),
     )
     for lo, hi in ((0, 30), (30, 99)):
         sub = [r for r in rows if lo <= r["start_err"] < hi]
