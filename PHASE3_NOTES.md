@@ -117,3 +117,10 @@ Archived in `checkpoints/_baseline/`.
   (>= 16 deg/step: 0.07% -> 1.0%); median time to get on target 0.84 -> 0.60 s; KL(prior||policy) 3.0 -> 0.46.
   Agent at stage 13 (80 ms delay), 5.2M steps. (The app restarted the session twice overnight; that only ends the
   background watcher/timer helpers -- training, exams and dashboard are separate processes and kept running.)
+- **Stage-13 plateau diagnosis (06:30, 80 ms delay, 5.7M steps):** exams 31/37/35/38% over ~2 h. Flicking is back
+  (gets on target in 86% of rounds, median 0.52 s, first big turn on decision 1) but **overshoot jumped to 66%** (was 22%)
+  and hits per firing step fell to 9% (was 21%); worse from small starting angles (29% <30 deg vs 43% >=30 deg) -- the
+  KL pull favours big turns even when a small correction is needed, and with delayed frames the agent can't see it has
+  arrived. Decision: no change yet; the KL weight is decaying on schedule (floor at ~6.17M steps), letting RL learn when to
+  flick vs fine-tune. Re-diagnose ~08:00; if overshoot isn't falling, end/weaken the KL pull earlier.
+  (diagnose.py now skips no-contest rounds like training.)

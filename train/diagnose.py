@@ -30,11 +30,13 @@ def run(snapshot, stage, rounds, seed=777):
     env.arena_review_frac = 0.0
     env.episode_seconds = round_seconds(st["dist"])
     env.aim_shaping = 1e-9  # turn on aim-error tracking in snapshots (reward effect negligible)
+    env.no_contest_after = 0.5 if st["bot"] == 3 else 0.0  # like training: unwinnable rounds are skipped
     agent = TorchAgent(snapshot, temperature=1.0)
     rows = []
     obs, info = env.reset(seed=seed)
     try:
-        for _ in range(rounds):
+        skipped = 0
+        while len(rows) < rounds and skipped < rounds:
             agent.reset()
             s = env.bridge.state
             _, err0 = env._aim_error(s)
@@ -63,6 +65,10 @@ def run(snapshot, stage, rounds, seed=777):
                     if flick_t is not None and err > min_err + 5.0:
                         overshoot = True
                     min_err = min(min_err, err)
+            if info.get("no_contest"):
+                skipped += 1
+                obs, info = env.reset()
+                continue
             rows.append(dict(
                 outcome="kill" if info["kills"] else "death" if info["deaths"] else "timeout",
                 time=round(info["time"], 2), start_err=round(float(err0 or 0), 1), dist=round(info["spawn_dist"]),
