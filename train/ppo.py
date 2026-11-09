@@ -173,7 +173,7 @@ def curriculum_stages():
     k["offset_min"] = 15.0  # distance, mastery and delay stages: realistic 15-45 deg mix
     # pass marks ~70% of a scripted perfect-aim ceiling measured per band (tapping, 0 ms, vs moving bot that shoots
     # back; 2026-11-09): 800-1050 88%, 1050-1300 68%, 1300-1550 42%, 1550-1800 35%, 1800-2000 18%, mix 0-2000 78%
-    for dist, gate in ((1050.0, 0.60), (1300.0, 0.48), (1550.0, 0.29), (1800.0, 0.25), (2000.0, 0.13)):
+    for dist, gate in ((1050.0, 0.50), (1300.0, 0.48), (1550.0, 0.29), (1800.0, 0.25), (2000.0, 0.13)):
         k["dist_min"] = k["dist"]; k["dist"] = dist; k["gate"] = gate; st.append(dict(k))  # half the rounds from the newest band
     k["dist_min"] = 0.0
     k["gate"] = 0.55; st.append(dict(k))  # mastery: 2000 units, 0 ms, all rounds (~70% of the 78% ceiling)

@@ -146,3 +146,8 @@ Archived in `checkpoints/_baseline/`.
   10% hits, bot hits first in 70% of deaths** (ceiling 88%) -> the long-range gap is precision / fire control, not
   acquisition (a 3-degree "on target" is wider than the bot at 1000 u). Band windows flat ~19-31% since 13:45. If still
   flat at the next diagnosis: distance-scaled precision shaping and/or stronger tap-fire incentives at range.
+- **Stage-12 pass mark lowered 60% -> 50% (user, ~16:35):** the 88% perfect-aim ceiling ignores perception -- the scripted
+  aimer reads server positions, while the agent must find a bot that is ~10 px tall in its 320x240 fovea (~5 px in the
+  160x120 periphery) at 1000 units (a human at 1080p sees ~45 px). Band windows had sat at 23-29% for ~2.5 h while
+  close/medium range kept improving (exam 75%, medium 62%). Resolution is the real long-range fix -> likely a retrain at
+  higher resolution on the 5080.
