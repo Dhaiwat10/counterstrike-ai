@@ -38,13 +38,13 @@ LOGN = torch.tensor([math.log(n) for n in NVEC])
 
 
 # ---------------------------------------------------------------------------------- workers
-def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
+def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), prior_scale=0.0):
     import signal
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # only the main process handles stop signals; it closes us via "close"
     from cs16env import CS16Env
     from cs16env.vision import views_from_frame
 
-    env = CS16Env(scenario, reaction_delay=knobs["delay"])
+    env = CS16Env(scenario, width=res[0], height=res[1], reaction_delay=knobs["delay"])
     env.aim_shaping, env.bullet_cost, env.rw_dmg = rewards["aim_shaping"], rewards["bullet_cost"], rewards["damage"]
     env.shaping_gamma = rewards["gamma"]
     env.offtarget_cost, env.acquire_bonus = rewards.get("offtarget", 0.0), rewards.get("acquire", 0.0)
@@ -81,7 +81,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
     obs, info = env.reset(seed=seed)
 
     def views(o):
-        return views_from_frame(o, hw, fovea)
+        return views_from_frame(o, hw, fovea, extra_scale=prior_scale)
 
     remote.send((views(obs), info["aux"]))
     ep_ret = 0.0
@@ -114,12 +114,12 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
 
 
 class VecEnv:
-    def __init__(self, n, scenario, hw, fovea, knobs, rewards, seed=0):
+    def __init__(self, n, scenario, hw, fovea, knobs, rewards, seed=0, res=(320, 240), prior_scale=0.0):
         ctx = mp.get_context("spawn")
         self.remotes, self.procs = [], []
         for i in range(n):
             a, b = ctx.Pipe()
-            p = ctx.Process(target=_worker, args=(b, scenario, seed + i, hw, fovea, dict(knobs), rewards), daemon=True)
+            p = ctx.Process(target=_worker, args=(b, scenario, seed + i, hw, fovea, dict(knobs), rewards, tuple(res), prior_scale), daemon=True)
             p.start()
             self.remotes.append(a)
             self.procs.append(p)
@@ -281,6 +281,7 @@ def main():
     ap.add_argument("--scenario", default="aim_dust2")
     ap.add_argument("--init", default="", help="imitation checkpoint to start from (else random init)")
     ap.add_argument("--fovea", type=int, default=80, help="used when --init is not given")
+    ap.add_argument("--res", default="", help="render resolution WxH (default: the resumed run's, else 320x240)")
     ap.add_argument("--heads", default="yaw,pitch,attack", help="heads to learn; others fixed to no-input")
     ap.add_argument("--envs", type=int, default=6)
     ap.add_argument("--rollout", type=int, default=128)
@@ -322,7 +323,7 @@ def main():
     ap.add_argument("--resume-warmup", type=int, default=5, help="value/aux-only updates after resume (rewards may have changed)")
     ap.add_argument("--hours", type=float, default=8.0)
     ap.add_argument("--max-steps", type=int, default=0, help="stop after this many agent steps (0 = by --hours)")
-    ap.add_argument("--stage0", type=int, default=0, help="curriculum stage to start at")
+    ap.add_argument("--stage0", type=int, default=-1, help="curriculum stage index to start at (0 = stage 1; default: resumed stage, else 0)")
     ap.add_argument("--cur-window", type=int, default=200)
     ap.add_argument("--cur-up", type=float, default=0.6, help="kill rate needed to advance (distance stages: on the newest band)")
     ap.add_argument("--cur-down", type=float, default=0.2, help="step back if kill rate stays below this for 2 windows")
@@ -369,7 +370,13 @@ def main():
         model = Policy(in_hw=hw, chans=chans, fovea=fovea)
         model.load_state_dict({k: v.float() for k, v in resume["model"].items()})
     model.to(dev)
-    model_args = dict(hw=list(hw), chans=list(chans), fovea=fovea, active_heads=heads)
+    if a.res:
+        res = tuple(int(x) for x in a.res.lower().split("x"))
+    elif resume is not None and "res" in resume["args"]:
+        res = tuple(resume["args"]["res"])
+    else:
+        res = (320, 240)
+    model_args = dict(hw=list(hw), chans=list(chans), fovea=fovea, active_heads=heads, res=list(res))
     prior = None
     kl_idx = [HEADS.index(h.strip()) for h in a.kl_heads.split(",") if h.strip()]
     if a.kl_prior:
@@ -381,6 +388,10 @@ def main():
         for q in prior.parameters():
             q.requires_grad_(False)
         assert prior.fovea == fovea, "prior and policy must see the same inputs"
+        prior_res = tuple(pa.get("res", (320, 240)))
+        prior_scale = res[0] / prior_res[0] if fovea else 0.0  # >1: the prior gets its own, wider fovea crop
+    else:
+        prior_scale = 0.0
     opt = torch.optim.Adam(model.parameters(), lr=a.lr, eps=1e-5)
     if resume is not None and "opt" in resume:
         opt.load_state_dict(resume["opt"])
@@ -388,9 +399,9 @@ def main():
     wopt = torch.optim.Adam(warm_params, lr=1e-3)
 
     stages = curriculum_stages()
-    stage = a.stage0
+    stage = max(0, a.stage0)
     if resume is not None:
-        stage = a.stage0 if a.stage0 else int(resume.get("stage", 0))
+        stage = a.stage0 if a.stage0 >= 0 else int(resume.get("stage", 0))
     knobs = dict(stages[stage], pool=[dict(x) for x in stages[:stage]])
     stage_eps = 0  # engagements played at the current stage
     low_windows = 0
@@ -398,7 +409,8 @@ def main():
                    time_round=a.time_penalty_round, hurt=a.hurt_penalty, gamma=a.gamma, review=a.review_frac,
                    offtarget=a.offtarget_cost, acquire=a.acquire_bonus, rehearsal=a.rehearsal, no_contest=a.no_contest,
                    rand_delay=a.rand_delay)
-    venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, rewards, seed=a.seed * 100)
+    venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, rewards, seed=a.seed * 100, res=res,
+                  prior_scale=prior_scale if prior_scale != 1.0 else 0.0)
     N, T = a.envs, a.rollout
 
     def to_dev(views_list):
@@ -406,7 +418,13 @@ def main():
         f = torch.from_numpy(np.stack([v[1] for v in views_list])).to(dev) if fovea else None
         return p, f
 
+    def to_dev_prior(views_list):  # the prior's own fovea crop (only when render res differs from the prior's)
+        if len(views_list[0]) < 3:
+            return None
+        return torch.from_numpy(np.stack([v[2] for v in views_list])).to(dev)
+
     cur_p, cur_f = to_dev([x[0] for x in venv.first])
+    cur_fp = to_dev_prior([x[0] for x in venv.first])
     cur_aux = torch.from_numpy(np.stack([x[1] for x in venv.first])).to(dev)
     state = model.initial_state(N, dev)
     start_flag = torch.ones(N, device=dev)
@@ -424,7 +442,8 @@ def main():
     update = resume.get("update", 0) if resume is not None else 0
     update0 = update
     steps0 = steps
-    emit(dict(event="start", device=str(dev), envs=N, rollout=T, init=a.init, fovea=fovea, heads=heads,
+    emit(dict(event="start", device=str(dev), envs=N, rollout=T, init=a.init, fovea=fovea, heads=heads, res=list(res),
+              prior_scale=prior_scale,
               knobs=pub(knobs), stage=stage, n_stages=len(stages), resume=a.resume, rewards=rewards,
               params=sum(p.numel() for p in model.parameters())))
 
@@ -434,6 +453,7 @@ def main():
             model.eval()
             P = torch.zeros((N, T, *cur_p.shape[1:]), dtype=torch.uint8, device=dev)
             Fv = torch.zeros((N, T, *cur_f.shape[1:]), dtype=torch.uint8, device=dev) if fovea else None
+            FvP = torch.zeros((N, T, *cur_fp.shape[1:]), dtype=torch.uint8, device=dev) if cur_fp is not None else None
             AUX = torch.zeros((N, T, 3), device=dev)
             A = torch.zeros((N, T, len(NVEC)), dtype=torch.long, device=dev)
             LP = torch.zeros((N, T), device=dev)
@@ -448,6 +468,8 @@ def main():
                 P[:, t] = cur_p
                 if fovea:
                     Fv[:, t] = cur_f
+                if FvP is not None:
+                    FvP[:, t] = cur_fp
                 AUX[:, t] = cur_aux
                 S[:, t] = start_flag
                 keep = (1.0 - start_flag).view(1, N, 1)
@@ -458,6 +480,7 @@ def main():
                 A[:, t], LP[:, t], V[:, t] = act, lp, v[:, 0]
                 res = venv.step(act.cpu().numpy())
                 cur_p, cur_f = to_dev([x[0] for x in res])
+                cur_fp = to_dev_prior([x[0] for x in res])
                 cur_aux = torch.from_numpy(np.stack([x[1] for x in res])).to(dev)
                 R[:, t] = torch.tensor([x[2] for x in res], device=dev)
                 term = torch.tensor([float(x[3]) for x in res], device=dev)
@@ -465,7 +488,7 @@ def main():
                 # time-limit cut: fold gamma * V(final obs) into the reward (final obs is one LSTM step on)
                 cut = [n for n, x in enumerate(res) if x[5] is not None]
                 if cut:
-                    fp, ff = to_dev([res[n][5] for n in cut])
+                    fp, ff = to_dev([res[n][5] for n in cut])  # (a 3rd, prior-only view is ignored here)
                     j = torch.as_tensor(cut, device=dev)
                     with torch.no_grad():
                         _, vf, _ = model(fp[:, None], (state[0][:, j], state[1][:, j]),
@@ -512,7 +535,8 @@ def main():
             if prior is not None:  # frozen imitation policy's turning distribution on this rollout (once, no grad)
                 kl_coef = max(a.kl_min, a.kl_coef - (a.kl_coef - a.kl_min) * (steps - steps0) / max(1.0, a.kl_decay_steps))
                 with torch.no_grad(), torch.autocast(dev.type, dtype=torch.bfloat16, enabled=dev.type != "cpu"):
-                    plg, _, _ = seq_forward(prior, P, Fv if fovea else None, prior.initial_state(N, dev), S)
+                    plg, _, _ = seq_forward(prior, P, FvP if FvP is not None else (Fv if fovea else None),
+                                            prior.initial_state(N, dev), S)
                 parts = Policy.split(plg.float())
                 prior_lp = [F.log_softmax(parts[h], -1) for h in kl_idx]
 

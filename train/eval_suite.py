@@ -82,7 +82,7 @@ def main():
     a = ap.parse_args()
     out = Path("results/phase3")
     out.mkdir(parents=True, exist_ok=True)
-    env = CS16Env("aim_dust2")
+    env, env_res = None, None  # built per snapshot resolution (a run can switch render resolution)
     done = {r: set() for r in a.runs}
     while True:
         t0 = time.time()
@@ -92,9 +92,13 @@ def main():
                 continue
             snap = snaps[-1]
             agent = TorchAgent(snap, temperature=1.0)
+            if env is None or env_res != agent.res:
+                if env is not None:
+                    env.close()
+                env, env_res = CS16Env("aim_dust2", width=agent.res[0], height=agent.res[1]), agent.res
             import torch
             meta = torch.load(snap, map_location="cpu")
-            rec = dict(run=run, snapshot=Path(snap).name, steps=meta.get("steps"), update=meta.get("update"),
+            rec = dict(run=run, snapshot=Path(snap).name, res=list(agent.res), steps=meta.get("steps"), update=meta.get("update"),
                        train_stage=meta.get("stage"), time=time.strftime("%H:%M:%S"))
             stages = curriculum_stages()
             st = int(meta.get("stage") or 0)
@@ -113,7 +117,8 @@ def main():
         if a.once:
             break
         time.sleep(max(0.0, a.every_min * 60 - (time.time() - t0)))
-    env.close()
+    if env is not None:
+        env.close()
 
 
 if __name__ == "__main__":

@@ -24,14 +24,14 @@ from train.ppo import curriculum_stages, round_seconds
 
 def run(snapshot, stage, rounds, seed=777):
     st = curriculum_stages()[stage - 1]
-    env = CS16Env("aim_dust2", reaction_delay=st["delay"])
+    agent = TorchAgent(snapshot, temperature=1.0)
+    env = CS16Env("aim_dust2", width=agent.res[0], height=agent.res[1], reaction_delay=st["delay"])
     env.set_bot_level(st["bot"])
     env.arena_max_offset, env.arena_min_offset, env.arena_max_dist = st["offset"], st.get("offset_min", 0.0), st["dist"]
     env.arena_review_frac = 0.0
     env.episode_seconds = round_seconds(st["dist"])
     env.aim_shaping = 1e-9  # turn on aim-error tracking in snapshots (reward effect negligible)
     env.no_contest_after = 0.5 if st["bot"] == 3 else 0.0  # like training: unwinnable rounds are skipped
-    agent = TorchAgent(snapshot, temperature=1.0)
     rows = []
     obs, info = env.reset(seed=seed)
     try:

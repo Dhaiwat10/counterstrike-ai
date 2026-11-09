@@ -52,7 +52,7 @@ def main():
     snap = a.snapshot or sorted(glob.glob("checkpoints/aim_bc/snapshots/*.pt"))[-1]
     agent = TorchAgent(snap, temperature=1.0)
     scn = dataclasses.replace(SCENARIOS["aim_dust2"], bots=0)  # no practice bot: the opponent is you
-    env = CS16Env(scn, reaction_delay=a.delay)
+    env = CS16Env(scn, width=agent.res[0], height=agent.res[1], reaction_delay=a.delay)
     env.cfg.extra_args = ("+ip", "127.0.0.1")  # reachable from this machine only
     env.set_bot_level(3)
     env.arena_max_offset, env.arena_min_offset, env.arena_max_dist = a.offset, a.offset_min, a.dist
@@ -69,7 +69,7 @@ def main():
             env.bridge.step(capture=False)
             time.sleep(max(0.0, t0 + (k + 1) * env.tick - time.perf_counter()))
 
-    print(f"AI: {snap}  reaction delay {int(a.delay * 1000)} ms")
+    print(f"AI: {snap}  {agent.res[0]}x{agent.res[1]}  reaction delay {int(a.delay * 1000)} ms")
     env._boot()  # start the server only: nobody to place until you join
     print("Server up on 127.0.0.1. Waiting for you to join (python -m train.duel --client) ...", flush=True)
     while not others(env.bridge.state) or not env._others_alive(env.bridge.state):

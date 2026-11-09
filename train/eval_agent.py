@@ -32,6 +32,7 @@ class TorchAgent:
         self.hw = tuple(a["hw"])
         self.dev = torch.device(device if (device != "mps" or torch.backends.mps.is_available()) else "cpu")
         self.fovea = int(a.get("fovea", 0))
+        self.res = tuple(a.get("res", (320, 240)))  # render resolution this policy was trained at
         self.model = Policy(in_hw=self.hw, chans=tuple(a["chans"]), fovea=self.fovea).to(self.dev).eval()
         self.model.load_state_dict({k: v.float() if v.is_floating_point() else v for k, v in ck["model"].items()},
                                    strict=False)  # imitation checkpoints have no aux head (unused when acting)
