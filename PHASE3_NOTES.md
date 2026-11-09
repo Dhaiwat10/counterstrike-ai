@@ -135,3 +135,9 @@ Archived in `checkpoints/_baseline/`.
   40 -> 200 ms. At 0 ms stages, 25% of rounds get a random 40/80 ms delay (`--rand-delay 0.25`, tracked as kill_delayed,
   never counted) so habits stay delay-robust. KL kept at its 0.01 floor. Restarted at stage 12 (1050 u) from 9.71M steps.
   Spawn pairs per band: 537 (800-1050), 281, 156, 87, 35 (1800-2000: little variety, watch for overfitting).
+- **Perfect-aim ceilings per distance band (15:40)** -- scripted aim at the chest, tapping when on target, 0 ms, vs the
+  moving bot that shoots back, 8-10 s rounds, no-contests skipped: 0-600 92%, 800-1050 88%, 1050-1300 68%,
+  1300-1550 42%, 1550-1800 35%, 1800-2000 18%, mixed 0-2000 78%. A flat 60% pass mark would have been impossible from
+  ~1300 units. **Pass marks now ~70% of the band's ceiling**: stage 12 60% (unchanged), 13 48%, 14 29%, 15 25%, 16 13%,
+  mastery 55% (was 75%); delay stages provisional 50% (calibrate with a delayed ceiling before reaching them).
+  Agent at stage 12: exam 69-71% overall, but 19-29% on the 800-1050 band itself (a real skill gap vs the 88% ceiling).

@@ -158,8 +158,8 @@ def curriculum_stages():
     """Ordered stages (v2, 2026-11-09): get GOOD first, add the reaction delay last.
     Within 800 units the bot gets harder: frozen & passive -> strafing & passive -> frozen & shoots back ->
     moving & shoots back (80% each); then larger initial aim error (10-degree frontier bands). Then, still at
-    0 ms, distance grows band by band to 2000 units (60% on the newest band); then a MASTERY stage (2000 units,
-    15-45 deg, 0 ms, 75% on all rounds) that defines "good". Only then the reaction delay ramps 40 -> 200 ms.
+    0 ms, distance grows band by band to 2000 units (pass marks ~70% of the perfect-aim ceiling of the newest band);
+    then a MASTERY stage (2000 units, 15-45 deg, 0 ms, 55% on all rounds) that defines "good". Only then the reaction delay ramps 40 -> 200 ms.
     (0 ms stages also see 25% randomised-delay rounds in training so habits stay delay-robust.)"""
     st, k = [], dict(bot=0, offset=10.0, offset_min=0.0, delay=0.0, dist=800.0, gate=0.8)
     st.append(dict(k))
@@ -171,11 +171,13 @@ def curriculum_stages():
         # 20% review rounds from easier angles keep old skills (only band rounds count for promotion)
         k["offset"] = off; k["offset_min"] = off - 10.0; st.append(dict(k))
     k["offset_min"] = 15.0  # distance, mastery and delay stages: realistic 15-45 deg mix
-    for dist in (1050.0, 1300.0, 1550.0, 1800.0, 2000.0):
-        k["dist_min"] = k["dist"]; k["dist"] = dist; st.append(dict(k))  # half the rounds from the newest band
+    # pass marks ~70% of a scripted perfect-aim ceiling measured per band (tapping, 0 ms, vs moving bot that shoots
+    # back; 2026-11-09): 800-1050 88%, 1050-1300 68%, 1300-1550 42%, 1550-1800 35%, 1800-2000 18%, mix 0-2000 78%
+    for dist, gate in ((1050.0, 0.60), (1300.0, 0.48), (1550.0, 0.29), (1800.0, 0.25), (2000.0, 0.13)):
+        k["dist_min"] = k["dist"]; k["dist"] = dist; k["gate"] = gate; st.append(dict(k))  # half the rounds from the newest band
     k["dist_min"] = 0.0
-    k["gate"] = 0.75; st.append(dict(k))  # mastery: 2000 units, 0 ms, 75% on all rounds
-    k["gate"] = 0.6
+    k["gate"] = 0.55; st.append(dict(k))  # mastery: 2000 units, 0 ms, all rounds (~70% of the 78% ceiling)
+    k["gate"] = 0.5  # delay stages: provisional; calibrate against a delayed perfect-aim ceiling before reaching them
     for d in (0.04, 0.08, 0.12, 0.16, 0.20):
         k["delay"] = d; st.append(dict(k))
     return st
