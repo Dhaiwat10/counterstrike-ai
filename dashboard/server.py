@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,9 @@ RUNS = {
 }
 # aim_scratch (random init) was stopped once the comparison was clear; archived in checkpoints/_baseline/
 BOT = {0: "frozen, doesn't shoot", 1: "moving, doesn't shoot", 2: "frozen, shoots back", 3: "moving, shoots back"}
+
+
+V3_FROM_UPDATE = {"aim_640": 9000}  # first update evaluated under curriculum v3
 
 
 def stage_desc(s):
@@ -76,6 +80,10 @@ def run_state(name):
     st = latest.get("stage")
     snaps = sorted((d / "snapshots").glob("*.pt")) if (d / "snapshots").exists() else []
     exams = read_jsonl(REPO / "results" / "phase3" / f"exam_{name}.jsonl")
+    # curriculum v3 (2026-11-10) renumbered stages 13+; drop older exams under those names (they meant distance bands)
+    if name in V3_FROM_UPDATE:
+        exams = [e if (e.get("update") or 0) >= V3_FROM_UPDATE[name] else
+                 {k: v for k, v in e.items() if not re.fullmatch(r"stage(1[3-9]|2\d)(_next)?", k)} for e in exams]
     args = {}
     try:
         args = json.loads((d / "args.json").read_text())

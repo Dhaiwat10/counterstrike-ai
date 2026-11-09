@@ -190,7 +190,7 @@ async function refresh() {
   // charts
   const stages = r.curriculum.map(c => c.steps);
   const cur1 = `stage${cur + 1}`;
-  const exNow = r.exams.filter(e => e[cur1]).map(e => ({ x: e.steps, y: e[cur1].kill_rate }));
+  const exNow = r.exams.filter(e => e[cur1] || e[cur1 + '_next']).map(e => ({ x: e.steps, y: (e[cur1] || e[cur1 + '_next']).kill_rate }));  // incl. this stage's preview exams from before promotion
   const exNext = r.exams.filter(e => e[`stage${cur + 2}_next`]).map(e => ({ x: e.steps, y: e[`stage${cur + 2}_next`].kill_rate }));
   line('c_exam', [
     { label: `stage ${cur + 1}`, data: exNow, borderColor: css('--exam'), backgroundColor: css('--exam'), pointRadius: 3, borderWidth: 2, tension: .3 },
