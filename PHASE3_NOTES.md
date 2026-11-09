@@ -124,3 +124,6 @@ Archived in `checkpoints/_baseline/`.
   arrived. Decision: no change yet; the KL weight is decaying on schedule (floor at ~6.17M steps), letting RL learn when to
   flick vs fine-tune. Re-diagnose ~08:00; if overshoot isn't falling, end/weaken the KL pull earlier.
   (diagnose.py now skips no-contest rounds like training.)
+- **08:00 re-diagnosis (stage 13, 6.6M steps, KL at its 0.01 floor):** kills 35 -> 42%, deaths 61 -> 53%, overshoot 66 -> 52%,
+  acquisition 0.52 -> 0.48 s; hit rate per firing step still ~9%. Improving without intervention -> no change. Exam 43%
+  (from a flat 33-38%). Next diagnosis ~10:00.
