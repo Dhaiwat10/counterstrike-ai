@@ -339,6 +339,9 @@ def main():
     ap.add_argument("--cur-passes", type=int, default=2,
                     help="consecutive non-overlapping windows that must clear the pass mark to advance")
     ap.add_argument("--no-curriculum", action="store_true")
+    ap.add_argument("--all-rounds", type=int, nargs="*", default=[],
+                    help="0-based stage indices judged on ALL their rounds instead of the newest distance band only "
+                         "(e.g. 11 = stage 12, 800-1050: the far band stalls near 37%% at 640x480)")
     ap.add_argument("--snapshot-every", type=int, default=25, help="updates")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
@@ -526,7 +529,7 @@ def main():
                         if knobs["dist"] > prev_max and e["dist"] > prev_max:
                             far.append(e)
                         in_band = e.get("offset", 0.0) >= knobs.get("offset_min", 0.0) - 1e-6  # review rounds don't count
-                        if (knobs["dist"] <= prev_max or e["dist"] > prev_max) and in_band:
+                        if (stage in a.all_rounds or knobs["dist"] <= prev_max or e["dist"] > prev_max) and in_band:
                             win.append(e)
             with torch.no_grad():
                 keep = (1.0 - start_flag).view(1, N, 1)
@@ -606,7 +609,7 @@ def main():
             # ---------------- curriculum
             kr = np.mean([e["kills"] > 0 for e in eps]) if eps else 0.0
             prev_d = stages[stage - 1]["dist"] if stage > 0 else 0.0
-            gate_eps = far if knobs["dist"] > prev_d else eps  # distance stages: judge on the newest band only
+            gate_eps = far if knobs["dist"] > prev_d and stage not in a.all_rounds else eps  # distance stages: newest band only
             gate = np.mean([e["kills"] > 0 for e in gate_eps]) if gate_eps else 0.0
             if not a.no_curriculum and len(eps) >= a.cur_window:
                 move = 0
