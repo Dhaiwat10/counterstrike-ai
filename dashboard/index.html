@@ -99,7 +99,9 @@ function lineChart(id, key, runs, opts = {}) {
   else charts[id] = new Chart(document.getElementById(id), cfg);
 }
 function card(r) {
-  const L = r.latest || {}; const gate = r.gate ?? 0.6; const kr = L.kill_rate ?? 0;
+  const L = r.latest || {}; const gate = r.gate ?? 0.6;
+  const W = r.windows || []; const lastW = W.length ? W[W.length - 1].kill : null;
+  const kr = lastW ?? (L.kill_rate ?? 0);  // the bar shows what promotion counts (last full window)
   const stale = r.log_age_s != null && r.log_age_s > 300;
   const lastCur = r.curriculum.length ? r.curriculum[r.curriculum.length - 1] : null;
   const bands = ['close', 'medium', 'long'].filter(b => L['kill_' + b] != null).map(b => `${b} ${pct(L['kill_' + b])}`).join(' · ');
@@ -109,10 +111,10 @@ function card(r) {
       <span class="badge ${r.alive && !stale ? 'on' : 'off'}">${r.alive ? (stale ? 'running · log stale' : 'training') : 'stopped'}</span></div>
     <div class="muted small">${r.about} · learning rate ${r.lr}</div>
     <div style="margin:12px 0 4px"><b>Stage ${(r.stage ?? 0) + 1} of ${window.__nstages || 22}</b> <span class="muted small">— ${r.stage_desc}</span></div>
-    <div class="small muted">Kill rate vs pass mark (${pct(gate)}) · promotion: <b>${L.passes ?? 0}/2</b> consecutive 200-round windows passed (current window ${L.window_fill ?? 0}/200; review rounds at easier angles don't count)</div>
+    <div class="small muted"><b>Promotion kill rate</b> (last full 200-round window of the rounds that count — at distance stages only the newest distance band) vs pass mark (${pct(gate)}) · <b>${L.passes ?? 0}/2</b> consecutive windows passed (current window ${L.window_fill ?? 0}/200)<br>Recent windows: ${W.map(w => pct(w.kill)).join(' → ') || '–'}</div>
     <div class="bar"><div style="width:${Math.min(100, kr * 100)}%;background:${COL[r.name]}"></div><div class="gate" style="left:${gate * 100}%"></div></div>
     <div class="grid4" style="margin-top:12px">
-      <div class="stat"><div class="v">${pct(L.kill_rate)}</div><div class="l">kill rate (last 200 rounds)</div></div>
+      <div class="stat"><div class="v">${pct(L.kill_rate)}</div><div class="l">kill rate, all stage rounds (last 200; includes easier ones)</div></div>
       <div class="stat"><div class="v">${num(L.dmg_per_ep, 0)}</div><div class="l">damage / round (HP)</div></div>
       <div class="stat"><div class="v">${pct(L.fire_frac)}</div><div class="l">firing</div></div>
       <div class="stat"><div class="v">${num(L.ent, 2)}</div><div class="l">randomness (0–1)</div></div>

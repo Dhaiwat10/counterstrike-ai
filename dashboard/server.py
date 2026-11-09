@@ -58,6 +58,9 @@ def run_state(name):
     ups = [r for r in log if r.get("event") == "update"]
     starts = [r for r in log if r.get("event") == "start"]
     cur = [r for r in log if r.get("event") == "curriculum"]
+    wins = [r for r in log if r.get("event") == "window"]
+    st_now = ups[-1].get("stage") if ups else None
+    stage_wins = [w for w in wins if w.get("stage") == st_now][-8:]
     # versions of the setup: each start event after the first is a switch-over (resume)
     version_marks = [dict(steps=(ups_before[-1]["steps"] if ups_before else 0), resume=bool(s.get("resume")))
                      for s in starts
@@ -83,7 +86,7 @@ def run_state(name):
         name=name, about=RUNS.get(name, ""), alive=running(f"train.ppo --run {name}"), log_age_s=age,
         lr=args.get("lr"), latest=latest, stage=st, stage_desc=stage_desc(stages[st]) if st is not None else "",
         gate=(stages[st].get("gate") if st is not None else None),
-        hist=hist, curriculum=cur, version_marks=version_marks[1:], exams=exams[-12:],
+        hist=hist, curriculum=cur, windows=[dict(steps=w["steps"], kill=w["kill_rate"], passes=w["passes"]) for w in stage_wins], version_marks=version_marks[1:], exams=exams[-12:],
         current_version_updates=len(cur_ups), snapshots=len(snaps),
         latest_snapshot=snaps[-1].name if snaps else None,
     )
