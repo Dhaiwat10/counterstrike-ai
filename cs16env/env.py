@@ -104,6 +104,8 @@ class CS16Env(gym.Env):
         self._bot_level_applied = None
         self.arena_max_offset = self.scn.arena_max_offset
         self.arena_min_offset = 0.0  # curriculum: starting yaw error is drawn from [min, max] (bounded range)
+        self.arena_min_dist = 0.0     # distance stages: newest band starts here...
+        self.arena_band_frac = 0.0    # ...and this share of rounds is drawn from (min_dist, max_dist]
         self.arena_review_frac = 0.0  # share of "review" rounds drawn from easier angles [0, min] (anti-forgetting)
         self._ep_offset = 0.0
         self._obs_queue: collections.deque = collections.deque()
@@ -271,6 +273,10 @@ class CS16Env(gym.Env):
         s = b.wait_until(lambda s: self._me(s).alive and self._others_alive(s) and self._bots_ready(s), max_steps=3000)
         P, pairs, dist = self._arena
         ok = np.nonzero(dist <= self.arena_max_dist)[0]
+        if self.arena_min_dist > 0 and self.np_random.random() < self.arena_band_frac:
+            band = np.nonzero((dist > self.arena_min_dist) & (dist <= self.arena_max_dist))[0]
+            if len(band):
+                ok = band
         i, j = pairs[self.np_random.choice(ok)]
         if self.np_random.random() < 0.5:
             i, j = j, i

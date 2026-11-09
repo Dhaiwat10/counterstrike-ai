@@ -55,7 +55,7 @@
   <section class="panel"><h2>Exams (fixed tests on the newest snapshot, every ~30 min)</h2><div id="exams"></div>
     <div class="small muted">Each exam = 100 rounds with the same random seed, so results are comparable over time: the run's current stage, and the next stage (is it ready?). The exam is the trustworthy number; training stats are noisy.</div></section>
   <section class="grid2">
-    <div class="panel"><h2>Curriculum (21 stages, easiest first, distance last)</h2><table class="ladder" id="ladder"></table></div>
+    <div class="panel"><h2>Curriculum (easiest first; reaction delay last)</h2><table class="ladder" id="ladder"></table></div>
     <div class="panel"><h2>Curriculum events</h2><div id="events" class="small"></div>
       <h2 style="margin-top:18px">Videos</h2><div id="videos"></div></div>
   </section>
@@ -108,7 +108,7 @@ function card(r) {
     <div style="display:flex;justify-content:space-between;align-items:baseline"><h2 style="color:${COL[r.name]}">${r.name}</h2>
       <span class="badge ${r.alive && !stale ? 'on' : 'off'}">${r.alive ? (stale ? 'running · log stale' : 'training') : 'stopped'}</span></div>
     <div class="muted small">${r.about} · learning rate ${r.lr}</div>
-    <div style="margin:12px 0 4px"><b>Stage ${(r.stage ?? 0) + 1} of 21</b> <span class="muted small">— ${r.stage_desc}</span></div>
+    <div style="margin:12px 0 4px"><b>Stage ${(r.stage ?? 0) + 1} of ${window.__nstages || 22}</b> <span class="muted small">— ${r.stage_desc}</span></div>
     <div class="small muted">Kill rate vs pass mark (${pct(gate)}) · promotion: <b>${L.passes ?? 0}/2</b> consecutive 200-round windows passed (current window ${L.window_fill ?? 0}/200; review rounds at easier angles don't count)</div>
     <div class="bar"><div style="width:${Math.min(100, kr * 100)}%;background:${COL[r.name]}"></div><div class="gate" style="left:${gate * 100}%"></div></div>
     <div class="grid4" style="margin-top:12px">
@@ -140,7 +140,7 @@ function examTable(runs) {
 function story(s) {
   const r = s.runs; const parts = r.map(x => {
     const L = x.latest || {};
-    return `<b style="color:${COL[x.name]}">${x.name}</b> (${x.about}) is at <b>stage ${(x.stage ?? 0) + 1}/21</b> winning <b>${pct(L.kill_rate)}</b> of rounds (needs ${pct(x.gate)} to move on), dealing ${num(L.dmg_per_ep, 0)} HP per round.`; });
+    return `<b style="color:${COL[x.name]}">${x.name}</b> (${x.about}) is at <b>stage ${(x.stage ?? 0) + 1}/${window.__nstages || 22}</b> winning <b>${pct(L.kill_rate)}</b> of rounds (needs ${pct(x.gate)} to move on), dealing ${num(L.dmg_per_ep, 0)} HP per round.`; });
   return `<h2>Right now</h2>One agent is learning to aim on de_dust2. Each round, the agent and one bot are placed where they can see each other;
     the agent starts roughly facing the bot and has to kill it before time runs out. The bot gets harder only after the agent masters the current stage
     (frozen → strafing → frozen but shooting back → moving and shooting back; then bigger aim error, then the 200 ms reaction delay, then distance).
@@ -153,6 +153,7 @@ function story(s) {
 async function refresh() {
   try {
     const s = await (await fetch('/api/state', { cache: 'no-store' })).json();
+    window.__nstages = s.stages.length;
     document.getElementById('hdr').textContent = 'updated ' + s.now + ' · refreshes every 15 s';
     document.getElementById('story').innerHTML = story(s);
     document.getElementById('cards').innerHTML = s.runs.map(card).join('');

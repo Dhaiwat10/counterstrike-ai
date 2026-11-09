@@ -52,6 +52,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
     def set_knobs(k):
         env.arena_max_offset, env.arena_max_dist = k["offset"], k["dist"]
         env.arena_min_offset = k.get("offset_min", 0.0)
+        env.arena_min_dist, env.arena_band_frac = k.get("dist_min", 0.0), (0.5 if k.get("dist_min", 0.0) > 0 else 0.0)
         env.arena_review_frac = rewards["review"] if k.get("offset_min", 0.0) > 15.0 or (k["offset"] < 45.0 and k.get("offset_min", 0.0) > 0) else 0.0
         env.set_reaction_delay(k["delay"])
         env.set_bot_level(k["bot"])
@@ -67,10 +68,14 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
     state = dict(cur=dict(knobs), pool=list(knobs.get("pool", [])), rehearsing=False)
 
     def choose_round():  # before each reset: usually the current stage, sometimes an earlier one
+        state["delayed"] = False
         if state["pool"] and rng.random() < rewards.get("rehearsal", 0.0):
             set_knobs(rng.choice(state["pool"])); state["rehearsing"] = True
         else:
             set_knobs(state["cur"]); state["rehearsing"] = False
+            # 0 ms stages: some rounds get a random small delay so habits stay delay-robust (not counted for promotion)
+            if state["cur"]["delay"] == 0.0 and rng.random() < rewards.get("rand_delay", 0.0):
+                env.set_reaction_delay(rng.choice((0.04, 0.08))); state["delayed"] = True
 
     choose_round()
     obs, info = env.reset(seed=seed)
@@ -90,7 +95,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards):
                 if term or trunc:
                     ep = dict(ret=ep_ret, kills=info["kills"], deaths=info["deaths"], damage=info["damage"],
                               time=info["time"], timeout=bool(trunc), dist=info["spawn_dist"], offset=info["spawn_offset"],
-                              acquire=info.get("acquire_time"), rehearsal=state["rehearsing"],
+                              acquire=info.get("acquire_time"), rehearsal=state["rehearsing"], delayed=state["delayed"],
                               no_contest=info.get("no_contest", False))
                     ep_ret = 0.0
                     if trunc:
@@ -150,10 +155,12 @@ def round_seconds(max_dist: float) -> float:
 
 
 def curriculum_stages():
-    """Ordered stages. Distance comes LAST. Within 800 units the bot gets harder first:
-    frozen & passive -> moving & passive -> frozen & shoots back -> moving & shoots back (each needs an
-    80% kill rate); then larger initial aim error; then the full 200 ms reaction delay. Only then does
-    distance grow, one band at a time (60% on the newest band)."""
+    """Ordered stages (v2, 2026-11-09): get GOOD first, add the reaction delay last.
+    Within 800 units the bot gets harder: frozen & passive -> strafing & passive -> frozen & shoots back ->
+    moving & shoots back (80% each); then larger initial aim error (10-degree frontier bands). Then, still at
+    0 ms, distance grows band by band to 2000 units (60% on the newest band); then a MASTERY stage (2000 units,
+    15-45 deg, 0 ms, 75% on all rounds) that defines "good". Only then the reaction delay ramps 40 -> 200 ms.
+    (0 ms stages also see 25% randomised-delay rounds in training so habits stay delay-robust.)"""
     st, k = [], dict(bot=0, offset=10.0, offset_min=0.0, delay=0.0, dist=800.0, gate=0.8)
     st.append(dict(k))
     for b in (1, 2, 3):
@@ -163,11 +170,14 @@ def curriculum_stages():
         # a 10-degree band at the frontier ([max-10, max], e.g. 25-35 deg): passing means winning these big flicks;
         # 20% review rounds from easier angles keep old skills (only band rounds count for promotion)
         k["offset"] = off; k["offset_min"] = off - 10.0; st.append(dict(k))
-    k["offset_min"] = 15.0  # delay and distance stages: realistic 15-45 deg mix, every round counts
+    k["offset_min"] = 15.0  # distance, mastery and delay stages: realistic 15-45 deg mix
+    for dist in (1050.0, 1300.0, 1550.0, 1800.0, 2000.0):
+        k["dist_min"] = k["dist"]; k["dist"] = dist; st.append(dict(k))  # half the rounds from the newest band
+    k["dist_min"] = 0.0
+    k["gate"] = 0.75; st.append(dict(k))  # mastery: 2000 units, 0 ms, 75% on all rounds
+    k["gate"] = 0.6
     for d in (0.04, 0.08, 0.12, 0.16, 0.20):
         k["delay"] = d; st.append(dict(k))
-    for dist in (1050.0, 1300.0, 1550.0, 1800.0, 2000.0):
-        k["dist"] = dist; st.append(dict(k))
     return st
 
 
@@ -288,6 +298,8 @@ def main():
     ap.add_argument("--kl-heads", default="yaw", help="heads the KL pull applies to")
     ap.add_argument("--no-contest", type=float, default=0.0,
                     help="moving-bot stages: end a round as no-contest (neutral, not counted) if the bot is out of sight this many seconds")
+    ap.add_argument("--rand-delay", type=float, default=0.0,
+                    help="0 ms stages: share of rounds played with a random 40 or 80 ms delay (not counted for promotion)")
     ap.add_argument("--rehearsal", type=float, default=0.0,
                     help="share of rounds that replay a random EARLIER stage (anti-forgetting; not counted for promotion)")
     ap.add_argument("--vf", type=float, default=0.5)
@@ -382,7 +394,8 @@ def main():
     low_windows = 0
     rewards = dict(aim_shaping=a.aim_shaping, bullet_cost=a.bullet_cost, damage=a.damage_reward, death=a.death_penalty,
                    time_round=a.time_penalty_round, hurt=a.hurt_penalty, gamma=a.gamma, review=a.review_frac,
-                   offtarget=a.offtarget_cost, acquire=a.acquire_bonus, rehearsal=a.rehearsal, no_contest=a.no_contest)
+                   offtarget=a.offtarget_cost, acquire=a.acquire_bonus, rehearsal=a.rehearsal, no_contest=a.no_contest,
+                   rand_delay=a.rand_delay)
     venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, rewards, seed=a.seed * 100)
     N, T = a.envs, a.rollout
 
@@ -401,6 +414,7 @@ def main():
     win = []      # current non-overlapping promotion window (gate-relevant engagements only)
     reh = collections.deque(maxlen=200)  # rehearsal rounds (earlier stages), tracked separately
     nc = collections.deque(maxlen=200)   # share of current-stage rounds ended as no-contest
+    dly = collections.deque(maxlen=200)  # randomised-delay rounds (0 ms stages), tracked separately
     passes = 0    # consecutive windows that cleared the pass mark
     all_eps = 0
     t0 = time.time()
@@ -463,6 +477,11 @@ def main():
                         if e.get("rehearsal"):
                             reh.append(e); all_eps += 1
                             continue
+                        if e.get("delayed"):  # randomised-delay round at a 0 ms stage: tracked, never counted
+                            if not e.get("no_contest"):
+                                dly.append(e)
+                            all_eps += 1
+                            continue
                         nc.append(bool(e.get("no_contest")))
                         if e.get("no_contest"):  # unwinnable (bot walked out of sight): never counted
                             all_eps += 1
@@ -471,10 +490,10 @@ def main():
                         all_eps += 1
                         stage_eps += 1
                         prev_max = stages[stage - 1]["dist"] if stage > 0 else 0.0
-                        if knobs["dist"] > 800.0 and e["dist"] > prev_max:
+                        if knobs["dist"] > prev_max and e["dist"] > prev_max:
                             far.append(e)
                         in_band = e.get("offset", 0.0) >= knobs.get("offset_min", 0.0) - 1e-6  # review rounds don't count
-                        if (knobs["dist"] <= 800.0 or e["dist"] > prev_max) and in_band:
+                        if (knobs["dist"] <= prev_max or e["dist"] > prev_max) and in_band:
                             win.append(e)
             with torch.no_grad():
                 keep = (1.0 - start_flag).view(1, N, 1)
@@ -552,7 +571,8 @@ def main():
 
             # ---------------- curriculum
             kr = np.mean([e["kills"] > 0 for e in eps]) if eps else 0.0
-            gate_eps = far if knobs["dist"] > 800.0 else eps  # distance stages: judge on the newest band only
+            prev_d = stages[stage - 1]["dist"] if stage > 0 else 0.0
+            gate_eps = far if knobs["dist"] > prev_d else eps  # distance stages: judge on the newest band only
             gate = np.mean([e["kills"] > 0 for e in gate_eps]) if gate_eps else 0.0
             if not a.no_curriculum and len(eps) >= a.cur_window:
                 move = 0
@@ -587,6 +607,7 @@ def main():
                        stage=stage, gate=float(gate), passes=passes, window_fill=len(win),
                        kill_rehearsal=float(np.mean([e["kills"] > 0 for e in reh])) if reh else None,
                        no_contest_rate=float(np.mean(nc)) if nc else None, kl_coef=kl_coef,
+                       kill_delayed=float(np.mean([e["kills"] > 0 for e in dly])) if dly else None,
                        **{f"kill_{b}": float(np.mean([e["kills"] > 0 for e in E if band_of(e["dist"]) == b]))
                           for b in ("close", "medium", "long") if any(band_of(e["dist"]) == b for e in E)},
                        **{f"kill_ang_{b}": float(np.mean([e["kills"] > 0 for e in E if angle_band(e.get("offset", 0)) == b]))

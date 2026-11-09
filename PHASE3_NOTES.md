@@ -129,3 +129,9 @@ Archived in `checkpoints/_baseline/`.
   (from a flat 33-38%). Next diagnosis ~10:00.
 - **10:00 diagnosis (stage 13, 7.7M steps):** kills 56% / deaths 41%, on target in 90% of rounds (0.48 s), hit rate per
   firing step 9 -> 13%, overshoot steady ~54%. Exams 33 -> 43 -> 40 -> 51 -> 47 -> 52%. Still no intervention needed.
+- **Curriculum v2 (user, ~13:40): get good first, delay last.** Stage-13 plateau at 45-55% under 80 ms led to reordering:
+  stages 1-11 unchanged; 12-16 distance 800 -> 2000 at **0 ms** (half the rounds from the newest band, promotion judged on
+  that band); 17 = **mastery** (2000 units, 15-45 deg, 0 ms, 75% on all rounds = our definition of "good"); 18-22 delay
+  40 -> 200 ms. At 0 ms stages, 25% of rounds get a random 40/80 ms delay (`--rand-delay 0.25`, tracked as kill_delayed,
+  never counted) so habits stay delay-robust. KL kept at its 0.01 floor. Restarted at stage 12 (1050 u) from 9.71M steps.
+  Spawn pairs per band: 537 (800-1050), 281, 156, 87, 35 (1800-2000: little variety, watch for overfitting).
