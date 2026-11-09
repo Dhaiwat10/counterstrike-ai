@@ -141,3 +141,8 @@ Archived in `checkpoints/_baseline/`.
   ~1300 units. **Pass marks now ~70% of the band's ceiling**: stage 12 60% (unchanged), 13 48%, 14 29%, 15 25%, 16 13%,
   mastery 55% (was 75%); delay stages provisional 50% (calibrate with a delayed ceiling before reaching them).
   Agent at stage 12: exam 69-71% overall, but 19-29% on the 800-1050 band itself (a real skill gap vs the 88% ceiling).
+- **Stage-12 diagnosis (15:55, 0 ms, 10.7M steps):** kills 67%, overshoot 25% (was 53% under 80 ms), hits per firing step
+  21% (was 10%), acquisition 0.36 s. By distance: 0-600 76% kills (24% hits), 600-800 62% (17%), **800-1100 23% kills,
+  10% hits, bot hits first in 70% of deaths** (ceiling 88%) -> the long-range gap is precision / fire control, not
+  acquisition (a 3-degree "on target" is wider than the bot at 1000 u). Band windows flat ~19-31% since 13:45. If still
+  flat at the next diagnosis: distance-scaled precision shaping and/or stronger tap-fire incentives at range.
