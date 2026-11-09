@@ -4,175 +4,205 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CS AI Training</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
-  :root { --bg:#0f1115; --panel:#171a21; --panel2:#1d212a; --text:#e7e9ee; --muted:#9aa3b2; --line:#2a2f3a;
-          --bc:#5aa9ff; --sc:#ffb35a; --ok:#3ecf8e; --bad:#ff6b6b; --warn:#f5c451; }
+  :root {
+    --bg: #0b0c10; --card: #12141a; --card2: #191c24; --line: #22252e; --text: #eef0f4; --muted: #8a91a0; --faint: #5b6170;
+    --accent: #7c9cff; --ok: #34d399; --warn: #fbbf24; --bad: #f87171; --exam: #c084fc;
+  }
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  header { padding:18px 24px; border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; gap:12px; align-items:baseline; justify-content:space-between; }
-  h1 { font-size:20px; margin:0; } h2 { font-size:15px; margin:0 0 10px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
-  main { padding:18px 24px 40px; display:grid; gap:16px; max-width:1400px; margin:0 auto; }
-  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
-  .grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(420px,1fr)); gap:16px; }
-  .grid4 { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
-  .stat { background:var(--panel2); border-radius:8px; padding:10px 12px; }
-  .stat .v { font-size:22px; font-weight:650; } .stat .l { color:var(--muted); font-size:12px; }
-  .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; }
-  .on { background:#123d2c; color:var(--ok); } .off { background:#40191b; color:var(--bad); }
-  .muted { color:var(--muted); } .small { font-size:12px; }
-  .bar { height:12px; background:var(--panel2); border-radius:6px; overflow:hidden; position:relative; }
-  .bar > div { height:100%; } .bar .gate { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--warn); }
-  table { width:100%; border-collapse:collapse; } th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); font-size:13px; }
-  th { color:var(--muted); font-weight:600; }
-  .ladder td { padding:4px 8px; } .ladder tr.cur { background:#1f2633; }
-  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:middle; }
-  .story { font-size:15px; line-height:1.6; }
-  canvas { max-height:260px; }
-  video { width:100%; border-radius:8px; background:#000; }
-  @media (max-width:600px){ main, header { padding:12px; } .grid2 { grid-template-columns:1fr; } }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .num { font-family: "JetBrains Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 20px 16px 40px; display: grid; gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 18px; min-width: 0; }
+  .muted { color: var(--muted); } .faint { color: var(--faint); }
+  .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; font-weight: 600; }
+
+  .top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .top h1 { font-size: 16px; font-weight: 600; margin: 0 4px 0 0; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .live { background: var(--ok); animation: pulse 2s infinite; }
+  .dead { background: var(--bad); }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(52,211,153,.45); } 50% { box-shadow: 0 0 0 6px rgba(52,211,153,0); } }
+  .chip { background: var(--card2); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .chip b { color: var(--text); font-weight: 600; }
+  .spacer { flex: 1; }
+
+  .hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 14px; }
+  .big { font-size: 60px; font-weight: 600; line-height: 1; }
+  .need { font-size: 13px; color: var(--muted); line-height: 1.5; padding-bottom: 6px; }
+  .bar { position: relative; height: 10px; background: var(--card2); border-radius: 999px; margin-top: 34px; }
+  .bar .fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: linear-gradient(90deg, #5b7cff, #a5b8ff); transition: width .6s; }
+  .bar .mark { position: absolute; top: -6px; width: 2px; height: 22px; background: var(--warn); border-radius: 2px; }
+  .bar .marklbl { position: absolute; top: -26px; transform: translateX(-50%); font-size: 11px; color: var(--warn); }
+  .wins { display: flex; align-items: flex-end; gap: 6px; height: 92px; margin-top: 14px; position: relative; }
+  .wins .w { flex: 1; border-radius: 6px 6px 3px 3px; min-width: 10px; }
+  .wins .w.pass { background: rgba(52,211,153,.6); } .wins .w.fail { background: rgba(124,156,255,.4); }
+  .wins .gl { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--warn); opacity: .7; pointer-events: none; }
+  .winvals { display: flex; gap: 6px; margin-top: 6px; font-size: 11px; color: var(--muted); }
+  .winvals span { flex: 1; text-align: center; min-width: 10px; }
+  .passes { display: flex; gap: 8px; align-items: center; }
+  .pdot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #343846; }
+  .pdot.on { background: var(--ok); border-color: var(--ok); }
+
+  .kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 14px; }
+  .kpi .v { font-size: 26px; font-weight: 600; margin-top: 6px; }
+  .kpi .sp { height: 34px; margin-top: 8px; position: relative; }
+
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .chartbox { height: 240px; margin-top: 10px; position: relative; }
+
+  .strip { display: grid; grid-template-columns: repeat(22, 1fr); gap: 4px; margin-top: 14px; }
+  .seg { height: 28px; border-radius: 6px; background: var(--card2); position: relative; }
+  .seg.done { background: rgba(52,211,153,.32); } .seg.cur { background: var(--accent); box-shadow: 0 0 0 3px rgba(124,156,255,.25); }
+  .seg span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 10px; color: var(--muted); }
+  .seg.done span { color: #b5f0d8; } .seg.cur span { color: #0b0c10; font-weight: 700; }
+  .groups { display: grid; grid-template-columns: 4fr 7fr 5fr 1fr 5fr; gap: 4px; margin-top: 6px; font-size: 11px; color: var(--faint); }
+  .groups div { border-top: 1px solid var(--line); padding-top: 4px; white-space: nowrap; overflow: hidden; }
+
+  [data-tip] { position: relative; cursor: default; }
+  [data-tip]:hover::after { content: attr(data-tip); position: absolute; left: 50%; transform: translateX(-50%); bottom: 100%; margin-bottom: 8px; background: #000; color: var(--text); font: 500 12px Inter, sans-serif; text-transform: none; letter-spacing: 0; padding: 6px 9px; border-radius: 8px; white-space: nowrap; z-index: 9; border: 1px solid var(--line); }
+  .label[data-tip]:hover::after { left: 0; transform: none; }
+  @media (max-width: 900px) { .hero, .charts { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(3, 1fr); } .big { font-size: 46px; } .groups { display: none; } .strip { grid-template-columns: repeat(11, 1fr); } }
+  @media (max-width: 520px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
 </style>
 </head>
 <body>
-<header>
-  <div><h1>Counter-Strike 1.6 AI · Phase 3: RL aim training (aim_bc)</h1>
-    <div class="muted small">Pixels in, mouse & trigger out · fair-play rules (200 ms reaction delay at the end of the curriculum, 25 decisions/s, human turn speed) · offline only</div></div>
-  <div class="small muted" id="hdr"></div>
-</header>
-<main>
-  <section class="panel story" id="story"></section>
-  <section class="grid2" id="cards"></section>
-  <section class="grid2">
-    <div class="panel"><h2>Kill rate in training (rolling, last 200 rounds)</h2><canvas id="cKill"></canvas>
-      <div class="small muted">Yellow line = pass mark for the current stage. Dashed grey lines = switch-overs to a fixed setup.</div></div>
-    <div class="panel"><h2>Damage dealt per round (HP)</h2><canvas id="cDmg"></canvas>
-      <div class="small muted">100 HP = one kill's worth. Rising damage usually comes before rising kills.</div></div>
-    <div class="panel"><h2>Firing (share of decisions with trigger held)</h2><canvas id="cFire"></canvas>
-      <div class="small muted">Too low = too passive; near 100% = spraying. Pros fire on ~7% of steps over a whole match (more during fights).</div></div>
-    <div class="panel"><h2>Randomness of decisions (0 = always the same, 1 = fully random)</h2><canvas id="cEnt"></canvas>
-      <div class="small muted">Should fall slowly as it gets confident. A sudden rise back toward 1 means it is forgetting.</div></div>
-  </section>
-  <section class="panel"><h2>Exams (fixed tests on the newest snapshot, every ~30 min)</h2><div id="exams"></div>
-    <div class="small muted">Each exam = 100 rounds with the same random seed, so results are comparable over time: the run's current stage, and the next stage (is it ready?). The exam is the trustworthy number; training stats are noisy.</div></section>
-  <section class="grid2">
-    <div class="panel"><h2>Curriculum (easiest first; reaction delay last)</h2><table class="ladder" id="ladder"></table></div>
-    <div class="panel"><h2>Curriculum events</h2><div id="events" class="small"></div>
-      <h2 style="margin-top:18px">Videos</h2><div id="videos"></div></div>
-  </section>
-  <section class="panel"><h2>How to read this</h2>
-    <table>
-      <tr><th>Number</th><th>Meaning</th><th>Good sign</th></tr>
-      <tr><td>Kill rate</td><td>Share of recent rounds where the agent killed the bot</td><td>Climbing toward the stage's pass mark (80% for the first 4 stages, 60% after)</td></tr>
-      <tr><td>Damage / round</td><td>HP of damage dealt per round (100 = a kill)</td><td>Rising; usually moves before kill rate does</td></tr>
-      <tr><td>Firing</td><td>How often it holds the trigger</td><td>Stable, not collapsing to 0 or pinned at 100%</td></tr>
-      <tr><td>Randomness</td><td>How undecided the policy is (entropy, normalised)</td><td>Slow decline; not jumping back up</td></tr>
-      <tr><td>Enemy-location error</td><td>Side task: how well it can tell where the bot is (lower = better)</td><td>Near 0 means its vision has learned to find the bot</td></tr>
-      <tr><td>Steps / s</td><td>Decisions per second of training (25 decisions = 1 s of game)</td><td>~200+ with all 12 game instances on this Mac</td></tr>
-      <tr><td>Stage</td><td>Where it is in the curriculum ladder</td><td>Moving up; a step back means the last jump was too big</td></tr>
-    </table>
-    <div class="small muted" style="margin-top:8px">Rewards (training only): +1 kill, +0.01 per HP dealt, −0.5 for a round that runs out without a kill (spread over the round), small cost per shot, aim-shaping bonus for moving the crosshair toward the bot; once the bot shoots back: −1 death, −0.01 per HP lost. The agent itself only ever sees the screen.</div>
-  </section>
-</main>
-<script>
-const COL = { aim_bc: getComputedStyle(document.documentElement).getPropertyValue('--bc').trim(),
-              aim_scratch: getComputedStyle(document.documentElement).getPropertyValue('--sc').trim() };
-const charts = {};
-const pct = v => v == null ? '–' : (100 * v).toFixed(0) + '%';
-const num = (v, d = 1) => v == null ? '–' : Number(v).toFixed(d);
-const vlines = { id: 'vlines', afterDraw(c, a, o) { const x = c.scales.x; const ctx = c.ctx; ctx.save();
-  ctx.setLineDash([4, 4]); ctx.strokeStyle = '#555';
-  (c.options.plugins.vlines.marks || []).forEach(m => { const px = x.getPixelForValue(m); if (px >= x.left && px <= x.right) {
-    ctx.beginPath(); ctx.moveTo(px, c.chartArea.top); ctx.lineTo(px, c.chartArea.bottom); ctx.stroke(); } });
-  const g = c.options.plugins.vlines.gate; if (g != null) { const y = c.scales.y.getPixelForValue(g);
-    ctx.setLineDash([]); ctx.strokeStyle = '#f5c451'; ctx.beginPath(); ctx.moveTo(c.chartArea.left, y); ctx.lineTo(c.chartArea.right, y); ctx.stroke(); }
-  ctx.restore(); } };
-Chart.register(vlines);
-function lineChart(id, key, runs, opts = {}) {
-  const ds = runs.map(r => ({ label: r.name, borderColor: COL[r.name], backgroundColor: COL[r.name], pointRadius: 0, borderWidth: 2, tension: .25,
-    data: r.hist.filter(h => h[key] != null).map(h => ({ x: h.steps / 1e3, y: h[key] })) }));
-  const marks = [...new Set(runs.flatMap(r => r.version_marks.map(m => m.steps / 1e3)))];
-  const cfg = { type: 'line', data: { datasets: ds }, options: { animation: false, responsive: true, parsing: false,
-    scales: { x: { type: 'linear', title: { display: true, text: 'thousand steps', color: '#9aa3b2' }, ticks: { color: '#9aa3b2' }, grid: { color: '#222' } },
-              y: { min: opts.min, max: opts.max, ticks: { color: '#9aa3b2', callback: opts.pct ? v => (v * 100) + '%' : undefined }, grid: { color: '#222' } } },
-    plugins: { legend: { labels: { color: '#e7e9ee' } }, vlines: { marks, gate: opts.gate } } } };
-  if (charts[id]) { charts[id].data = cfg.data; charts[id].options = cfg.options; charts[id].update(); }
-  else charts[id] = new Chart(document.getElementById(id), cfg);
-}
-function card(r) {
-  const L = r.latest || {}; const gate = r.gate ?? 0.6;
-  const W = r.windows || []; const lastW = W.length ? W[W.length - 1].kill : null;
-  const kr = lastW ?? (L.kill_rate ?? 0);  // the bar shows what promotion counts (last full window)
-  const stale = r.log_age_s != null && r.log_age_s > 300;
-  const lastCur = r.curriculum.length ? r.curriculum[r.curriculum.length - 1] : null;
-  const bands = ['close', 'medium', 'long'].filter(b => L['kill_' + b] != null).map(b => `${b} ${pct(L['kill_' + b])}`).join(' · ');
-  const angs = [['lt15', '<15°'], ['15to30', '15–30°'], ['30plus', '30°+']].filter(([b]) => L['kill_ang_' + b] != null).map(([b, n]) => `${n} ${pct(L['kill_ang_' + b])}`).join(' · ');
-  return `<div class="panel" style="border-top:3px solid ${COL[r.name]}">
-    <div style="display:flex;justify-content:space-between;align-items:baseline"><h2 style="color:${COL[r.name]}">${r.name}</h2>
-      <span class="badge ${r.alive && !stale ? 'on' : 'off'}">${r.alive ? (stale ? 'running · log stale' : 'training') : 'stopped'}</span></div>
-    <div class="muted small">${r.about} · learning rate ${r.lr}</div>
-    <div style="margin:12px 0 4px"><b>Stage ${(r.stage ?? 0) + 1} of ${window.__nstages || 22}</b> <span class="muted small">— ${r.stage_desc}</span></div>
-    <div class="small muted"><b>Promotion kill rate</b> (last full 200-round window of the rounds that count — at distance stages only the newest distance band) vs pass mark (${pct(gate)}) · <b>${L.passes ?? 0}/2</b> consecutive windows passed (current window ${L.window_fill ?? 0}/200)<br>Recent windows: ${W.map(w => pct(w.kill)).join(' → ') || '–'}</div>
-    <div class="bar"><div style="width:${Math.min(100, kr * 100)}%;background:${COL[r.name]}"></div><div class="gate" style="left:${gate * 100}%"></div></div>
-    <div class="grid4" style="margin-top:12px">
-      <div class="stat"><div class="v">${pct(L.kill_rate)}</div><div class="l">kill rate, all stage rounds (last 200; includes easier ones)</div></div>
-      <div class="stat"><div class="v">${num(L.dmg_per_ep, 0)}</div><div class="l">damage / round (HP)</div></div>
-      <div class="stat"><div class="v">${pct(L.fire_frac)}</div><div class="l">firing</div></div>
-      <div class="stat"><div class="v">${num(L.ent, 2)}</div><div class="l">randomness (0–1)</div></div>
-      <div class="stat"><div class="v">${num(L.aux, 3)}</div><div class="l">enemy-location error</div></div>
-      <div class="stat"><div class="v">${pct(L.timeout_rate)}</div><div class="l">rounds timed out</div></div>
-      <div class="stat"><div class="v">${L.acquire_time_med != null ? num(L.acquire_time_med, 2) + ' s' : '–'}</div><div class="l">time to get on target (median; lower = faster flicks)</div></div>
-      <div class="stat"><div class="v">${pct(L.acquire_rate)}</div><div class="l">rounds where it got on target</div></div>
-      <div class="stat"><div class="v">${pct(L.kill_rehearsal)}</div><div class="l">kill rate on rehearsal rounds (earlier stages; should stay high)</div></div>
-      <div class="stat"><div class="v">${pct(L.no_contest_rate)}</div><div class="l">no-contest rounds (bot walked out of sight; not counted)</div></div>
-      <div class="stat"><div class="v">${L.steps ? (L.steps / 1e6).toFixed(2) + 'M' : '–'}</div><div class="l">total steps</div></div>
-      <div class="stat"><div class="v">${num(L.sps, 0)}</div><div class="l">steps / s</div></div>
+<div class="wrap">
+  <div class="top">
+    <span id="status" class="dot dead"></span>
+    <h1>aim_bc</h1>
+    <span class="chip" id="stagechip">—</span>
+    <span class="chip num" id="steps">—</span>
+    <span class="chip num" id="sps">—</span>
+    <span class="spacer"></span>
+    <span class="faint num" style="font-size:12px" id="updated"></span>
+  </div>
+
+  <div class="hero">
+    <div class="card">
+      <div class="label" data-tip="Kill rate in the last 200 counted rounds (distance stages: newest band only)">Promotion kill rate</div>
+      <div style="display:flex;align-items:flex-end;gap:16px;margin-top:12px">
+        <div class="big num" id="prom">—</div>
+        <div class="need" id="promsub"></div>
+      </div>
+      <div class="bar"><div class="fill" id="promfill"></div><div class="mark" id="promark"></div><div class="marklbl num" id="promarklbl"></div></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px">
+        <div class="passes" id="passes"></div>
+        <div class="faint num" style="font-size:12px" id="fill"></div>
+      </div>
     </div>
-    <div class="small muted" style="margin-top:8px">${angs ? 'By starting aim error: ' + angs + '<br>' : ''}${bands ? 'By range: ' + bands + ' · ' : ''}${lastCur ? 'last stage change at ' + (lastCur.steps / 1e3).toFixed(0) + 'k steps' : 'no stage change yet in this setup'} · ${r.snapshots} snapshots saved</div>
-  </div>`;
+    <div class="card">
+      <div class="label">Recent windows · 200 rounds each</div>
+      <div class="wins" id="wins"></div>
+      <div class="winvals num" id="winvals"></div>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="card kpi"><div class="label" data-tip="All rounds, latest update">Kill rate</div><div class="v num" id="k_kill">—</div><div class="sp"><canvas id="s_kill"></canvas></div></div>
+    <div class="card kpi"><div class="label">Deaths</div><div class="v num" id="k_death">—</div><div class="sp"><canvas id="s_death"></canvas></div></div>
+    <div class="card kpi"><div class="label" data-tip="Median time until the crosshair is on the bot">Time to target</div><div class="v num" id="k_acq">—</div><div class="sp"><canvas id="s_acq"></canvas></div></div>
+    <div class="card kpi"><div class="label" data-tip="Kill rate on replays of earlier stages">Rehearsal</div><div class="v num" id="k_reh">—</div><div class="sp"><canvas id="s_reh"></canvas></div></div>
+    <div class="card kpi"><div class="label" data-tip="Kill rate on rounds with a random 40/80 ms delay">With delay</div><div class="v num" id="k_dly">—</div><div class="sp"><canvas id="s_dly"></canvas></div></div>
+    <div class="card kpi"><div class="label" data-tip="Bot left sight; round not counted">No-contest</div><div class="v num" id="k_nc">—</div><div class="sp"><canvas id="s_nc"></canvas></div></div>
+  </div>
+
+  <div class="charts">
+    <div class="card"><div class="label" data-tip="Same 100 test rounds every 30 min">Exam kill rate</div><div class="chartbox"><canvas id="c_exam"></canvas></div></div>
+    <div class="card"><div class="label">Training kill rate</div><div class="chartbox"><canvas id="c_kill"></canvas></div></div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div class="label">Curriculum</div><div class="muted" style="font-size:12px" id="curtext"></div></div>
+    <div class="strip" id="strip"></div>
+    <div class="groups"><div>Bot</div><div>Aim angle</div><div>Distance</div><div>★</div><div>Reaction delay</div></div>
+  </div>
+</div>
+
+<script>
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const pct = v => v == null ? '—' : Math.round(100 * v) + '%';
+const $ = id => document.getElementById(id);
+const charts = {};
+Chart.defaults.color = '#8a91a0'; Chart.defaults.font.family = 'Inter'; Chart.defaults.borderColor = '#22252e';
+
+function upsert(id, cfg) {
+  if (charts[id]) { charts[id].data = cfg.data; charts[id].options = cfg.options; charts[id].update('none'); }
+  else charts[id] = new Chart($(id), cfg);
 }
-function examTable(runs) {
-  let rows = '';
-  runs.forEach(r => [...r.exams].reverse().slice(0, 5).forEach(e => {
-    const names = Object.keys(e).filter(k => k.startsWith('stage') || k === 'full' || k === 'easy');
-    const cells = names.map(n => `<b>${n.replace('_next', ' (next)')}</b>: ${pct(e[n].kill_rate)} kills, ${pct(e[n].death_rate)} deaths, ${num(e[n].damage, 0)} HP`).join('<br>');
-    rows += `<tr><td><span class="dot" style="background:${COL[r.name]}"></span>${r.name}</td><td>${e.time}</td><td>${e.snapshot}</td><td>${e.steps ? (e.steps / 1e3).toFixed(0) + 'k' : '–'}</td><td>${cells}</td></tr>`;
-  }));
-  return rows ? `<table><tr><th>Run</th><th>Time</th><th>Snapshot</th><th>Steps</th><th>Results</th></tr>${rows}</table>` : '<div class="muted">No exams yet — the first ones arrive ~10 minutes after a run starts.</div>';
+function spark(id, data, color, max) {
+  upsert(id, { type: 'line', data: { labels: data.map((_, i) => i), datasets: [{ data, borderColor: color, borderWidth: 1.5, pointRadius: 0, tension: .35, fill: true, backgroundColor: color + '1f' }] },
+    options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: { x: { display: false }, y: { display: false, min: 0, max } } } });
 }
-function story(s) {
-  const r = s.runs; const parts = r.map(x => {
-    const L = x.latest || {};
-    return `<b style="color:${COL[x.name]}">${x.name}</b> (${x.about}) is at <b>stage ${(x.stage ?? 0) + 1}/${window.__nstages || 22}</b> winning <b>${pct(L.kill_rate)}</b> of rounds (needs ${pct(x.gate)} to move on), dealing ${num(L.dmg_per_ep, 0)} HP per round.`; });
-  return `<h2>Right now</h2>One agent is learning to aim on de_dust2. Each round, the agent and one bot are placed where they can see each other;
-    the agent starts roughly facing the bot and has to kill it before time runs out. The bot gets harder only after the agent masters the current stage
-    (frozen → strafing → frozen but shooting back → moving and shooting back; then bigger aim error, then the 200 ms reaction delay, then distance).
-    <br><br>${parts.join('<br>')}
-    <br><span class="muted small">Why one run: a second agent trained from random weights (aim_scratch) was run side by side to test whether the pro-demo
-    imitation start helps. It clearly did (≈40% vs ≈20% kills on stage 1; earlier 10–14% vs ~1%), so aim_scratch was stopped and aim_bc got all 12 game instances.
-    Its weights and logs are archived in checkpoints/_baseline/.</span>
-    <br><span class="muted small">Exam process: ${s.exam_alive ? '<span class="badge on">running</span>' : '<span class="badge off">stopped</span>'} · machine load ${num(s.machine.load1, 1)} of ${s.machine.cores} cores · ${num(s.machine.disk_free_gb, 0)} GB free</span>`;
+Chart.register({ id: 'marks', afterDatasetsDraw(c) {
+  const o = c.options.plugins.marks || {}, x = c.scales.x, a = c.chartArea, ctx = c.ctx; ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.setLineDash([3, 4]);
+  (o.stages || []).forEach(v => { const px = x.getPixelForValue(v); if (px > a.left && px < a.right) { ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke(); } });
+  if (o.gate != null) { const y = c.scales.y.getPixelForValue(o.gate); ctx.setLineDash([5, 4]); ctx.strokeStyle = css('--warn'); ctx.globalAlpha = .75; ctx.beginPath(); ctx.moveTo(a.left, y); ctx.lineTo(a.right, y); ctx.stroke(); }
+  ctx.restore(); } });
+function line(id, datasets, stages, gate) {
+  upsert(id, { type: 'line', data: { datasets }, options: { animation: false, responsive: true, maintainAspectRatio: false, parsing: false,
+    interaction: { mode: 'nearest', intersect: false },
+    plugins: { legend: { display: datasets.length > 1, align: 'end', labels: { boxWidth: 8, boxHeight: 8, usePointStyle: true, pointStyle: 'circle' } }, marks: { stages, gate },
+      tooltip: { callbacks: { title: c => (c[0].parsed.x / 1e6).toFixed(2) + 'M steps', label: c => ` ${c.dataset.label}: ${Math.round(c.parsed.y * 100)}%` } } },
+    scales: { x: { type: 'linear', grid: { display: false }, ticks: { callback: v => (v / 1e6).toFixed(1) + 'M', maxTicksLimit: 6 } },
+              y: { min: 0, max: 1, grid: { color: '#1a1d24' }, border: { display: false }, ticks: { callback: v => v * 100 + '%', stepSize: .25 } } } } });
 }
+const BOT = ['still', 'strafing', 'still · shoots', 'moving · shoots'];
+const short = s => `${BOT[s.bot]} · ${s.offset_min ? s.offset_min + '–' + s.offset : '≤' + s.offset}° · ${s.dist}u · ${Math.round(s.delay * 1000)} ms · pass ${Math.round(s.gate * 100)}%`;
+
 async function refresh() {
-  try {
-    const s = await (await fetch('/api/state', { cache: 'no-store' })).json();
-    window.__nstages = s.stages.length;
-    document.getElementById('hdr').textContent = 'updated ' + s.now + ' · refreshes every 15 s';
-    document.getElementById('story').innerHTML = story(s);
-    document.getElementById('cards').innerHTML = s.runs.map(card).join('');
-    const gate = s.runs[0].gate;
-    lineChart('cKill', 'kill_rate', s.runs, { min: 0, max: 1, pct: true, gate });
-    lineChart('cDmg', 'dmg_per_ep', s.runs, { min: 0 });
-    lineChart('cFire', 'fire_frac', s.runs, { min: 0, max: 1, pct: true });
-    lineChart('cEnt', 'ent', s.runs, { min: 0, max: 1 });
-    document.getElementById('exams').innerHTML = examTable(s.runs);
-    const cur = Object.fromEntries(s.runs.map(r => [r.name, r.stage ?? 0]));
-    document.getElementById('ladder').innerHTML = s.stages.map(st => {
-      const here = s.runs.filter(r => cur[r.name] === st.i).map(r => `<span class="dot" style="background:${COL[r.name]}" title="${r.name}"></span>`).join('');
-      return `<tr class="${here ? 'cur' : ''}"><td style="width:40px">${st.i + 1}</td><td style="width:40px">${here}</td><td>${st.desc}</td></tr>`; }).join('');
-    const ev = s.runs.flatMap(r => r.curriculum.map(c => ({ ...c, run: r.name }))).sort((a, b) => b.steps - a.steps);
-    document.getElementById('events').innerHTML = ev.length ? ev.slice(0, 15).map(e => `<div><span class="dot" style="background:${COL[e.run]}"></span>${e.run} ${e.move > 0 ? '▲ advanced' : '▼ stepped back'} to stage ${e.stage + 1} at ${(e.steps / 1e3).toFixed(0)}k steps</div>`).join('') : '<div class="muted">None yet in this setup.</div>';
-    document.getElementById('videos').innerHTML = s.videos.length ? s.videos.slice(-1).map(v => `<video controls src="/videos/${v}"></video><div class="small muted">${v}</div>`).join('') : '<div class="muted">No videos yet.</div>';
-  } catch (e) { document.getElementById('hdr').textContent = 'dashboard server not reachable: ' + e; }
+  let s; try { s = await (await fetch('/api/state', { cache: 'no-store' })).json(); } catch (e) { $('updated').textContent = 'offline'; $('status').className = 'dot dead'; return; }
+  const r = s.runs[0], L = r.latest || {}, cur = r.stage ?? 0, st = s.stages[cur], gate = r.gate ?? .5;
+  $('status').className = 'dot ' + (r.alive && (r.log_age_s ?? 999) < 300 ? 'live' : 'dead');
+  $('stagechip').innerHTML = `<b>Stage ${cur + 1}</b> / ${s.stages.length} · ${st.dist}u · ${Math.round(st.delay * 1000)} ms`;
+  $('steps').textContent = ((L.steps || 0) / 1e6).toFixed(2) + 'M steps';
+  $('sps').textContent = Math.round(L.sps || 0) + ' steps/s';
+  $('updated').textContent = s.now.slice(11, 16) + (s.exam_alive ? '' : ' · exams off');
+
+  // promotion
+  const W = r.windows || [], last = W.length ? W[W.length - 1].kill : null;
+  $('prom').textContent = pct(last);
+  $('promsub').innerHTML = `of <b class="num" style="color:var(--warn)">${pct(gate)}</b><br>needed twice`;
+  $('promfill').style.width = Math.min(100, 100 * (last || 0)) + '%';
+  $('promark').style.left = $('promarklbl').style.left = 100 * gate + '%';
+  $('promarklbl').textContent = pct(gate);
+  const p = L.passes ?? 0;
+  $('passes').innerHTML = [0, 1].map(i => `<span class="pdot ${i < p ? 'on' : ''}"></span>`).join('') + `<span class="muted" style="font-size:12px;margin-left:2px">${p}/2</span>`;
+  $('fill').textContent = `next window ${L.window_fill ?? 0}/200`;
+  $('wins').innerHTML = W.map(w => `<div class="w ${w.kill > gate ? 'pass' : 'fail'}" data-tip="${pct(w.kill)} at ${(w.steps / 1e6).toFixed(2)}M" style="height:${Math.max(4, 100 * w.kill)}%"></div>`).join('')
+    + `<div class="gl" style="bottom:${100 * gate}%"></div>`;
+  $('winvals').innerHTML = W.map(w => `<span>${pct(w.kill)}</span>`).join('');
+
+  // kpis
+  const H = r.hist.slice(-80), f = k => H.map(h => h[k]).filter(v => v != null);
+  $('k_kill').textContent = pct(L.kill_rate); spark('s_kill', f('kill_rate'), css('--accent'), 1);
+  $('k_death').textContent = pct(L.death_rate); spark('s_death', f('death_rate'), css('--bad'), 1);
+  $('k_acq').textContent = L.acquire_time_med != null ? L.acquire_time_med.toFixed(2) + 's' : '—'; spark('s_acq', f('acquire_time_med'), css('--ok'), undefined);
+  $('k_reh').textContent = pct(L.kill_rehearsal); spark('s_reh', f('kill_rehearsal'), css('--ok'), 1);
+  $('k_dly').textContent = pct(L.kill_delayed); spark('s_dly', f('kill_delayed'), css('--warn'), 1);
+  $('k_nc').textContent = pct(L.no_contest_rate); spark('s_nc', f('no_contest_rate'), css('--faint'), 1);
+
+  // charts
+  const stages = r.curriculum.map(c => c.steps);
+  const cur1 = `stage${cur + 1}`;
+  const exNow = r.exams.filter(e => e[cur1]).map(e => ({ x: e.steps, y: e[cur1].kill_rate }));
+  const exNext = r.exams.filter(e => e[`stage${cur + 2}_next`]).map(e => ({ x: e.steps, y: e[`stage${cur + 2}_next`].kill_rate }));
+  line('c_exam', [
+    { label: `stage ${cur + 1}`, data: exNow, borderColor: css('--exam'), backgroundColor: css('--exam'), pointRadius: 3, borderWidth: 2, tension: .3 },
+    { label: `stage ${cur + 2}`, data: exNext, borderColor: '#5b6170', backgroundColor: '#5b6170', pointRadius: 2, borderWidth: 1.5, tension: .3, borderDash: [4, 3] },
+  ], stages, gate);
+  const t0 = exNow.length ? exNow[0].x : 0, from = Math.min(t0, r.hist.length ? r.hist[Math.max(0, r.hist.length - 600)].steps : 0);
+  const hk = r.hist.filter(h => h.steps >= from && h.kill_rate != null);
+  line('c_kill', [{ label: 'kill rate', data: hk.map(h => ({ x: h.steps, y: h.kill_rate })), borderColor: css('--accent'), pointRadius: 0, borderWidth: 1.5, tension: .3 }], stages, gate);
+
+  // curriculum
+  $('strip').innerHTML = s.stages.map(x => `<div class="seg ${x.i < cur ? 'done' : x.i === cur ? 'cur' : ''}" data-tip="${x.i + 1} · ${short(x)}"><span>${x.i + 1}</span></div>`).join('');
+  $('curtext').textContent = short(st);
 }
 refresh(); setInterval(refresh, 15000);
 </script>

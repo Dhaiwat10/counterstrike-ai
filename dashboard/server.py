@@ -70,7 +70,7 @@ def run_state(name):
     cur_ups = [r for r in log[since:] if r.get("event") == "update"]
     latest = ups[-1] if ups else {}
     hist_keys = ["steps", "kill_rate", "dmg_per_ep", "fire_frac", "ent", "aux", "ret_per_ep", "stage", "gate",
-                 "timeout_rate", "death_rate", "sps"]
+                 "timeout_rate", "death_rate", "sps", "acquire_time_med", "kill_delayed", "kill_rehearsal", "no_contest_rate"]
     hist = [{k: u.get(k) for k in hist_keys} for u in ups]
     stages = curriculum_stages()
     st = latest.get("stage")
@@ -86,7 +86,7 @@ def run_state(name):
         name=name, about=RUNS.get(name, ""), alive=running(f"train.ppo --run {name}"), log_age_s=age,
         lr=args.get("lr"), latest=latest, stage=st, stage_desc=stage_desc(stages[st]) if st is not None else "",
         gate=(stages[st].get("gate") if st is not None else None),
-        hist=hist, curriculum=cur, windows=[dict(steps=w["steps"], kill=w["kill_rate"], passes=w["passes"]) for w in stage_wins], version_marks=version_marks[1:], exams=exams[-12:],
+        hist=hist, curriculum=cur, windows=[dict(steps=w["steps"], kill=w["kill_rate"], passes=w["passes"]) for w in stage_wins], version_marks=version_marks[1:], exams=exams[-40:],
         current_version_updates=len(cur_ups), snapshots=len(snaps),
         latest_snapshot=snaps[-1].name if snaps else None,
     )
@@ -96,14 +96,12 @@ def state():
     stages = curriculum_stages()
     load = os.getloadavg()
     du = shutil.disk_usage(REPO)
-    vids = sorted((REPO / "results" / "phase3" / "videos").glob("*.mp4")) if (REPO / "results/phase3/videos").exists() else []
     return dict(
         now=time.strftime("%Y-%m-%d %H:%M:%S"),
         runs=[run_state(r) for r in RUNS],
         exam_alive=running("train.eval_suite"),
         stages=[dict(i=i, desc=stage_desc(s), **s) for i, s in enumerate(stages)],
         machine=dict(load1=load[0], load5=load[1], cores=os.cpu_count(), disk_free_gb=du.free / 1e9),
-        videos=[v.name for v in vids],
     )
 
 
@@ -124,16 +122,6 @@ class H(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
-        if self.path.startswith("/videos/"):
-            p = REPO / "results" / "phase3" / "videos" / Path(self.path[len("/videos/"):]).name
-            if p.exists():
-                data = p.read_bytes()
-                self.send_response(200)
-                self.send_header("Content-Type", "video/mp4")
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
-                return
         return super().do_GET()
 
 
