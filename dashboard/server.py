@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO))
 from train.ppo import curriculum_stages, round_seconds  # noqa: E402
 
 RUNS = {
-    "aim_bc": "starts from the imitation model (learned from pro demos); all 12 game instances since 21:00",
+    "aim_640": "640x480 render, continued from aim_bc (stage 12, 11.69M steps) and replaying the curriculum from stage 1",
 }
 # aim_scratch (random init) was stopped once the comparison was clear; archived in checkpoints/_baseline/
 BOT = {0: "frozen, doesn't shoot", 1: "moving, doesn't shoot", 2: "frozen, shoots back", 3: "moving, shoots back"}
