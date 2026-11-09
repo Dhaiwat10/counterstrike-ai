@@ -151,3 +151,14 @@ Archived in `checkpoints/_baseline/`.
   160x120 periphery) at 1000 units (a human at 1080p sees ~45 px). Band windows had sat at 23-29% for ~2.5 h while
   close/medium range kept improving (exam 75%, medium 62%). Resolution is the real long-range fix -> likely a retrain at
   higher resolution on the 5080.
+
+## Notes from the first human duel (2026-11-09): human won 15-4
+- The agent only controls yaw, pitch and attack (`--heads yaw,pitch,attack`); move/duck/jump/walk/reload are fixed to no-input.
+  The reloads seen in the duel are the game's automatic reload on an empty magazine: `mp_infinite_ammo 2` refills reserve
+  ammo only, and teleporting at round start does not refill the magazine, so after ~8-10 rounds survived the agent starts a
+  round (or a fight) empty and is stuck in a 2.5 s reload. Same happens in training (noise: unwinnable rounds).
+  Fix candidates: `mp_infinite_ammo 1` (no magazine) for the aim stages, or refill the magazine at each round reset.
+- Missing skill: being a hard target. No strafing, counter-strafing (stop to shoot accurately), crouch, peeking or cover,
+  because the movement heads are not learned yet. Needs its own curriculum phase after aim: unlock fwd/side/duck heads
+  (seed from the pro-demo prior via KL), opponents that punish standing still, reward for not being hit.
+- Bot-only opponents leave a gap vs humans (human strafes/peeks unpredictably). Later: self-play / past-version opponents.
