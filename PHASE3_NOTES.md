@@ -171,3 +171,14 @@ Archived in `checkpoints/_baseline/`.
 - Bug found: `yb_freeze_bots 1` turns off YaPB's aim and fire too, so bot level 2 ("frozen, shoots back", stage 3)
   never shoots. Fix later with a position-hold (leash radius ~0 or a position-only teleport in the engine patch).
 - Investigation scripts and data: scratch/no_contest/.
+
+## Long range parked (2026-11-10, curriculum v3)
+- Stage 12 (800-1050) at 640x480: newest-band windows stalled at 29-49% (~37-41%) vs the 50% gate; passed on all rounds
+  instead (`--all-rounds 11`: 61%, 52%). Backup: release `aim_640-stage12`.
+- The old stage 13 (1050-1300) band ran 17%, 22%, 17% vs its 48% gate. The distance gates were set from a scripted
+  perfect-aim bot that reads true positions; the agent sees pixels, and at 1300 u a player is ~17 px tall with a 4-5 px
+  chest at 640x480. Past ~800 u the bottleneck is seeing, not aiming.
+- So `curriculum_stages(max_dist=1050)` drops the 1300-2000 bands and the 2000-unit mastery stage: 17 stages, the reaction
+  delay ramp (40-200 ms, 0-1050 u, all rounds, provisional 50% gates) follows stage 12 directly. Re-enable with
+  `max_dist=2000` when training at a higher resolution (5080 Ti PC).
+- Next after the delay ramp: movement/strafing/hard targets (seen missing in the human duel).

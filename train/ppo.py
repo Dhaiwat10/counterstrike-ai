@@ -157,7 +157,10 @@ def round_seconds(max_dist: float) -> float:
     return 8.0 + 2.0 * max(0.0, max_dist - 800.0) / 1200.0
 
 
-def curriculum_stages():
+MAX_DIST = 1050.0  # 2026-11-10: long range parked -- see curriculum_stages()
+
+
+def curriculum_stages(max_dist: float = MAX_DIST):
     """Ordered stages (v2, 2026-11-09): get GOOD first, add the reaction delay last.
     Within 800 units the bot gets harder: frozen & passive -> strafing & passive -> frozen & shoots back ->
     moving & shoots back (80% each); then larger initial aim error (10-degree frontier bands). Then, still at
@@ -176,10 +179,17 @@ def curriculum_stages():
     k["offset_min"] = 15.0  # distance, mastery and delay stages: realistic 15-45 deg mix
     # pass marks ~70% of a scripted perfect-aim ceiling measured per band (tapping, 0 ms, vs moving bot that shoots
     # back; 2026-11-09): 800-1050 88%, 1050-1300 68%, 1300-1550 42%, 1550-1800 35%, 1800-2000 18%, mix 0-2000 78%
+    # v3 (2026-11-10): bands beyond max_dist are PARKED. These ceilings come from a bot that reads true positions;
+    # the agent sees pixels, and past ~800 units the target is tiny (1300 u: ~17 px tall, 4-5 px chest at 640x480):
+    # stage 12's band stalled near 37% (passed on all rounds, --all-rounds 11) and the 1050-1300 band ran 17-22%
+    # vs its 48% gate. Re-enable (max_dist=2000) when training at a higher resolution.
     for dist, gate in ((1050.0, 0.50), (1300.0, 0.48), (1550.0, 0.29), (1800.0, 0.25), (2000.0, 0.13)):
+        if dist > max_dist:
+            break
         k["dist_min"] = k["dist"]; k["dist"] = dist; k["gate"] = gate; st.append(dict(k))  # half the rounds from the newest band
     k["dist_min"] = 0.0
-    k["gate"] = 0.55; st.append(dict(k))  # mastery: 2000 units, 0 ms, all rounds (~70% of the 78% ceiling)
+    if max_dist >= 2000.0:
+        k["gate"] = 0.55; st.append(dict(k))  # mastery: 2000 units, 0 ms, all rounds (~70% of the 78% ceiling)
     k["gate"] = 0.5  # delay stages: provisional; calibrate against a delayed perfect-aim ceiling before reaching them
     for d in (0.04, 0.08, 0.12, 0.16, 0.20):
         k["delay"] = d; st.append(dict(k))

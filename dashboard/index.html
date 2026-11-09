@@ -59,7 +59,7 @@
   .seg.done { background: rgba(52,211,153,.32); } .seg.cur { background: var(--accent); box-shadow: 0 0 0 3px rgba(124,156,255,.25); }
   .seg span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 10px; color: var(--muted); }
   .seg.done span { color: #b5f0d8; } .seg.cur span { color: #0b0c10; font-weight: 700; }
-  .groups { display: grid; grid-template-columns: 4fr 7fr 5fr 1fr 5fr; gap: 4px; margin-top: 6px; font-size: 11px; color: var(--faint); }
+  .groups { display: grid; grid-template-columns: 4fr 7fr 1fr 5fr; gap: 4px; margin-top: 6px; font-size: 11px; color: var(--faint); }
   .groups div { border-top: 1px solid var(--line); padding-top: 4px; white-space: nowrap; overflow: hidden; }
 
   [data-tip] { position: relative; cursor: default; }
@@ -118,7 +118,7 @@
   <div class="card">
     <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div class="label">Curriculum</div><div class="muted" style="font-size:12px" id="curtext"></div></div>
     <div class="strip" id="strip"></div>
-    <div class="groups"><div>Bot</div><div>Aim angle</div><div>Distance</div><div>★</div><div>Reaction delay</div></div>
+    <div class="groups"><div>Bot</div><div>Aim angle</div><div>1050u</div><div>Reaction delay</div></div>
   </div>
 </div>
 
@@ -201,6 +201,7 @@ async function refresh() {
   line('c_kill', [{ label: 'kill rate', data: hk.map(h => ({ x: h.steps, y: h.kill_rate })), borderColor: css('--accent'), pointRadius: 0, borderWidth: 1.5, tension: .3 }], stages, gate);
 
   // curriculum
+  $('strip').style.gridTemplateColumns = innerWidth > 900 ? `repeat(${s.stages.length}, 1fr)` : '';
   $('strip').innerHTML = s.stages.map(x => `<div class="seg ${x.i < cur ? 'done' : x.i === cur ? 'cur' : ''}" data-tip="${x.i + 1} · ${short(x)}"><span>${x.i + 1}</span></div>`).join('');
   $('curtext').textContent = short(st);
 }
