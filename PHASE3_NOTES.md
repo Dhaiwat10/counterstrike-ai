@@ -162,3 +162,12 @@ Archived in `checkpoints/_baseline/`.
   because the movement heads are not learned yet. Needs its own curriculum phase after aim: unlock fwd/side/duck heads
   (seed from the pro-demo prior via KL), opponents that punish standing still, reward for not being hit.
 - Bot-only opponents leave a gap vs humans (human strafes/peeks unpredictably). Later: self-play / past-version opponents.
+
+## No-contest fix (2026-11-10)
+- Cause: YaPB follows its navigation route (median ~200 u in a straight line at run speed, 92% of the time before
+  anyone is hit) and turns a corner. Spread over many spawn pairs; worse when the bot's spot has cover next to it.
+- Fix: leash (--leash 150 --leash-frac 0.8) + pocket-visibility spawn filter (--min-vis 0.75). Measured: no-contests
+  24.5% -> 2.8% (800-1050 band 38% -> 4.9%) with the bot as dangerous (agent deaths 45% -> 47%). Exams stay pure level 3.
+- Bug found: `yb_freeze_bots 1` turns off YaPB's aim and fire too, so bot level 2 ("frozen, shoots back", stage 3)
+  never shoots. Fix later with a position-hold (leash radius ~0 or a position-only teleport in the engine patch).
+- Investigation scripts and data: scratch/no_contest/.
