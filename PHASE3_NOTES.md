@@ -127,3 +127,5 @@ Archived in `checkpoints/_baseline/`.
 - **08:00 re-diagnosis (stage 13, 6.6M steps, KL at its 0.01 floor):** kills 35 -> 42%, deaths 61 -> 53%, overshoot 66 -> 52%,
   acquisition 0.52 -> 0.48 s; hit rate per firing step still ~9%. Improving without intervention -> no change. Exam 43%
   (from a flat 33-38%). Next diagnosis ~10:00.
+- **10:00 diagnosis (stage 13, 7.7M steps):** kills 56% / deaths 41%, on target in 90% of rounds (0.48 s), hit rate per
+  firing step 9 -> 13%, overshoot steady ~54%. Exams 33 -> 43 -> 40 -> 51 -> 47 -> 52%. Still no intervention needed.
