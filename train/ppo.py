@@ -62,6 +62,9 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
         env.rw_death = rewards["death"] if bot_shoots else 0.0
         env.hurt_penalty = rewards["hurt"] if bot_shoots else 0.0
         env.no_contest_after = rewards.get("no_contest", 0.0) if k["bot"] == 3 else 0.0  # free-roaming bot only
+        # free-roaming bot: leash (put back into view when it walks > leash units away) and pocket-visibility filter
+        env.arena_leash, env.arena_leash_frac = rewards.get("leash", 0.0), rewards.get("leash_frac", 1.0)
+        env.arena_min_vis = rewards.get("min_vis", 0.0)
 
     import random
     rng = random.Random(seed)
@@ -96,7 +99,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
                     ep = dict(ret=ep_ret, kills=info["kills"], deaths=info["deaths"], damage=info["damage"],
                               time=info["time"], timeout=bool(trunc), dist=info["spawn_dist"], offset=info["spawn_offset"],
                               acquire=info.get("acquire_time"), rehearsal=state["rehearsing"], delayed=state["delayed"],
-                              no_contest=info.get("no_contest", False))
+                              no_contest=info.get("no_contest", False), leashed=info.get("leashed", False))
                     ep_ret = 0.0
                     if trunc:
                         final = views(obs)  # bootstrap V(final obs) on a time-limit cut
@@ -301,6 +304,11 @@ def main():
     ap.add_argument("--kl-heads", default="yaw", help="heads the KL pull applies to")
     ap.add_argument("--no-contest", type=float, default=0.0,
                     help="moving-bot stages: end a round as no-contest (neutral, not counted) if the bot is out of sight this many seconds")
+    ap.add_argument("--leash", type=float, default=0.0,
+                    help="free-roaming bot: put it back into view when it walks further than this from its spot (units; 0 = off)")
+    ap.add_argument("--leash-frac", type=float, default=1.0, help="share of free-roaming rounds that are leashed (rest roam freely)")
+    ap.add_argument("--min-vis", type=float, default=0.0,
+                    help="free-roaming bot: skip spawn pairs whose pocket around the bot is less than this fraction visible (0 = off)")
     ap.add_argument("--rand-delay", type=float, default=0.0,
                     help="0 ms stages: share of rounds played with a random 40 or 80 ms delay (not counted for promotion)")
     ap.add_argument("--rehearsal", type=float, default=0.0,
@@ -408,7 +416,7 @@ def main():
     rewards = dict(aim_shaping=a.aim_shaping, bullet_cost=a.bullet_cost, damage=a.damage_reward, death=a.death_penalty,
                    time_round=a.time_penalty_round, hurt=a.hurt_penalty, gamma=a.gamma, review=a.review_frac,
                    offtarget=a.offtarget_cost, acquire=a.acquire_bonus, rehearsal=a.rehearsal, no_contest=a.no_contest,
-                   rand_delay=a.rand_delay)
+                   rand_delay=a.rand_delay, leash=a.leash, leash_frac=a.leash_frac, min_vis=a.min_vis)
     venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, rewards, seed=a.seed * 100, res=res,
                   prior_scale=prior_scale if prior_scale != 1.0 else 0.0)
     N, T = a.envs, a.rollout

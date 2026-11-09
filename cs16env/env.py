@@ -97,6 +97,18 @@ class CS16Env(gym.Env):
         # walking behind a wall makes the round unwinnable); 0 = off
         self.no_contest_after = 0.0
         self._hidden_steps = 0
+        # arena, free-roaming bot (level 3): LEASH -- YaPB walks its own navigation route away from the spot (median 200
+        # units in a straight line at ~216 u/s) and turns a corner; the round is then a no-contest (38% of 800-1050 unit
+        # rounds). If the bot gets further than arena_leash units from its spot it is put back onto a random visible,
+        # walkable point of the pocket around the spot, facing the agent; it keeps aiming, shooting and walking by itself.
+        # arena_leash_frac = share of level-3 rounds that are leashed (the rest stay fully free-roaming); 0 = off.
+        self.arena_leash = 0.0
+        self.arena_leash_frac = 1.0
+        # arena: reject spawn pairs whose pocket (24 points, radii 64-192 around the bot's spot) is less than this
+        # fraction visible from the agent's eye (reachable points only); 0 = accept every pair
+        self.arena_min_vis = 0.0
+        self._leash = None
+        self._pocket_vis = None
         self.episode_seconds = self.scn.episode_seconds  # can grow with the arena distance
         self._ep_dist = 0.0
         self.bot_level = 3             # arena: 0 frozen & passive, 1 strafing (scripted) & passive, 2 frozen & shoots, 3 normal
@@ -196,9 +208,10 @@ class CS16Env(gym.Env):
         terminated = False
         aim0 = self._snap["aim"]
         for i in range(self.repeat):
+            cmds = [self._strafe_tick(), self._leash_tick(),
+                    self._los_cmd() if i == self.repeat - 1 and self.no_contest_after else ""]
             s = b.step(dyaw=dyaw, dpitch=dpitch, forward=fwd, side=side, buttons=buttons,
-                       capture=(i == self.repeat - 1),
-                       cmd=self._strafe_tick() + (";" + self._los_cmd() if i == self.repeat - 1 and self.no_contest_after else ""))
+                       capture=(i == self.repeat - 1), cmd=";".join(c for c in cmds if c))
             r, died, killed = self._account(s)
             reward += r
             if (died and self.scn.end_on_death) or (killed and self.scn.end_on_kill):
@@ -277,10 +290,25 @@ class CS16Env(gym.Env):
             band = np.nonzero((dist > self.arena_min_dist) & (dist <= self.arena_max_dist))[0]
             if len(band):
                 ok = band
-        i, j = pairs[self.np_random.choice(ok)]
-        if self.np_random.random() < 0.5:
-            i, j = j, i
-        a, e = P[i], P[j]
+        me = s.playernum
+        bot = next(k for k, p in enumerate(s.players) if p.connected and k != me)
+        self._strafe = None
+        self._leash = None
+        self._pocket_vis = None
+        leash = self.bot_level == 3 and self.arena_leash > 0 and self.np_random.random() < self.arena_leash_frac
+        for attempt in range(12):
+            i, j = pairs[self.np_random.choice(ok)]
+            if self.np_random.random() < 0.5:
+                i, j = j, i
+            a, e = P[i], P[j]
+            if self.bot_level == 3 and (self.arena_min_vis > 0 or leash):
+                vis, pts = self._pocket(a, e)
+                self._pocket_vis = vis
+                if self.arena_min_vis > 0 and vis < self.arena_min_vis and attempt < 11:
+                    continue  # cover right next to the bot's spot: another pair from the same distance band
+                if leash:
+                    self._leash = dict(bot=bot, c=e.copy(), pts=[e.copy()] + pts, n=0)
+            break
         self._ep_dist = float(np.linalg.norm(e - a))
         d = e - a
         yaw = math.degrees(math.atan2(d[1], d[0]))
@@ -294,9 +322,6 @@ class CS16Env(gym.Env):
         yaw += mag if self.np_random.random() < 0.5 else -mag
         pitch = float(np.clip(pitch + self.np_random.uniform(-off, off) / 4, -60, 60))
         self._ep_offset = mag
-        me = s.playernum
-        bot = next(k for k, p in enumerate(s.players) if p.connected and k != me)
-        self._strafe = None
         if self.bot_level == 1:
             path = self._strafe_path(a, e)
             if path is None:  # no usable strafe path here: try another spawn pair
@@ -391,6 +416,47 @@ class CS16Env(gym.Env):
         p = st["c"] + st["pos"] * st["u"]
         return f"cs2ai_place {st['bot']} {p[0]:.1f} {p[1]:.1f} {p[2]:.1f} 0 {st['face']:.1f}"
 
+    def _pocket(self, a, e):
+        """Visibility of the bot's surroundings: 24 points around its spot e (radii 64/128/192, 8 headings). A point is
+        REACHABLE if the hull-centre line from e is wall-free and there is floor ~36 units below it, VISIBLE if the agent's
+        eye at a sees the chest there. Returns (visible / reachable, list of visible reachable points within 128 units)."""
+        eye = a + (0.0, 0.0, 17.0)
+        rot = self.np_random.uniform(0.0, math.pi / 4)
+        pts, segs = [], []
+        for rad in (64.0, 128.0, 192.0):
+            for k in range(8):
+                t = rot + k * math.pi / 4
+                p = e + np.array([rad * math.cos(t), rad * math.sin(t), 0.0])
+                pts.append(p)
+                segs += [(e + (0, 0, 10), p + (0, 0, 10)), (p + (0, 0, 10), p - (0, 0, 80)), (eye, p + (0, 0, 10))]
+        fr = self._trace(segs)
+        reach = vis = 0
+        good = []
+        for q, p in enumerate(pts):
+            wall, floor, see = fr[3 * q], fr[3 * q + 1], fr[3 * q + 2]
+            if wall >= 0.999 and 26.0 <= floor * 90.0 <= 58.0:  # 90-unit drop trace stops 26-58 units down = level floor
+                reach += 1
+                if see >= 0.999:
+                    vis += 1
+                    if q < 16:
+                        good.append(p)
+        return (vis / reach if reach else 1.0), good
+
+    def _leash_tick(self):
+        """Leashed free-roaming bot: when it has walked further than arena_leash from its spot, put it back on a random
+        visible point of the pocket, facing the agent (YaPB keeps its own aim/fire/movement logic)."""
+        L = self._leash
+        if L is None:
+            return ""
+        s = self.bridge.state
+        bp, m = s.players[L["bot"]], self._me(s)
+        if not (bp.alive and m.alive) or np.linalg.norm((np.array(bp.origin) - L["c"])[:2]) <= self.arena_leash:
+            return ""
+        L["n"] += 1
+        p = L["pts"][int(self.np_random.integers(len(L["pts"])))]
+        d = np.array(m.origin) - p
+        return f"cs2ai_place {L['bot']} {p[0]:.1f} {p[1]:.1f} {p[2]:.1f} 0 {math.degrees(math.atan2(d[1], d[0])):.1f}"
+
     def render(self):
         f = self.bridge.frame() if self.bridge else None
         return f if f is not None else self._blank
@@ -468,6 +534,8 @@ class CS16Env(gym.Env):
             "spawn_dist": self._ep_dist,
             "spawn_offset": self._ep_offset,
             "no_contest": bool(getattr(self, "_no_contest", False)),
+            "leashed": bool(self._leash is not None),
+            "pocket_vis": self._pocket_vis,
             "acquire_time": self._acquired_t,
             "aux": self._aux_queue[0] if getattr(self, "_aux_queue", None) else np.zeros(3, np.float32),
         }
