@@ -93,6 +93,10 @@ SCENARIOS: dict[str, Scenario] = {
             "mp_freeforall 1",
             "mp_t_default_weapons_primary ak47", "mp_ct_default_weapons_primary ak47",
             "mp_t_default_weapons_secondary \"\"", "mp_ct_default_weapons_secondary \"\"",
+            # magazine never empties: teleporting between rounds doesn't refill it, so a surviving agent used to drain
+            # it over ~8-10 rounds and start fights in a forced 2.5 s reload. One round rarely uses >30 bullets, so
+            # this is ~"full magazine every round". Revisit once the reload head is learned.
+            "mp_infinite_ammo 1",
         ],
         notes="Phase 3 stage 1: enemy in view, ends on kill/death/4 s. Distance and initial aim error are curriculum knobs.",
     ),
