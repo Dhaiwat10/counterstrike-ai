@@ -1,4 +1,4 @@
-# Phase 3 notes — RL aim arena (in progress)
+# Phase 3 notes — RL aim arena (stage 1 finished at 120 ms delay, 2026-11-10)
 
 ## Setup
 - Scenario `aim_dust2`: one YaPB bot placed at a precomputed line-of-sight spot on de_dust2
@@ -288,3 +288,55 @@ Same 300 rounds (seed 777, `scratch/greedy_check.py`, `results/phase3/greedy_che
   exhausted on purpose, so it will not run noisy trials again.
 - **Promotion at 160/200 ms still uses the trainer's sampled two-window rule.** Greedy gating is not built in. If
   160 ms plateaus, repeat the greedy check by hand.
+
+## Wrap-up: the aim arena stops at 120 ms (2026-11-10, 20:41, human decision)
+
+**Final model:** `checkpoints/aim_640/phase3_final_120ms.pt`.
+- Byte-identical to `pre_lrhalf_last.pt`: update 10634, 15.9M RL steps, saved 11:02 IST.
+- Private release `aim_640-stage16-120ms-greedy`, SHA256 `6a8fca90…bbe0c1`, re-verified.
+- Architecture: 640×480 render, periphery + fovea, IMPALA CNN + LSTM, action history 3.
+
+**What it does:** duels a YaPB bot on de_dust2 that sees without delay, while the model sees every frame 120 ms late.
+
+| Test | Rounds | Kill rate |
+|---|---|---|
+| Greedy, 120 ms | 300 | 56.3% |
+| Sampled, 120 ms | 300 | 50.3% |
+| Greedy, 160 ms | 300 | 40.0% |
+
+The setup is a 15–45° starting aim error, at 0–1050 units.
+
+**Why stop here**
+- From 08:40 to 19:20, seven remedies at 120 ms moved nothing beyond noise. Two "successes" were luck and lowered the
+  policy's quality.
+- The 160 ms run, promoted on the greedy exam, trained flat at about 34% in windows for 80 minutes. The first exam of
+  that run scored 52% sampled at 160 ms.
+- At 120 ms and beyond, the task changes from reacting to predicting. The model must track its own turning since the
+  frame it sees and aim where the target is now. Win/lose reward teaches that weakly, and every remedy tried changed
+  how it learns, not what it is asked to learn.
+
+**Known gap (fairness):** the project's human-equivalence spec is a 200 ms delay. 120 ms is top-pro reaction speed,
+faster than most humans, so the finished model falls short of the spec. Fine offline against bots, but say so
+whenever results are reported.
+
+**If the delay ramp is resumed**, start from the final model with its regime:
+
+```
+--lr 1e-4 --ent-yaw-mult 5 --rehearsal 0.1 --act-hist 3 --kl-prior checkpoints/bc_fov80/best.pt --kl-coef 0.01
+--delay-ramp 0.04,0.08,0.1,0.12,0.16,0.2 --stage0 16
+```
+
+Plus the base flags in `train/autopilot.py`. Change the method rather than the knobs:
+- Distil the delayed oracle with soft labels after an imitation-only warm-up. The first attempt collapsed with hard
+  CE from the start.
+- Or add a learned forward model that predicts the current target offset.
+- Gate on pooled greedy exams. Never judge trials on a single 100-round exam.
+
+**Other files kept**
+- `post_afternoon_auxnow6_last.pt`: the afternoon line, worse.
+- `run160_stopped_2041_last.pt`: 80 minutes at 160 ms from the final model.
+- `snapshots_afternoon_archive/`.
+- Autopilot journal in `scratch/autopilot/` (not in git).
+
+**Next:** phase 3 stage 2 in ROADMAP.md, 1v1 on Dust2 with movement, peeking and positioning. The policy has never
+learned to move.

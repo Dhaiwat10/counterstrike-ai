@@ -17,6 +17,7 @@ We use **Counter-Strike 1.6** on the open-source Xash3D FWGS engine rather than 
 - **Phase 0 — done.** Open-source CS 1.6 stack builds natively; lockstep engine patch (~150× realtime server, ~10–18× per rendering client); pro demo sources found; GoldSrc demo parser. [PHASE0_RESULTS.md](PHASE0_RESULTS.md)
 - **Phase 1 — done.** In-engine bridge (action in, frame out, lockstep), Gymnasium env `CS16Env` with scenarios and fairness layer, pro-demo → (frame, pro action) dataset generator: 1.32M frames / 14.6 h of pro first-person play across dust2, train, nuke, inferno. [PHASE1_RESULTS.md](PHASE1_RESULTS.md), [patches/BRIDGE.md](patches/BRIDGE.md)
 - **Phase 2 — imitation done, deliverable not met.** BC on pro demos learns movement/fire habits but not aim: 0 kills vs easy bots (random agent also 0; deaths 2.2/min vs 5.7). Aim moves to RL. [PHASE2_RESULTS.md](PHASE2_RESULTS.md)
+- **Phase 3, stage 1 (aim arena) — done at 120 ms delay.** PPO with a curriculum wins 56% of duels (greedy, 300 rounds) against a YaPB bot on de_dust2 while seeing every frame 120 ms late; stopped short of the 200 ms spec after a 12-hour plateau (prediction under delay is the open problem). Weights private. [PHASE3_NOTES.md](PHASE3_NOTES.md)
 
 Background research: [reports/AI agents playing Counter-Strike.md](reports/AI%20agents%20playing%20Counter-Strike.md).
 
