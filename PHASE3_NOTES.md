@@ -238,3 +238,28 @@ Archived in `checkpoints/_baseline/`.
 
 kl_coef, ent, teacher_coef and aux_now are now regime keys. The `decide()` logger can no longer crash on
 duplicate keys.
+
+### Overnight result (2026-11-10, 11:58–17:11): ladder exhausted at 120 ms, waiting for a human
+
+| Rung | Change | Windows (base → trial) | Verdict |
+|---|---|---|---|
+| `denoise` | kl 0, yaw-entropy ×1, ent 0.003 | 0.435 → 0.433 | fail, rolled back |
+| `auxnow6` | aux-now head 0.5, act_hist 6 | 0.436 → 0.469 (z 2.13) | kept (marginal) |
+| `batch2x` | rollout 256, lr 1e-4 (added overnight, Fable idea 8) | 0.456 → 0.429 | fail, rolled back |
+
+- After `auxnow6` the pooled rate drifted back down: 0.456, and 0.435 after the rollback. So its "success" was
+  probably mostly the winner's curse Fable warned about.
+- **Current state:** training continues unchanged on `auxnow6` + lr 5e-5 at stage 16 (120 ms). The autopilot is in
+  `wait_human`.
+- **Removing the regularisers did not help in training windows.** That is so even though greedy play scores 59% and
+  sampling scores 46.5%. Sampling noise costs kills, but making the training policy less noisy does not by itself
+  raise the sampled rate within 40 windows.
+
+**Decisions for the human (not taken unsupervised):**
+1. **Judge promotion on greedy play.** The agent you would actually deploy acts greedily, and it already clears 50%
+   at 120 ms. This is a definition change (Fable idea 5 is the related "one definition of the task"). It is the
+   cheapest unblock, but it moves the goalposts.
+2. **Mixed-delay rounds, a `mix_prev` rung (Fable 6)** and a **privileged critic (Fable 7, explained variance about
+   0.29)**. About 20 and 50 lines of new trainer code. Too risky to write and launch unattended.
+3. **Run the delay ramp at 0–800 units (Fable 10).** Medium range drags every delay stage; `kill_medium` is about
+   0.29 against about 0.54 close.
