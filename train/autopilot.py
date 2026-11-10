@@ -57,7 +57,7 @@ KL_PRIOR = "checkpoints/bc_fov80/best.pt"
 # kl_coef (prior strength), ent, teacher_coef / aux_now (delayed-oracle kick-starting, undelayed aux label) are regime keys so
 # rungs can change them; states saved before they existed default to the old command (kl 0.01, no teacher, no aux-now)
 BASE_REGIME = dict(lr=1e-4, ent_yaw_mult=5.0, rehearsal=0.1, delay_ramp="", act_hist=0, kl_coef=0.01, teacher_coef=0.0, aux_now=0.0,
-                   ent=0.01)
+                   ent=0.01, rollout=128)
 
 # ---------------------------------------------------------------------------- the remedy ladder (pre-registered)
 # Ranked from the 80 ms diagnosis (results/phase3/diag_delay_update_009525_{40,80}ms.json): the delay costs settling
@@ -90,7 +90,12 @@ RUNGS = [
     dict(tag="auxnow6", budget_windows=60, change=dict(aux_now=0.5, act_hist=6),
          why="Second aux head predicts where the target is NOW from delayed frames + own actions (a dense label for "
              "the Smith-predictor computation; Wang et al. 2024: undelayed-state prediction + action history), and the "
-             "history widens 3 -> 6 so it covers 160/200 ms (K=3 covers exactly 120 ms). Both zero-impact at launch.")
+             "history widens 3 -> 6 so it covers 160/200 ms (K=3 covers exactly 120 ms). Both zero-impact at launch."),
+    dict(tag="batch2x", budget_windows=40, change=dict(rollout=256, lr=1e-4),
+         why="Explained variance ~0.3 and approx-KL ~0.005/update: the gradient is noise-limited, not step-limited. "
+             "Double the samples per update (rollout 128 -> 256, ~58 rounds per update) and undo lrhalf (its +3 pp "
+             "verdict was at z 2.1, likely noise; halving the step was the wrong direction for a noise problem). "
+             "Fable idea 8 (IDEAS_delay_plateau.md)."),
 ]
 
 sys.path.insert(0, str(REPO))
@@ -401,6 +406,8 @@ class Autopilot:
             cmd += ["--teacher-coef", f"{regime['teacher_coef']:g}", "--teacher-min", f"{regime['teacher_coef'] / 10:g}"]
         if regime.get("aux_now"):
             cmd += ["--aux-now", f"{regime['aux_now']:g}"]
+        if regime.get("rollout", 128) != 128:
+            cmd += ["--rollout", str(regime["rollout"])]
         if stage0 is not None:
             cmd += ["--stage0", str(stage0)]
         return cmd
