@@ -323,6 +323,11 @@ class Autopilot:
             elif ev == "start":
                 pass
         self.s["windows"] = self.s["windows"][-400:]
+        if not self.s.get("bootstrapped"):  # first ingest of the existing log: history only, no releases for old passes
+            self.s["bootstrapped"] = True
+            if promoted:
+                self.decide("history", f"log replayed: the last promotion (update {promoted['update']}) predates the autopilot; no backup made")
+                promoted = None
         ex, self.s["exam_off"] = read_new(EXAMS, self.s["exam_off"])
         for e in ex:
             self.s["exams"].append(self.exam_summary(e))
@@ -758,11 +763,12 @@ class Autopilot:
 
     def run(self):
         PIDFILE.write_text(str(os.getpid()))
-        if not JOURNAL.exists():
+        if not JOURNAL.exists() or not JOURNAL.read_text().startswith("# Autopilot journal"):
+            old = JOURNAL.read_text() if JOURNAL.exists() else ""
             JOURNAL.write_text("# Autopilot journal (aim_640)\n\nDecisions of the unattended supervisor, newest last. "
-                               "Rules and reasoning: scratch/autopilot/DESIGN.md. Structured copy: decisions.jsonl.\n\n")
+                               "Rules and reasoning: scratch/autopilot/DESIGN.md. Structured copy: decisions.jsonl.\n\n" + old)
         self.decide("autopilot_start", f"supervisor started (pid {os.getpid()}); ladder: " + ", ".join(r["tag"] for r in RUNGS),
-                    regime=self.s["regime"], phase=self.s["phase"])
+                    regime=self.s["regime"], cur_phase=self.s["phase"])
         while True:
             try:
                 self.tick()
