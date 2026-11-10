@@ -24,6 +24,7 @@ import collections
 import json
 import math
 import multiprocessing as mp
+import os
 import time
 from pathlib import Path
 
@@ -31,6 +32,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from cs16env.env import PITCH_TABLE, YAW_TABLE
 from cs16env.policy import HEADS, NVEC, Policy
 
 IDLE = (NVEC[0] // 2, NVEC[1] // 2, 0, 0, 0, 0, 0, 0, 0)  # "no input" for every head
@@ -158,15 +160,28 @@ def round_seconds(max_dist: float) -> float:
 
 
 MAX_DIST = 1050.0  # 2026-11-10: long range parked -- see curriculum_stages()
+DEFAULT_DELAY_RAMP = (0.04, 0.08, 0.12, 0.16, 0.20)
 
 
-def curriculum_stages(max_dist: float = MAX_DIST):
+def parse_delay_ramp(text):
+    """'0.04,0.06,0.08' -> (0.04, 0.06, 0.08); empty/None -> None."""
+    if not text:
+        return None
+    vals = tuple(float(x) for x in str(text).replace(";", ",").split(",") if x.strip())
+    assert vals == tuple(sorted(vals)) and all(0.0 < v <= 0.20 for v in vals), f"bad delay ramp {vals}"
+    return vals
+
+
+def curriculum_stages(max_dist: float = MAX_DIST, delay_ramp=None):
     """Ordered stages (v2, 2026-11-09): get GOOD first, add the reaction delay last.
     Within 800 units the bot gets harder: frozen & passive -> strafing & passive -> frozen & shoots back ->
     moving & shoots back (80% each); then larger initial aim error (10-degree frontier bands). Then, still at
     0 ms, distance grows band by band to 2000 units (pass marks ~70% of the perfect-aim ceiling of the newest band);
     then a MASTERY stage (2000 units, 15-45 deg, 0 ms, 55% on all rounds) that defines "good". Only then the reaction delay ramps 40 -> 200 ms.
-    (0 ms stages also see 25% randomised-delay rounds in training so habits stay delay-robust.)"""
+    (0 ms stages also see 25% randomised-delay rounds in training so habits stay delay-robust.)
+    delay_ramp: the reaction-delay stages in seconds (default 40/80/120/160/200 ms; the trainer's --delay-ramp or the
+    CS2AI_DELAY_RAMP environment variable can insert intermediate steps, e.g. 60 ms, for every tool that reads stages)."""
+    ramp = parse_delay_ramp(delay_ramp) or parse_delay_ramp(os.environ.get("CS2AI_DELAY_RAMP")) or DEFAULT_DELAY_RAMP
     st, k = [], dict(bot=0, offset=10.0, offset_min=0.0, delay=0.0, dist=800.0, gate=0.8)
     st.append(dict(k))
     for b in (1, 2, 3):
@@ -191,9 +206,16 @@ def curriculum_stages(max_dist: float = MAX_DIST):
     if max_dist >= 2000.0:
         k["gate"] = 0.55; st.append(dict(k))  # mastery: 2000 units, 0 ms, all rounds (~70% of the 78% ceiling)
     k["gate"] = 0.5  # delay stages: provisional; calibrate against a delayed perfect-aim ceiling before reaching them
-    for d in (0.04, 0.08, 0.12, 0.16, 0.20):
+    for d in ramp:
         k["delay"] = d; st.append(dict(k))
     return st
+
+
+def action_features(acts):
+    """[..., 9] action indices -> [..., 3] (yaw deg / 48, pitch deg / 16, attack) for the action-history input."""
+    yaw = torch.as_tensor(YAW_TABLE, device=acts.device)[acts[..., 0]] / 48.0
+    pitch = torch.as_tensor(PITCH_TABLE, device=acts.device)[acts[..., 1]] / 16.0
+    return torch.stack([yaw, pitch, acts[..., 4].float()], -1)
 
 
 def pub(knobs):
@@ -249,10 +271,10 @@ def dist_stats(logits, mask, actions=None):
     return torch.stack(acts, -1), torch.stack(logps, -1).sum(-1), E
 
 
-def seq_forward(model, frames, fov, state, starts):
+def seq_forward(model, frames, fov, state, starts, hist=None):
     """Recompute over a [N, T] rollout; LSTM state zeroed where an episode starts (starts[n, t] = 1)."""
     N, T = frames.shape[:2]
-    z = model.encode(frames, fov)  # [N, T, H] in one batch
+    z = model.encode(frames, fov, hist)  # [N, T, H] in one batch
     h, c = state
     outs = []
     with torch.autocast(z.device.type, enabled=False):
@@ -349,6 +371,12 @@ def main():
     ap.add_argument("--cur-passes", type=int, default=2,
                     help="consecutive non-overlapping windows that must clear the pass mark to advance")
     ap.add_argument("--no-curriculum", action="store_true")
+    ap.add_argument("--delay-ramp", default="",
+                    help="reaction-delay stages in seconds, e.g. 0.04,0.06,0.08,0.12,0.16,0.2 (default: 40/80/120/160/200 ms); "
+                         "inserting a step keeps the SAME stage index pointing at an easier delay, so pass --stage0 as needed")
+    ap.add_argument("--act-hist", type=int, default=0,
+                    help="feed the last K actions to the policy (zero-initialised extra input; 0 = off, unchanged behaviour). "
+                         "With delayed frames this lets the agent know where its crosshair is NOW")
     ap.add_argument("--all-rounds", type=int, nargs="*", default=[],
                     help="0-based stage indices judged on ALL their rounds instead of the newest distance band only "
                          "(e.g. 11 = stage 12, 800-1050: the far band stalls near 37%% at 640x480)")
@@ -388,8 +416,15 @@ def main():
     if resume is not None:
         ra = resume["args"]
         hw, chans, fovea = tuple(ra["hw"]), tuple(ra["chans"]), int(ra["fovea"])
-        model = Policy(in_hw=hw, chans=chans, fovea=fovea)
-        model.load_state_dict({k: v.float() for k, v in resume["model"].items()})
+        assert a.act_hist == 0 or int(ra.get("act_hist", 0)) in (0, a.act_hist), "cannot change --act-hist length on a trained history input"
+        model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist or int(ra.get("act_hist", 0)))
+        missing, unexpected = model.load_state_dict({k: v.float() for k, v in resume["model"].items()}, strict=False)
+        assert not unexpected and all(k.startswith("act_in.") for k in missing), (missing, unexpected)  # only the (zero) history input may be new
+    elif a.act_hist:
+        model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist)
+        if a.init:
+            model.load_state_dict({k: v.float() if v.is_floating_point() else v for k, v in ck["model"].items()}, strict=False)
+    K = model.act_hist
     model.to(dev)
     if a.res:
         res = tuple(int(x) for x in a.res.lower().split("x"))
@@ -397,7 +432,7 @@ def main():
         res = tuple(resume["args"]["res"])
     else:
         res = (320, 240)
-    model_args = dict(hw=list(hw), chans=list(chans), fovea=fovea, active_heads=heads, res=list(res))
+    model_args = dict(hw=list(hw), chans=list(chans), fovea=fovea, active_heads=heads, res=list(res), act_hist=K)
     prior = None
     kl_idx = [HEADS.index(h.strip()) for h in a.kl_heads.split(",") if h.strip()]
     if a.kl_prior:
@@ -413,13 +448,21 @@ def main():
         prior_scale = res[0] / prior_res[0] if fovea else 0.0  # >1: the prior gets its own, wider fovea crop
     else:
         prior_scale = 0.0
-    opt = torch.optim.Adam(model.parameters(), lr=a.lr, eps=1e-5)
+    # a history input added on resume (--act-hist) is new to the saved optimiser: it gets its own fresh param group
+    new_params = [q for n, q in model.named_parameters() if n.startswith("act_in.")] if (resume is not None and
+                  not any(k.startswith("act_in.") for k in resume["model"])) else []
+    old_params = [q for n, q in model.named_parameters() if not (new_params and n.startswith("act_in."))]
+    opt = torch.optim.Adam(old_params, lr=a.lr, eps=1e-5)
     if resume is not None and "opt" in resume:
         opt.load_state_dict(resume["opt"])
+        for g in opt.param_groups:  # the saved optimiser carries its old lr; the flag on the command line wins
+            g["lr"] = a.lr
+    if new_params:
+        opt.add_param_group(dict(params=new_params))
     warm_params = list(model.value.parameters()) + list(model.aux.parameters())
     wopt = torch.optim.Adam(warm_params, lr=1e-3)
 
-    stages = curriculum_stages()
+    stages = curriculum_stages(delay_ramp=a.delay_ramp or None)
     stage = max(0, a.stage0)
     if resume is not None:
         stage = a.stage0 if a.stage0 >= 0 else int(resume.get("stage", 0))
@@ -449,6 +492,7 @@ def main():
     cur_aux = torch.from_numpy(np.stack([x[1] for x in venv.first])).to(dev)
     state = model.initial_state(N, dev)
     start_flag = torch.ones(N, device=dev)
+    hist = torch.zeros(N, 3 * K, device=dev) if K else None  # last K actions per env (most recent first)
 
     eps = collections.deque(maxlen=a.cur_window)
     far = collections.deque(maxlen=a.cur_window)  # distance stages: engagements in the newest band
@@ -466,7 +510,8 @@ def main():
     emit(dict(event="start", device=str(dev), envs=N, rollout=T, init=a.init, fovea=fovea, heads=heads, res=list(res),
               prior_scale=prior_scale,
               knobs=pub(knobs), stage=stage, n_stages=len(stages), resume=a.resume, rewards=rewards,
-              params=sum(p.numel() for p in model.parameters())))
+              delay_ramp=[s["delay"] for s in stages if s["delay"] > 0], act_hist=K, lr=a.lr, ent=a.ent,
+              ent_yaw_mult=a.ent_yaw_mult, params=sum(p.numel() for p in model.parameters())))
 
     try:
         while True:
@@ -476,6 +521,7 @@ def main():
             Fv = torch.zeros((N, T, *cur_f.shape[1:]), dtype=torch.uint8, device=dev) if fovea else None
             FvP = torch.zeros((N, T, *cur_fp.shape[1:]), dtype=torch.uint8, device=dev) if cur_fp is not None else None
             AUX = torch.zeros((N, T, 3), device=dev)
+            HIST = torch.zeros((N, T, 3 * K), device=dev) if K else None
             A = torch.zeros((N, T, len(NVEC)), dtype=torch.long, device=dev)
             LP = torch.zeros((N, T), device=dev)
             V = torch.zeros((N, T), device=dev)
@@ -495,10 +541,16 @@ def main():
                 S[:, t] = start_flag
                 keep = (1.0 - start_flag).view(1, N, 1)
                 state = (state[0] * keep, state[1] * keep)
+                if K:
+                    hist = hist * (1.0 - start_flag).view(N, 1)  # a new round starts with an empty history
+                    HIST[:, t] = hist
                 with torch.no_grad():
-                    lg, v, state = model(cur_p[:, None], state, fovea=cur_f[:, None] if fovea else None)
+                    lg, v, state = model(cur_p[:, None], state, fovea=cur_f[:, None] if fovea else None,
+                                         hist=hist[:, None] if K else None)
                     act, lp, _ = dist_stats(lg[:, 0], mask)
                 A[:, t], LP[:, t], V[:, t] = act, lp, v[:, 0]
+                if K:
+                    hist = torch.cat([action_features(act), hist[:, :-3]], 1)
                 res = venv.step(act.cpu().numpy())
                 cur_p, cur_f = to_dev([x[0] for x in res])
                 cur_fp = to_dev_prior([x[0] for x in res])
@@ -513,7 +565,7 @@ def main():
                     j = torch.as_tensor(cut, device=dev)
                     with torch.no_grad():
                         _, vf, _ = model(fp[:, None], (state[0][:, j], state[1][:, j]),
-                                         fovea=ff[:, None] if fovea else None)
+                                         fovea=ff[:, None] if fovea else None, hist=hist[j][:, None] if K else None)
                     R[j, t] += a.gamma * vf[:, 0]
                 TERM[:, t] = torch.clamp(term + trunc, max=1.0)
                 start_flag = TERM[:, t].clone()
@@ -544,7 +596,8 @@ def main():
             with torch.no_grad():
                 keep = (1.0 - start_flag).view(1, N, 1)
                 _, vlast, _ = model(cur_p[:, None], (state[0] * keep, state[1] * keep),
-                                    fovea=cur_f[:, None] if fovea else None)
+                                    fovea=cur_f[:, None] if fovea else None,
+                                    hist=(hist * (1.0 - start_flag).view(N, 1))[:, None] if K else None)
             V_next[:, :-1] = V[:, 1:]
             V_next[:, -1] = vlast[:, 0]
             t_roll = time.time() - tr
@@ -574,7 +627,8 @@ def main():
                 for s0 in range(0, N, mb):
                     j = torch.as_tensor(idx[s0:s0 + mb], device=dev)
                     with torch.autocast(dev.type, dtype=torch.bfloat16, enabled=dev.type != "cpu"):
-                        lg, v, ax = seq_forward(model, P[j], Fv[j] if fovea else None, (h0[0][:, j], h0[1][:, j]), S[j])
+                        lg, v, ax = seq_forward(model, P[j], Fv[j] if fovea else None, (h0[0][:, j], h0[1][:, j]), S[j],
+                                                HIST[j] if K else None)
                     vloss = 0.5 * (v - ret[j]).pow(2).mean()
                     xloss = aux_loss(ax.float(), AUX[j]) if a.aux else torch.zeros((), device=dev)
                     if warm:

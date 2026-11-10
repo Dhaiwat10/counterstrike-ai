@@ -76,7 +76,6 @@ def run_state(name):
     hist_keys = ["steps", "kill_rate", "dmg_per_ep", "fire_frac", "ent", "aux", "ret_per_ep", "stage", "gate",
                  "timeout_rate", "death_rate", "sps", "acquire_time_med", "kill_delayed", "kill_rehearsal", "no_contest_rate"]
     hist = [{k: u.get(k) for k in hist_keys} for u in ups]
-    stages = curriculum_stages()
     st = latest.get("stage")
     snaps = sorted((d / "snapshots").glob("*.pt")) if (d / "snapshots").exists() else []
     exams = read_jsonl(REPO / "results" / "phase3" / f"exam_{name}.jsonl")
@@ -89,6 +88,7 @@ def run_state(name):
         args = json.loads((d / "args.json").read_text())
     except Exception:
         pass
+    stages = curriculum_stages(delay_ramp=args.get("delay_ramp") or None)  # the run's own delay ramp (autopilot may insert a step)
     age = time.time() - (d / "log.jsonl").stat().st_mtime if (d / "log.jsonl").exists() else None
     return dict(
         name=name, about=RUNS.get(name, ""), alive=running(f"train.ppo --run {name}"), log_age_s=age,

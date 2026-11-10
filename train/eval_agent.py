@@ -33,7 +33,8 @@ class TorchAgent:
         self.dev = torch.device(device if (device != "mps" or torch.backends.mps.is_available()) else "cpu")
         self.fovea = int(a.get("fovea", 0))
         self.res = tuple(a.get("res", (320, 240)))  # render resolution this policy was trained at
-        self.model = Policy(in_hw=self.hw, chans=tuple(a["chans"]), fovea=self.fovea).to(self.dev).eval()
+        self.K = int(a.get("act_hist", 0))  # policies trained with --act-hist see their own last K actions
+        self.model = Policy(in_hw=self.hw, chans=tuple(a["chans"]), fovea=self.fovea, act_hist=self.K).to(self.dev).eval()
         self.model.load_state_dict({k: v.float() if v.is_floating_point() else v for k, v in ck["model"].items()},
                                    strict=False)  # imitation checkpoints have no aux head (unused when acting)
         active = a.get("active_heads")
@@ -43,13 +44,28 @@ class TorchAgent:
 
     def reset(self):
         self.state = None
+        self.hist = torch.zeros(1, 1, 3 * self.K, device=self.dev) if self.K else None
 
-    @torch.no_grad()
-    def act(self, obs: np.ndarray) -> np.ndarray:
+    def logits(self, obs: np.ndarray) -> torch.Tensor:
+        """One decision step: logits for this observation (advances the LSTM state)."""
         p, f = views_from_frame(obs, self.hw, self.fovea)
         x = torch.from_numpy(p).to(self.dev)[None, None]
         fv = torch.from_numpy(f).to(self.dev)[None, None] if f is not None else None
-        lg, _, self.state = self.model(x, self.state, fovea=fv)
+        if self.K and self.hist is None:
+            self.reset()
+        lg, _, self.state = self.model(x, self.state, fovea=fv, hist=self.hist)
+        return lg
+
+    def push_action(self, out) -> None:
+        """Record the action just taken (for the action-history input)."""
+        if self.K:
+            from train.ppo import action_features
+            feat = action_features(torch.as_tensor(np.asarray(out), device=self.dev))[None, None]
+            self.hist = torch.cat([feat, self.hist[..., :-3]], -1)
+
+    @torch.no_grad()
+    def act(self, obs: np.ndarray) -> np.ndarray:
+        lg = self.logits(obs)
         out = []
         for k, p in enumerate(Policy.split(lg[0, 0])):
             if not self.mask[k]:  # head not learned by this policy: "no input"
@@ -58,6 +74,7 @@ class TorchAgent:
                 out.append(int(p.argmax()))
             else:
                 out.append(int(torch.multinomial(torch.softmax(p.float() / self.temp, -1), 1)))
+        self.push_action(out)
         return np.array(out)
 
 

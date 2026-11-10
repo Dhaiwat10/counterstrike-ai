@@ -56,6 +56,7 @@ def run_exam(env, agent, cfg, seed):
                          time=info["time"], dist=info["spawn_dist"], offset=info["spawn_offset"]))
         obs, info = env.reset()
     res = dict(rounds=len(rows), no_contests=nc_count, kill_rate=float(np.mean([r["kill"] for r in rows])),
+               knobs={k: cfg[k] for k in ("bot", "delay", "offset", "offset_min", "dist") if k in cfg},
                death_rate=float(np.mean([r["death"] for r in rows])),
                damage=float(np.mean([r["damage"] for r in rows])),
                time_to_kill=float(np.median([r["time"] for r in rows if r["kill"]])) if any(r["kill"] for r in rows) else None)
@@ -79,6 +80,7 @@ def main():
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--rounds", type=int, default=100)
     ap.add_argument("--full", action="store_true", help="also run the full-difficulty exam")
+    ap.add_argument("--delay-ramp", default="", help="same value as the trainer's --delay-ramp (so stage indices match)")
     a = ap.parse_args()
     out = Path("results/phase3")
     out.mkdir(parents=True, exist_ok=True)
@@ -100,7 +102,7 @@ def main():
             meta = torch.load(snap, map_location="cpu")
             rec = dict(run=run, snapshot=Path(snap).name, res=list(agent.res), steps=meta.get("steps"), update=meta.get("update"),
                        train_stage=meta.get("stage"), time=time.strftime("%H:%M:%S"))
-            stages = curriculum_stages()
+            stages = curriculum_stages(delay_ramp=a.delay_ramp or None)
             st = int(meta.get("stage") or 0)
             # names count stages from 1, like the dashboard
             exams = {f"stage{st + 1}": dict(stages[st], rounds=a.rounds)}

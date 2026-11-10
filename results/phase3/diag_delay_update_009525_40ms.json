@@ -1,0 +1,7691 @@
+{
+ "summary": {
+  "delay_ms": 40,
+  "rounds": 150,
+  "no_contests": 35,
+  "kill": 0.507,
+  "death": 0.487,
+  "timeout": 0.007,
+  "acquired": 0.893,
+  "acquire_t_med": 0.4,
+  "settled": 0.74,
+  "settle_t_med": 0.52,
+  "overshoot": 0.513,
+  "crossings_mean": 3.37,
+  "oscillating_2plus": 0.613,
+  "shots_per_round": 20.1,
+  "shots_off_target_frac": 0.595,
+  "shots_far_off_frac": 0.074,
+  "deaths_bot_hit_first": 0.616,
+  "deaths_never_acquired": 0.178,
+  "stale_turn_frac": 0.035,
+  "over_turn_frac": 0.039,
+  "gain_seen_med": 0.38,
+  "corr_yaw_seen": 0.742,
+  "corr_yaw_true": 0.692,
+  "ent_yaw": 0.574,
+  "ent_yaw_first5": 0.443,
+  "ent_attack": 0.441,
+  "kill_time_med": 1.2,
+  "yaw_response_by_seen_err": {
+   "ge0": 0.65,
+   "ge1": 0.77,
+   "ge3": 1.17,
+   "ge8": 2.25,
+   "ge16": 5.56,
+   "ge30": 6.56
+  }
+ },
+ "rounds": [
+  {
+   "outcome": "kill",
+   "time": 3.04,
+   "dist": 715,
+   "start_err": 24.6,
+   "steps": 76,
+   "acquire_t": 1.24,
+   "settle_t": 1.24,
+   "overshoot": true,
+   "crossings": 7,
+   "shots": 30,
+   "shots_off": 8,
+   "shots_far_off": 1,
+   "first_dealt": 1.6400000000000001,
+   "first_taken": null,
+   "turn_steps": 25,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.7502674221506394,
+   "corr_seen": 0.6347762973696629,
+   "corr_true": 0.6681068066438683,
+   "ent_yaw_first5": 0.5548517346382141,
+   "ent_yaw": 0.6294590736690321,
+   "ent_att": 0.5212277958267614,
+   "resp": [
+    [
+     0.0,
+     0.3787878787878788
+    ],
+    [
+     1.0,
+     0.8125
+    ],
+    [
+     3.0,
+     0.9333333333333333
+    ],
+    [
+     8.0,
+     2.4
+    ],
+    [
+     16.0,
+     6.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 3.56,
+   "dist": 823,
+   "start_err": 43.9,
+   "steps": 89,
+   "acquire_t": 0.28,
+   "settle_t": 0.28,
+   "overshoot": true,
+   "crossings": 7,
+   "shots": 45,
+   "shots_off": 23,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 1.52,
+   "turn_steps": 28,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.48375997057353404,
+   "corr_seen": 0.820824625989929,
+   "corr_true": 0.7410221243976014,
+   "ent_yaw_first5": 0.21455572545528412,
+   "ent_yaw": 0.5351020909762114,
+   "ent_att": 0.5311987190376548,
+   "resp": [
+    [
+     0.0,
+     0.45588235294117646
+    ],
+    [
+     1.0,
+     0.5681818181818182
+    ],
+    [
+     3.0,
+     0.8425925925925926
+    ],
+    [
+     8.0,
+     4.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     7.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 2.08,
+   "dist": 327,
+   "start_err": 35.6,
+   "steps": 52,
+   "acquire_t": 0.56,
+   "settle_t": 0.56,
+   "overshoot": true,
+   "crossings": 4,
+   "shots": 33,
+   "shots_off": 12,
+   "shots_far_off": 1,
+   "first_dealt": 1.0,
+   "first_taken": null,
+   "turn_steps": 19,
+   "stale_steps": 2,
+   "over_steps": 2,
+   "gain_seen": 0.5201760731636504,
+   "corr_seen": 0.9037355902995348,
+   "corr_true": 0.8656912425639517,
+   "ent_yaw_first5": 0.2786304116249084,
+   "ent_yaw": 0.5551233429175156,
+   "ent_att": 0.37273904619416076,
+   "resp": [
+    [
+     0.0,
+     2.0
+    ],
+    [
+     1.0,
+     0.5138888888888888
+    ],
+    [
+     3.0,
+     1.4444444444444444
+    ],
+    [
+     8.0,
+     0.8055555555555556
+    ],
+    [
+     16.0,
+     4.25
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.56,
+   "dist": 283,
+   "start_err": 40.9,
+   "steps": 14,
+   "acquire_t": 0.28,
+   "settle_t": 0.28,
+   "overshoot": false,
+   "crossings": 1,
+   "shots": 6,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 0.36,
+   "first_taken": null,
+   "turn_steps": 9,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.24467280213821763,
+   "corr_seen": 0.8214574868398951,
+   "corr_true": 0.7374146656132469,
+   "ent_yaw_first5": 0.3037883460521698,
+   "ent_yaw": 0.4581501675503595,
+   "ent_att": 0.32603495973827584,
+   "resp": [
+    [
+     0.0,
+     0.3
+    ],
+    [
+     1.0,
+     0.0
+    ],
+    [
+     3.0,
+     1.0
+    ],
+    [
+     8.0,
+     3.0
+    ],
+    [
+     16.0,
+     5.0
+    ],
+    [
+     30.0,
+     6.666666666666667
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.32,
+   "dist": 352,
+   "start_err": 44.4,
+   "steps": 33,
+   "acquire_t": 0.28,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 5,
+   "shots": 15,
+   "shots_off": 5,
+   "shots_far_off": 0,
+   "first_dealt": 0.4,
+   "first_taken": 0.92,
+   "turn_steps": 22,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.46176341503246154,
+   "corr_seen": 0.859236351526177,
+   "corr_true": 0.809829245024607,
+   "ent_yaw_first5": 0.40535175800323486,
+   "ent_yaw": 0.5812792001348553,
+   "ent_att": 0.5156708286482502,
+   "resp": [
+    [
+     0.0,
+     1.3214285714285714
+    ],
+    [
+     1.0,
+     0.875
+    ],
+    [
+     3.0,
+     1.8
+    ],
+    [
+     8.0,
+     4.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     6.666666666666667
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.44,
+   "dist": 802,
+   "start_err": 41.1,
+   "steps": 11,
+   "acquire_t": 0.36,
+   "settle_t": 0.36,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 2,
+   "shots_off": 1,
+   "shots_far_off": 0,
+   "first_dealt": 0.44,
+   "first_taken": null,
+   "turn_steps": 8,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.26044852385879236,
+   "corr_seen": 0.7451849903821334,
+   "corr_true": 0.759837070914725,
+   "ent_yaw_first5": 0.3230238378047943,
+   "ent_yaw": 0.4520713280547749,
+   "ent_att": 0.38939207656817004,
+   "resp": [
+    [
+     0.0,
+     null
+    ],
+    [
+     1.0,
+     0.0
+    ],
+    [
+     3.0,
+     2.0
+    ],
+    [
+     8.0,
+     1.5833333333333333
+    ],
+    [
+     16.0,
+     6.0
+    ],
+    [
+     30.0,
+     6.666666666666667
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.04,
+   "dist": 428,
+   "start_err": 25.4,
+   "steps": 26,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 4,
+   "shots_off": 3,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 1.04,
+   "turn_steps": 14,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.18740387310222245,
+   "corr_seen": 0.5887435062844513,
+   "corr_true": 0.5647316659021572,
+   "ent_yaw_first5": 0.5404359996318817,
+   "ent_yaw": 0.5684035913302348,
+   "ent_att": 0.6022802768991544,
+   "resp": [
+    [
+     0.0,
+     null
+    ],
+    [
+     1.0,
+     null
+    ],
+    [
+     3.0,
+     1.4642857142857142
+    ],
+    [
+     8.0,
+     1.675
+    ],
+    [
+     16.0,
+     2.138888888888889
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.0,
+   "dist": 666,
+   "start_err": 30.3,
+   "steps": 25,
+   "acquire_t": 0.68,
+   "settle_t": 0.68,
+   "overshoot": false,
+   "crossings": 1,
+   "shots": 12,
+   "shots_off": 3,
+   "shots_far_off": 0,
+   "first_dealt": 1.0,
+   "first_taken": null,
+   "turn_steps": 12,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.4423686236137728,
+   "corr_seen": 0.9014297900386826,
+   "corr_true": 0.9114580908660006,
+   "ent_yaw_first5": 0.46856753826141356,
+   "ent_yaw": 0.5846674108505249,
+   "ent_att": 0.5054379700869321,
+   "resp": [
+    [
+     0.0,
+     0.75
+    ],
+    [
+     1.0,
+     0.5681818181818182
+    ],
+    [
+     3.0,
+     1.0
+    ],
+    [
+     8.0,
+     3.0
+    ],
+    [
+     16.0,
+     6.666666666666667
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.92,
+   "dist": 475,
+   "start_err": 30.0,
+   "steps": 23,
+   "acquire_t": 0.4,
+   "settle_t": 0.4,
+   "overshoot": false,
+   "crossings": 2,
+   "shots": 12,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 0.6,
+   "first_taken": null,
+   "turn_steps": 7,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.20743788467071944,
+   "corr_seen": 0.8773943397375017,
+   "corr_true": 0.7753072900858755,
+   "ent_yaw_first5": 0.5366016745567321,
+   "ent_yaw": 0.5732021487277487,
+   "ent_att": 0.25125943658792455,
+   "resp": [
+    [
+     0.0,
+     0.5
+    ],
+    [
+     1.0,
+     0.2857142857142857
+    ],
+    [
+     3.0,
+     0.08333333333333333
+    ],
+    [
+     8.0,
+     2.0
+    ],
+    [
+     16.0,
+     3.3333333333333335
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.6,
+   "dist": 286,
+   "start_err": 37.9,
+   "steps": 15,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 2,
+   "shots_off": 1,
+   "shots_far_off": 0,
+   "first_dealt": 0.6,
+   "first_taken": null,
+   "turn_steps": 8,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.3209992812387827,
+   "corr_seen": 0.8422733870509337,
+   "corr_true": 0.8137969174026849,
+   "ent_yaw_first5": 0.31309513449668885,
+   "ent_yaw": 0.5111249307791392,
+   "ent_att": 0.38974969685077665,
+   "resp": [
+    [
+     0.0,
+     null
+    ],
+    [
+     1.0,
+     0.71875
+    ],
+    [
+     3.0,
+     1.0
+    ],
+    [
+     8.0,
+     1.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 2.36,
+   "dist": 493,
+   "start_err": 41.7,
+   "steps": 59,
+   "acquire_t": 0.6,
+   "settle_t": 0.6,
+   "overshoot": true,
+   "crossings": 0,
+   "shots": 34,
+   "shots_off": 21,
+   "shots_far_off": 0,
+   "first_dealt": 0.84,
+   "first_taken": null,
+   "turn_steps": 24,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.30406527286890633,
+   "corr_seen": 0.23936670283690015,
+   "corr_true": 0.22115681256918304,
+   "ent_yaw_first5": 0.5101018071174621,
+   "ent_yaw": 0.5154397371461836,
+   "ent_att": 0.3935034446797128,
+   "resp": [
+    [
+     0.0,
+     0.8
+    ],
+    [
+     1.0,
+     0.43
+    ],
+    [
+     3.0,
+     0.7166666666666667
+    ],
+    [
+     8.0,
+     2.05
+    ],
+    [
+     16.0,
+     4.0
+    ],
+    [
+     30.0,
+     7.625
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 3.4,
+   "dist": 356,
+   "start_err": 33.3,
+   "steps": 85,
+   "acquire_t": 1.72,
+   "settle_t": 2.44,
+   "overshoot": true,
+   "crossings": 3,
+   "shots": 36,
+   "shots_off": 25,
+   "shots_far_off": 6,
+   "first_dealt": 2.6,
+   "first_taken": 0.92,
+   "turn_steps": 29,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.28600847571122573,
+   "corr_seen": 0.7927080041676965,
+   "corr_true": 0.6695039515793634,
+   "ent_yaw_first5": 0.40744129866361617,
+   "ent_yaw": 0.5764155692037414,
+   "ent_att": 0.5899197843035354,
+   "resp": [
+    [
+     0.0,
+     0.5833333333333334
+    ],
+    [
+     1.0,
+     0.22826086956521738
+    ],
+    [
+     3.0,
+     0.6911764705882353
+    ],
+    [
+     8.0,
+     2.140625
+    ],
+    [
+     16.0,
+     6.25
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.8,
+   "dist": 344,
+   "start_err": 25.9,
+   "steps": 45,
+   "acquire_t": 1.32,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 1,
+   "shots": 13,
+   "shots_off": 13,
+   "shots_far_off": 9,
+   "first_dealt": null,
+   "first_taken": 0.8,
+   "turn_steps": 29,
+   "stale_steps": 2,
+   "over_steps": 1,
+   "gain_seen": 0.20228682327567082,
+   "corr_seen": 0.8611476002838232,
+   "corr_true": 0.8100868392480945,
+   "ent_yaw_first5": 0.5607250809669495,
+   "ent_yaw": 0.6193363653288947,
+   "ent_att": 0.4871012520665924,
+   "resp": [
+    [
+     0.0,
+     0.25
+    ],
+    [
+     1.0,
+     1.5
+    ],
+    [
+     3.0,
+     1.109375
+    ],
+    [
+     8.0,
+     1.5795454545454546
+    ],
+    [
+     16.0,
+     4.0625
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.44,
+   "dist": 396,
+   "start_err": 27.0,
+   "steps": 36,
+   "acquire_t": 1.24,
+   "settle_t": 1.24,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 10,
+   "shots_off": 5,
+   "shots_far_off": 4,
+   "first_dealt": 1.4000000000000001,
+   "first_taken": 1.44,
+   "turn_steps": 10,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.34977208293581113,
+   "corr_seen": 0.4911065778929909,
+   "corr_true": 0.5636267400539638,
+   "ent_yaw_first5": 0.5703362047672271,
+   "ent_yaw": 0.6288458597328928,
+   "ent_att": 0.3953606575313542,
+   "resp": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     1.0,
+     0.7
+    ],
+    [
+     3.0,
+     1.125
+    ],
+    [
+     8.0,
+     0.5238095238095238
+    ],
+    [
+     16.0,
+     3.4
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.04,
+   "dist": 436,
+   "start_err": 24.2,
+   "steps": 26,
+   "acquire_t": 0.48,
+   "settle_t": 0.68,
+   "overshoot": true,
+   "crossings": 2,
+   "shots": 11,
+   "shots_off": 3,
+   "shots_far_off": 0,
+   "first_dealt": 0.72,
+   "first_taken": null,
+   "turn_steps": 14,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.22206004034340854,
+   "corr_seen": 0.7559050332916427,
+   "corr_true": 0.7761344176948035,
+   "ent_yaw_first5": 0.439611554145813,
+   "ent_yaw": 0.5119027816332303,
+   "ent_att": 0.4282884864279857,
+   "resp": [
+    [
+     0.0,
+     0.125
+    ],
+    [
+     1.0,
+     0.5833333333333334
+    ],
+    [
+     3.0,
+     2.1
+    ],
+    [
+     8.0,
+     1.5
+    ],
+    [
+     16.0,
+     3.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.48,
+   "dist": 729,
+   "start_err": 43.5,
+   "steps": 12,
+   "acquire_t": 0.44,
+   "settle_t": 0.44,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 1,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 0.48,
+   "first_taken": null,
+   "turn_steps": 12,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.18673328637388525,
+   "corr_seen": 0.7096972731575419,
+   "corr_true": 0.6375267335302242,
+   "ent_yaw_first5": 0.2846714794635773,
+   "ent_yaw": 0.39362318565448123,
+   "ent_att": 0.17875147812689343,
+   "resp": [
+    [
+     0.0,
+     null
+    ],
+    [
+     1.0,
+     null
+    ],
+    [
+     3.0,
+     2.5
+    ],
+    [
+     8.0,
+     2.0
+    ],
+    [
+     16.0,
+     2.5
+    ],
+    [
+     30.0,
+     6.5
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 3.8,
+   "dist": 303,
+   "start_err": 33.9,
+   "steps": 95,
+   "acquire_t": 2.56,
+   "settle_t": 2.56,
+   "overshoot": true,
+   "crossings": 0,
+   "shots": 24,
+   "shots_off": 14,
+   "shots_far_off": 3,
+   "first_dealt": 2.56,
+   "first_taken": 1.2,
+   "turn_steps": 55,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.28790577253852573,
+   "corr_seen": 0.6983328622878235,
+   "corr_true": 0.6671532507917745,
+   "ent_yaw_first5": 0.5953278362751007,
+   "ent_yaw": 0.6256558615910379,
+   "ent_att": 0.5486939951777459,
+   "resp": [
+    [
+     0.0,
+     1.0
+    ],
+    [
+     1.0,
+     0.8
+    ],
+    [
+     3.0,
+     1.1583333333333334
+    ],
+    [
+     8.0,
+     1.8529411764705883
+    ],
+    [
+     16.0,
+     4.181818181818182
+    ],
+    [
+     30.0,
+     1.75
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 3.52,
+   "dist": 408,
+   "start_err": 36.8,
+   "steps": 88,
+   "acquire_t": 0.28,
+   "settle_t": 1.72,
+   "overshoot": true,
+   "crossings": 9,
+   "shots": 49,
+   "shots_off": 29,
+   "shots_far_off": 0,
+   "first_dealt": 0.88,
+   "first_taken": 2.44,
+   "turn_steps": 37,
+   "stale_steps": 1,
+   "over_steps": 2,
+   "gain_seen": 0.3859648186451114,
+   "corr_seen": 0.7929464265207851,
+   "corr_true": 0.7632184275028365,
+   "ent_yaw_first5": 0.25044926553964614,
+   "ent_yaw": 0.5581217710436746,
+   "ent_att": 0.5521316335811703,
+   "resp": [
+    [
+     0.0,
+     0.9230769230769231
+    ],
+    [
+     1.0,
+     0.6
+    ],
+    [
+     3.0,
+     1.140625
+    ],
+    [
+     8.0,
+     2.625
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.04,
+   "dist": 451,
+   "start_err": 20.3,
+   "steps": 26,
+   "acquire_t": 0.2,
+   "settle_t": 0.2,
+   "overshoot": false,
+   "crossings": 2,
+   "shots": 20,
+   "shots_off": 3,
+   "shots_far_off": 0,
+   "first_dealt": 0.24,
+   "first_taken": 1.04,
+   "turn_steps": 6,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.4398606930129673,
+   "corr_seen": 0.9159453586821054,
+   "corr_true": 0.8782887360244505,
+   "ent_yaw_first5": 0.5987676501274108,
+   "ent_yaw": 0.5569363671999711,
+   "ent_att": 0.3222540732508955,
+   "resp": [
+    [
+     0.0,
+     0.17857142857142858
+    ],
+    [
+     1.0,
+     0.4423076923076923
+    ],
+    [
+     3.0,
+     1.1666666666666667
+    ],
+    [
+     8.0,
+     0.25
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.56,
+   "dist": 593,
+   "start_err": 35.7,
+   "steps": 39,
+   "acquire_t": 1.16,
+   "settle_t": 1.16,
+   "overshoot": false,
+   "crossings": 4,
+   "shots": 14,
+   "shots_off": 9,
+   "shots_far_off": 0,
+   "first_dealt": 1.44,
+   "first_taken": 1.44,
+   "turn_steps": 17,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.4228412915625182,
+   "corr_seen": 0.9355887978828354,
+   "corr_true": 0.8838109322074981,
+   "ent_yaw_first5": 0.29748503863811493,
+   "ent_yaw": 0.5696622343399586,
+   "ent_att": 0.6734854383394122,
+   "resp": [
+    [
+     0.0,
+     0.6730769230769231
+    ],
+    [
+     1.0,
+     0.4642857142857143
+    ],
+    [
+     3.0,
+     0.7857142857142857
+    ],
+    [
+     8.0,
+     4.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.2,
+   "dist": 350,
+   "start_err": 20.5,
+   "steps": 30,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 0,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 0.48,
+   "turn_steps": 15,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.3794338938186792,
+   "corr_seen": 0.6704230511623545,
+   "corr_true": 0.42256012492909684,
+   "ent_yaw_first5": 0.6153964877128602,
+   "ent_yaw": 0.636449682712555,
+   "ent_att": 0.28838927478839954,
+   "resp": [
+    [
+     0.0,
+     1.125
+    ],
+    [
+     1.0,
+     null
+    ],
+    [
+     3.0,
+     0.3055555555555556
+    ],
+    [
+     8.0,
+     1.5416666666666667
+    ],
+    [
+     16.0,
+     5.857142857142857
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 8.04,
+   "dist": 527,
+   "start_err": 34.0,
+   "steps": 201,
+   "acquire_t": 0.32,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 15,
+   "shots": 105,
+   "shots_off": 95,
+   "shots_far_off": 3,
+   "first_dealt": 1.28,
+   "first_taken": 3.2800000000000002,
+   "turn_steps": 93,
+   "stale_steps": 2,
+   "over_steps": 3,
+   "gain_seen": 0.47916223744092445,
+   "corr_seen": 0.6739085101261935,
+   "corr_true": 0.6283005240160328,
+   "ent_yaw_first5": 0.39237685203552247,
+   "ent_yaw": 0.5821028661668597,
+   "ent_att": 0.517878156563091,
+   "resp": [
+    [
+     0.0,
+     0.7619047619047619
+    ],
+    [
+     1.0,
+     0.6640625
+    ],
+    [
+     3.0,
+     1.3
+    ],
+    [
+     8.0,
+     1.4666666666666666
+    ],
+    [
+     16.0,
+     6.666666666666667
+    ],
+    [
+     30.0,
+     4.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.84,
+   "dist": 249,
+   "start_err": 19.5,
+   "steps": 21,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 5,
+   "shots_off": 5,
+   "shots_far_off": 2,
+   "first_dealt": null,
+   "first_taken": 0.56,
+   "turn_steps": 8,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.47871821474103265,
+   "corr_seen": 0.7919742990384943,
+   "corr_true": 0.7465269162406911,
+   "ent_yaw_first5": 0.570043295621872,
+   "ent_yaw": 0.6388983797459376,
+   "ent_att": 0.4826358485789526,
+   "resp": [
+    [
+     0.0,
+     0.5
+    ],
+    [
+     1.0,
+     0.125
+    ],
+    [
+     3.0,
+     1.0
+    ],
+    [
+     8.0,
+     2.15
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 2.64,
+   "dist": 785,
+   "start_err": 43.7,
+   "steps": 66,
+   "acquire_t": 0.56,
+   "settle_t": 0.72,
+   "overshoot": true,
+   "crossings": 4,
+   "shots": 39,
+   "shots_off": 29,
+   "shots_far_off": 0,
+   "first_dealt": 1.8800000000000001,
+   "first_taken": 0.6,
+   "turn_steps": 25,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.5147639657958368,
+   "corr_seen": 0.8680919976804423,
+   "corr_true": 0.8411361629974897,
+   "ent_yaw_first5": 0.3280589520931244,
+   "ent_yaw": 0.5882301443453991,
+   "ent_att": 0.43785208364892186,
+   "resp": [
+    [
+     0.0,
+     1.7142857142857142
+    ],
+    [
+     1.0,
+     0.48333333333333334
+    ],
+    [
+     3.0,
+     0.8355263157894737
+    ],
+    [
+     8.0,
+     2.0
+    ],
+    [
+     16.0,
+     6.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 2.6,
+   "dist": 334,
+   "start_err": 32.3,
+   "steps": 65,
+   "acquire_t": 1.76,
+   "settle_t": 1.76,
+   "overshoot": false,
+   "crossings": 1,
+   "shots": 16,
+   "shots_off": 6,
+   "shots_far_off": 1,
+   "first_dealt": 2.04,
+   "first_taken": 2.32,
+   "turn_steps": 35,
+   "stale_steps": 2,
+   "over_steps": 1,
+   "gain_seen": 0.3302020211244697,
+   "corr_seen": 0.5544624103642337,
+   "corr_true": 0.4489152501775354,
+   "ent_yaw_first5": 0.5600900053977966,
+   "ent_yaw": 0.6139236752803509,
+   "ent_att": 0.3244694532396702,
+   "resp": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     1.0,
+     1.025
+    ],
+    [
+     3.0,
+     1.225
+    ],
+    [
+     8.0,
+     2.3125
+    ],
+    [
+     16.0,
+     3.1136363636363638
+    ],
+    [
+     30.0,
+     2.25
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 5.92,
+   "dist": 617,
+   "start_err": 35.9,
+   "steps": 148,
+   "acquire_t": 1.8,
+   "settle_t": 5.68,
+   "overshoot": true,
+   "crossings": 3,
+   "shots": 27,
+   "shots_off": 23,
+   "shots_far_off": 9,
+   "first_dealt": 5.76,
+   "first_taken": 1.24,
+   "turn_steps": 55,
+   "stale_steps": 1,
+   "over_steps": 3,
+   "gain_seen": 0.23907965677626558,
+   "corr_seen": 0.6197912620213473,
+   "corr_true": 0.5568869749706812,
+   "ent_yaw_first5": 0.4594527542591095,
+   "ent_yaw": 0.6311982664707545,
+   "ent_att": 0.44652639452770754,
+   "resp": [
+    [
+     0.0,
+     1.3055555555555556
+    ],
+    [
+     1.0,
+     0.65
+    ],
+    [
+     3.0,
+     0.6896551724137931
+    ],
+    [
+     8.0,
+     1.0588235294117647
+    ],
+    [
+     16.0,
+     6.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.16,
+   "dist": 337,
+   "start_err": 18.8,
+   "steps": 29,
+   "acquire_t": 0.2,
+   "settle_t": 0.2,
+   "overshoot": false,
+   "crossings": 6,
+   "shots": 16,
+   "shots_off": 1,
+   "shots_far_off": 0,
+   "first_dealt": 0.6,
+   "first_taken": null,
+   "turn_steps": 15,
+   "stale_steps": 2,
+   "over_steps": 1,
+   "gain_seen": 0.5610528837619869,
+   "corr_seen": 0.662491403247842,
+   "corr_true": 0.4860193898358105,
+   "ent_yaw_first5": 0.43406597077846526,
+   "ent_yaw": 0.5726347478299305,
+   "ent_att": 0.44483807875678455,
+   "resp": [
+    [
+     0.0,
+     0.825
+    ],
+    [
+     1.0,
+     1.5833333333333333
+    ],
+    [
+     3.0,
+     0.65625
+    ],
+    [
+     8.0,
+     8.0
+    ],
+    [
+     16.0,
+     5.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.72,
+   "dist": 344,
+   "start_err": 17.6,
+   "steps": 18,
+   "acquire_t": 0.2,
+   "settle_t": 0.2,
+   "overshoot": false,
+   "crossings": 2,
+   "shots": 10,
+   "shots_off": 1,
+   "shots_far_off": 0,
+   "first_dealt": 0.52,
+   "first_taken": null,
+   "turn_steps": 10,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.45751322126323885,
+   "corr_seen": 0.9608625548446551,
+   "corr_true": 0.9135933676184911,
+   "ent_yaw_first5": 0.5391771674156189,
+   "ent_yaw": 0.5650501118765937,
+   "ent_att": 0.2806863979332977,
+   "resp": [
+    [
+     0.0,
+     1.0
+    ],
+    [
+     1.0,
+     0.7142857142857143
+    ],
+    [
+     3.0,
+     1.25
+    ],
+    [
+     8.0,
+     2.6666666666666665
+    ],
+    [
+     16.0,
+     4.125
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.84,
+   "dist": 525,
+   "start_err": 28.4,
+   "steps": 46,
+   "acquire_t": 0.24,
+   "settle_t": 0.24,
+   "overshoot": true,
+   "crossings": 4,
+   "shots": 26,
+   "shots_off": 13,
+   "shots_far_off": 1,
+   "first_dealt": 0.32,
+   "first_taken": 0.8,
+   "turn_steps": 18,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.4945504868779447,
+   "corr_seen": 0.9151333510453737,
+   "corr_true": 0.870402727828758,
+   "ent_yaw_first5": 0.40150752663612366,
+   "ent_yaw": 0.5699617052855699,
+   "ent_att": 0.4572561721762885,
+   "resp": [
+    [
+     0.0,
+     0.6818181818181818
+    ],
+    [
+     1.0,
+     0.5263157894736842
+    ],
+    [
+     3.0,
+     0.7291666666666666
+    ],
+    [
+     8.0,
+     2.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.76,
+   "dist": 294,
+   "start_err": 23.6,
+   "steps": 19,
+   "acquire_t": 0.24,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 3,
+   "shots": 6,
+   "shots_off": 3,
+   "shots_far_off": 1,
+   "first_dealt": 0.32,
+   "first_taken": null,
+   "turn_steps": 11,
+   "stale_steps": 1,
+   "over_steps": 2,
+   "gain_seen": 0.28570959527067047,
+   "corr_seen": 0.8448501929940013,
+   "corr_true": 0.7380337900442044,
+   "ent_yaw_first5": 0.4801963925361633,
+   "ent_yaw": 0.5587127930239627,
+   "ent_att": 0.5291995341448408,
+   "resp": [
+    [
+     0.0,
+     0.25
+    ],
+    [
+     1.0,
+     0.4375
+    ],
+    [
+     3.0,
+     1.8928571428571428
+    ],
+    [
+     8.0,
+     2.6666666666666665
+    ],
+    [
+     16.0,
+     4.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.4,
+   "dist": 548,
+   "start_err": 24.2,
+   "steps": 35,
+   "acquire_t": 1.08,
+   "settle_t": 1.08,
+   "overshoot": false,
+   "crossings": 4,
+   "shots": 8,
+   "shots_off": 2,
+   "shots_far_off": 0,
+   "first_dealt": 1.2,
+   "first_taken": null,
+   "turn_steps": 13,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.4615558653402171,
+   "corr_seen": 0.7857720642137722,
+   "corr_true": 0.6284815637837058,
+   "ent_yaw_first5": 0.5845099687576294,
+   "ent_yaw": 0.6211986831256322,
+   "ent_att": 0.4262275861842292,
+   "resp": [
+    [
+     0.0,
+     0.5
+    ],
+    [
+     1.0,
+     0.55
+    ],
+    [
+     3.0,
+     0.3
+    ],
+    [
+     8.0,
+     8.0
+    ],
+    [
+     16.0,
+     5.666666666666667
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.92,
+   "dist": 432,
+   "start_err": 35.7,
+   "steps": 23,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 2,
+   "shots_off": 2,
+   "shots_far_off": 1,
+   "first_dealt": null,
+   "first_taken": 0.72,
+   "turn_steps": 11,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.3182033088317854,
+   "corr_seen": 0.6293530123812264,
+   "corr_true": 0.5956135892163551,
+   "ent_yaw_first5": 0.47090681791305544,
+   "ent_yaw": 0.6379263919332753,
+   "ent_att": 0.34946927719790005,
+   "resp": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     1.0,
+     0.75
+    ],
+    [
+     3.0,
+     0.6818181818181818
+    ],
+    [
+     8.0,
+     2.0
+    ],
+    [
+     16.0,
+     6.666666666666667
+    ],
+    [
+     30.0,
+     3.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.24,
+   "dist": 545,
+   "start_err": 27.3,
+   "steps": 31,
+   "acquire_t": 0.88,
+   "settle_t": 0.88,
+   "overshoot": false,
+   "crossings": 1,
+   "shots": 7,
+   "shots_off": 1,
+   "shots_far_off": 0,
+   "first_dealt": 1.24,
+   "first_taken": null,
+   "turn_steps": 13,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.4317392426335585,
+   "corr_seen": 0.613670522609794,
+   "corr_true": 0.5659383844471392,
+   "ent_yaw_first5": 0.5856426239013672,
+   "ent_yaw": 0.6697796833130621,
+   "ent_att": 0.33679168304849055,
+   "resp": [
+    [
+     0.0,
+     0.375
+    ],
+    [
+     1.0,
+     0.640625
+    ],
+    [
+     3.0,
+     0.16666666666666666
+    ],
+    [
+     8.0,
+     3.0625
+    ],
+    [
+     16.0,
+     3.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.12,
+   "dist": 872,
+   "start_err": 25.1,
+   "steps": 28,
+   "acquire_t": 0.48,
+   "settle_t": 0.48,
+   "overshoot": false,
+   "crossings": 3,
+   "shots": 5,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 0.92,
+   "turn_steps": 13,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.6235291301834164,
+   "corr_seen": 0.6338162710299649,
+   "corr_true": 0.6871825295199693,
+   "ent_yaw_first5": 0.5662622809410095,
+   "ent_yaw": 0.6259047431605202,
+   "ent_att": 0.5535751940416438,
+   "resp": [
+    [
+     0.0,
+     1.5909090909090908
+    ],
+    [
+     1.0,
+     0.2916666666666667
+    ],
+    [
+     3.0,
+     2.0
+    ],
+    [
+     8.0,
+     2.0
+    ],
+    [
+     16.0,
+     6.666666666666667
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 3.72,
+   "dist": 773,
+   "start_err": 28.9,
+   "steps": 93,
+   "acquire_t": 0.28,
+   "settle_t": 0.28,
+   "overshoot": true,
+   "crossings": 13,
+   "shots": 34,
+   "shots_off": 10,
+   "shots_far_off": 1,
+   "first_dealt": 1.32,
+   "first_taken": 2.88,
+   "turn_steps": 36,
+   "stale_steps": 3,
+   "over_steps": 3,
+   "gain_seen": 0.5423232029182046,
+   "corr_seen": 0.5518695575213379,
+   "corr_true": 0.5251923001881585,
+   "ent_yaw_first5": 0.3354263111948967,
+   "ent_yaw": 0.5734348895569001,
+   "ent_att": 0.47330892286313475,
+   "resp": [
+    [
+     0.0,
+     0.85
+    ],
+    [
+     1.0,
+     0.915
+    ],
+    [
+     3.0,
+     1.2666666666666666
+    ],
+    [
+     8.0,
+     1.6
+    ],
+    [
+     16.0,
+     3.75
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.0,
+   "dist": 374,
+   "start_err": 24.8,
+   "steps": 25,
+   "acquire_t": 0.12,
+   "settle_t": 0.12,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 19,
+   "shots_off": 3,
+   "shots_far_off": 0,
+   "first_dealt": 0.8,
+   "first_taken": 0.56,
+   "turn_steps": 8,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.4031237952102731,
+   "corr_seen": 0.9587285211612103,
+   "corr_true": 0.8953791381423739,
+   "ent_yaw_first5": 0.4614860326051712,
+   "ent_yaw": 0.5774034959077835,
+   "ent_att": 0.23373447339981795,
+   "resp": [
+    [
+     0.0,
+     1.0
+    ],
+    [
+     1.0,
+     0.17857142857142858
+    ],
+    [
+     3.0,
+     0.6666666666666666
+    ],
+    [
+     8.0,
+     0.5
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.4,
+   "dist": 417,
+   "start_err": 26.3,
+   "steps": 10,
+   "acquire_t": 0.12,
+   "settle_t": 0.12,
+   "overshoot": false,
+   "crossings": 1,
+   "shots": 6,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 0.2,
+   "first_taken": null,
+   "turn_steps": 6,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.35840606960575494,
+   "corr_seen": 0.9625140217949196,
+   "corr_true": 0.882925693125151,
+   "ent_yaw_first5": 0.4265612691640854,
+   "ent_yaw": 0.5104178234934806,
+   "ent_att": 0.18556143455207347,
+   "resp": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     1.0,
+     0.5
+    ],
+    [
+     3.0,
+     null
+    ],
+    [
+     8.0,
+     4.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 2.96,
+   "dist": 372,
+   "start_err": 31.6,
+   "steps": 74,
+   "acquire_t": 2.04,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 1,
+   "shots": 21,
+   "shots_off": 20,
+   "shots_far_off": 4,
+   "first_dealt": 2.96,
+   "first_taken": 0.72,
+   "turn_steps": 42,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.2725726373556774,
+   "corr_seen": 0.7540263386545104,
+   "corr_true": 0.7539437848002695,
+   "ent_yaw_first5": 0.4260127395391464,
+   "ent_yaw": 0.6127595238991685,
+   "ent_att": 0.589992889026935,
+   "resp": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     1.0,
+     1.5625
+    ],
+    [
+     3.0,
+     1.20625
+    ],
+    [
+     8.0,
+     1.5416666666666667
+    ],
+    [
+     16.0,
+     5.333333333333333
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 3.52,
+   "dist": 418,
+   "start_err": 23.1,
+   "steps": 88,
+   "acquire_t": 1.08,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 6,
+   "shots": 40,
+   "shots_off": 33,
+   "shots_far_off": 4,
+   "first_dealt": 3.3200000000000003,
+   "first_taken": 0.8,
+   "turn_steps": 39,
+   "stale_steps": 2,
+   "over_steps": 0,
+   "gain_seen": 0.35728618474292423,
+   "corr_seen": 0.8458129148722052,
+   "corr_true": 0.7608277527293318,
+   "ent_yaw_first5": 0.5760858237743378,
+   "ent_yaw": 0.6005082543600689,
+   "ent_att": 0.47242584181102837,
+   "resp": [
+    [
+     0.0,
+     0.6730769230769231
+    ],
+    [
+     1.0,
+     0.6875
+    ],
+    [
+     3.0,
+     1.0196078431372548
+    ],
+    [
+     8.0,
+     2.125
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.24,
+   "dist": 574,
+   "start_err": 40.5,
+   "steps": 31,
+   "acquire_t": 0.24,
+   "settle_t": 0.24,
+   "overshoot": false,
+   "crossings": 1,
+   "shots": 24,
+   "shots_off": 18,
+   "shots_far_off": 0,
+   "first_dealt": 0.6,
+   "first_taken": 1.24,
+   "turn_steps": 12,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.5022145304132004,
+   "corr_seen": 0.9079426505613304,
+   "corr_true": 0.8297490203716481,
+   "ent_yaw_first5": 0.2475130960345268,
+   "ent_yaw": 0.5364972321737197,
+   "ent_att": 0.2592110318402129,
+   "resp": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     1.0,
+     0.6176470588235294
+    ],
+    [
+     3.0,
+     0.625
+    ],
+    [
+     8.0,
+     8.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.96,
+   "dist": 531,
+   "start_err": 33.1,
+   "steps": 49,
+   "acquire_t": 1.24,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 2,
+   "shots": 12,
+   "shots_off": 6,
+   "shots_far_off": 1,
+   "first_dealt": null,
+   "first_taken": 1.2,
+   "turn_steps": 22,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.4508145969058734,
+   "corr_seen": 0.613534456688584,
+   "corr_true": 0.5956679658883062,
+   "ent_yaw_first5": 0.3178975373506546,
+   "ent_yaw": 0.5937465335033378,
+   "ent_att": 0.4245553914533586,
+   "resp": [
+    [
+     0.0,
+     0.7857142857142857
+    ],
+    [
+     1.0,
+     1.0
+    ],
+    [
+     3.0,
+     1.368421052631579
+    ],
+    [
+     8.0,
+     1.7083333333333333
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     6.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.68,
+   "dist": 635,
+   "start_err": 42.6,
+   "steps": 17,
+   "acquire_t": 0.4,
+   "settle_t": 0.4,
+   "overshoot": false,
+   "crossings": 1,
+   "shots": 5,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 0.48,
+   "first_taken": null,
+   "turn_steps": 10,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.27083920359495417,
+   "corr_seen": 0.24658698226522502,
+   "corr_true": 0.378938017230227,
+   "ent_yaw_first5": 0.3259665876626968,
+   "ent_yaw": 0.4692346339716631,
+   "ent_att": 0.18096098788630435,
+   "resp": [
+    [
+     0.0,
+     0.1875
+    ],
+    [
+     1.0,
+     0.8333333333333334
+    ],
+    [
+     3.0,
+     0.25
+    ],
+    [
+     8.0,
+     4.0
+    ],
+    [
+     16.0,
+     8.5
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 3.88,
+   "dist": 313,
+   "start_err": 28.3,
+   "steps": 97,
+   "acquire_t": 1.8,
+   "settle_t": 3.6,
+   "overshoot": true,
+   "crossings": 0,
+   "shots": 11,
+   "shots_off": 6,
+   "shots_far_off": 1,
+   "first_dealt": 3.64,
+   "first_taken": null,
+   "turn_steps": 37,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.2715048421327367,
+   "corr_seen": 0.4600379665495463,
+   "corr_true": 0.4278758973337808,
+   "ent_yaw_first5": 0.698121964931488,
+   "ent_yaw": 0.7140142641116664,
+   "ent_att": 0.44838304798474016,
+   "resp": [
+    [
+     0.0,
+     1.3
+    ],
+    [
+     1.0,
+     0.47368421052631576
+    ],
+    [
+     3.0,
+     0.8984375
+    ],
+    [
+     8.0,
+     1.4204545454545454
+    ],
+    [
+     16.0,
+     1.263157894736842
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.16,
+   "dist": 261,
+   "start_err": 32.2,
+   "steps": 29,
+   "acquire_t": 0.92,
+   "settle_t": 0.92,
+   "overshoot": false,
+   "crossings": 2,
+   "shots": 6,
+   "shots_off": 1,
+   "shots_far_off": 0,
+   "first_dealt": 0.92,
+   "first_taken": null,
+   "turn_steps": 18,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.251611141876399,
+   "corr_seen": 0.62408187482647,
+   "corr_true": 0.6424674282342352,
+   "ent_yaw_first5": 0.4010778725147247,
+   "ent_yaw": 0.4790157398273205,
+   "ent_att": 0.33702325136079614,
+   "resp": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     1.0,
+     2.0
+    ],
+    [
+     3.0,
+     1.0192307692307692
+    ],
+    [
+     8.0,
+     2.0
+    ],
+    [
+     16.0,
+     2.3333333333333335
+    ],
+    [
+     30.0,
+     6.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.96,
+   "dist": 906,
+   "start_err": 20.8,
+   "steps": 49,
+   "acquire_t": 0.72,
+   "settle_t": 0.72,
+   "overshoot": true,
+   "crossings": 1,
+   "shots": 7,
+   "shots_off": 2,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 0.48,
+   "turn_steps": 18,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.3130055227669579,
+   "corr_seen": 0.667007828393888,
+   "corr_true": 0.6621997248755376,
+   "ent_yaw_first5": 0.5082399368286132,
+   "ent_yaw": 0.6335663162932104,
+   "ent_att": 0.6607970274528678,
+   "resp": [
+    [
+     0.0,
+     0.75
+    ],
+    [
+     1.0,
+     0.6111111111111112
+    ],
+    [
+     3.0,
+     0.7395833333333334
+    ],
+    [
+     8.0,
+     1.0833333333333333
+    ],
+    [
+     16.0,
+     2.25
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.92,
+   "dist": 460,
+   "start_err": 18.1,
+   "steps": 48,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 2,
+   "shots_off": 2,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 1.28,
+   "turn_steps": 23,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.14545634122180853,
+   "corr_seen": 0.16425503967433214,
+   "corr_true": 0.0942718888820821,
+   "ent_yaw_first5": 0.704821503162384,
+   "ent_yaw": 0.7017578867574533,
+   "ent_att": 0.29945600071611506,
+   "resp": [
+    [
+     0.0,
+     null
+    ],
+    [
+     1.0,
+     null
+    ],
+    [
+     3.0,
+     0.5
+    ],
+    [
+     8.0,
+     0.9545454545454546
+    ],
+    [
+     16.0,
+     2.2
+    ],
+    [
+     30.0,
+     1.8333333333333333
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 6.36,
+   "dist": 251,
+   "start_err": 37.0,
+   "steps": 159,
+   "acquire_t": 0.32,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 4,
+   "shots": 22,
+   "shots_off": 17,
+   "shots_far_off": 3,
+   "first_dealt": null,
+   "first_taken": 6.16,
+   "turn_steps": 70,
+   "stale_steps": 1,
+   "over_steps": 3,
+   "gain_seen": 0.34229495520084924,
+   "corr_seen": 0.5342558884630629,
+   "corr_true": 0.47718145998685374,
+   "ent_yaw_first5": 0.5281020343303681,
+   "ent_yaw": 0.6298560342698727,
+   "ent_att": 0.45484430030128864,
+   "resp": [
+    [
+     0.0,
+     0.25
+    ],
+    [
+     1.0,
+     1.15
+    ],
+    [
+     3.0,
+     0.8719512195121951
+    ],
+    [
+     8.0,
+     1.2016129032258065
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     2.6
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.92,
+   "dist": 383,
+   "start_err": 21.5,
+   "steps": 23,
+   "acquire_t": 0.12,
+   "settle_t": 0.52,
+   "overshoot": true,
+   "crossings": 3,
+   "shots": 11,
+   "shots_off": 4,
+   "shots_far_off": 2,
+   "first_dealt": 0.72,
+   "first_taken": null,
+   "turn_steps": 13,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.3760886636944007,
+   "corr_seen": 0.6475370259182781,
+   "corr_true": 0.625318820493702,
+   "ent_yaw_first5": 0.5022321462631225,
+   "ent_yaw": 0.5899093047432278,
+   "ent_att": 0.31736011406325776,
+   "resp": [
+    [
+     0.0,
+     1.0
+    ],
+    [
+     1.0,
+     2.9285714285714284
+    ],
+    [
+     3.0,
+     0.5625
+    ],
+    [
+     8.0,
+     2.2083333333333335
+    ],
+    [
+     16.0,
+     5.0625
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.76,
+   "dist": 633,
+   "start_err": 31.7,
+   "steps": 19,
+   "acquire_t": 0.28,
+   "settle_t": 0.28,
+   "overshoot": false,
+   "crossings": 2,
+   "shots": 11,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 0.44,
+   "first_taken": null,
+   "turn_steps": 8,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.28673670605124374,
+   "corr_seen": 0.9566986331563838,
+   "corr_true": 0.9067612936363656,
+   "ent_yaw_first5": 0.41724207401275637,
+   "ent_yaw": 0.521174829257162,
+   "ent_att": 0.30303790778117745,
+   "resp": [
+    [
+     0.0,
+     0.07142857142857142
+    ],
+    [
+     1.0,
+     0.875
+    ],
+    [
+     3.0,
+     1.4166666666666667
+    ],
+    [
+     8.0,
+     1.25
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.64,
+   "dist": 468,
+   "start_err": 17.8,
+   "steps": 41,
+   "acquire_t": 0.36,
+   "settle_t": 0.36,
+   "overshoot": true,
+   "crossings": 4,
+   "shots": 32,
+   "shots_off": 23,
+   "shots_far_off": 0,
+   "first_dealt": 0.36,
+   "first_taken": null,
+   "turn_steps": 13,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.6097541083821157,
+   "corr_seen": 0.8480473447889132,
+   "corr_true": 0.8265385898400657,
+   "ent_yaw_first5": 0.47444804906845095,
+   "ent_yaw": 0.5677298292881106,
+   "ent_att": 0.3941282659496476,
+   "resp": [
+    [
+     0.0,
+     0.5
+    ],
+    [
+     1.0,
+     0.25
+    ],
+    [
+     3.0,
+     0.6818181818181818
+    ],
+    [
+     8.0,
+     3.3333333333333335
+    ],
+    [
+     16.0,
+     null
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.84,
+   "dist": 368,
+   "start_err": 33.4,
+   "steps": 21,
+   "acquire_t": 0.4,
+   "settle_t": 0.4,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 13,
+   "shots_off": 7,
+   "shots_far_off": 0,
+   "first_dealt": 0.48,
+   "first_taken": null,
+   "turn_steps": 12,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.34260322748175454,
+   "corr_seen": 0.8964380953135603,
+   "corr_true": 0.8412311493952637,
+   "ent_yaw_first5": 0.36957801282405855,
+   "ent_yaw": 0.5228717518704278,
+   "ent_att": 0.4468726113083817,
+   "resp": [
+    [
+     0.0,
+     0.5
+    ],
+    [
+     1.0,
+     0.5416666666666666
+    ],
+    [
+     3.0,
+     1.8611111111111112
+    ],
+    [
+     8.0,
+     4.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.44,
+   "dist": 540,
+   "start_err": 22.0,
+   "steps": 36,
+   "acquire_t": 0.24,
+   "settle_t": 0.24,
+   "overshoot": true,
+   "crossings": 4,
+   "shots": 27,
+   "shots_off": 21,
+   "shots_far_off": 1,
+   "first_dealt": 0.4,
+   "first_taken": 0.72,
+   "turn_steps": 12,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.7720182258858932,
+   "corr_seen": 0.7808295315684497,
+   "corr_true": 0.6966361865757325,
+   "ent_yaw_first5": 0.43084846138954164,
+   "ent_yaw": 0.5380705636408594,
+   "ent_att": 0.25677249060633284,
+   "resp": [
+    [
+     0.0,
+     0.84375
+    ],
+    [
+     1.0,
+     0.36363636363636365
+    ],
+    [
+     3.0,
+     0.8636363636363636
+    ],
+    [
+     8.0,
+     2.6666666666666665
+    ],
+    [
+     16.0,
+     3.3333333333333335
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 4.04,
+   "dist": 459,
+   "start_err": 16.0,
+   "steps": 101,
+   "acquire_t": 0.28,
+   "settle_t": 0.28,
+   "overshoot": true,
+   "crossings": 8,
+   "shots": 47,
+   "shots_off": 32,
+   "shots_far_off": 1,
+   "first_dealt": 1.48,
+   "first_taken": 1.0,
+   "turn_steps": 39,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.44328357798826407,
+   "corr_seen": 0.8542507754426626,
+   "corr_true": 0.7861710547418147,
+   "ent_yaw_first5": 0.44536110758781433,
+   "ent_yaw": 0.5727482682997638,
+   "ent_att": 0.5138803508575305,
+   "resp": [
+    [
+     0.0,
+     0.5952380952380952
+    ],
+    [
+     1.0,
+     0.6607142857142857
+    ],
+    [
+     3.0,
+     0.9027777777777778
+    ],
+    [
+     8.0,
+     2.03125
+    ],
+    [
+     16.0,
+     null
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.52,
+   "dist": 498,
+   "start_err": 32.7,
+   "steps": 38,
+   "acquire_t": 0.28,
+   "settle_t": 0.72,
+   "overshoot": false,
+   "crossings": 1,
+   "shots": 17,
+   "shots_off": 7,
+   "shots_far_off": 0,
+   "first_dealt": 0.96,
+   "first_taken": 1.0,
+   "turn_steps": 15,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.4366348614654045,
+   "corr_seen": 0.8890547755202345,
+   "corr_true": 0.8701022423461742,
+   "ent_yaw_first5": 0.34848538488149644,
+   "ent_yaw": 0.5923770162227907,
+   "ent_att": 0.3229382351825112,
+   "resp": [
+    [
+     0.0,
+     0.8333333333333334
+    ],
+    [
+     1.0,
+     0.5625
+    ],
+    [
+     3.0,
+     1.2142857142857142
+    ],
+    [
+     8.0,
+     0.25
+    ],
+    [
+     16.0,
+     6.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.76,
+   "dist": 617,
+   "start_err": 37.5,
+   "steps": 44,
+   "acquire_t": 0.44,
+   "settle_t": 0.44,
+   "overshoot": true,
+   "crossings": 4,
+   "shots": 10,
+   "shots_off": 5,
+   "shots_far_off": 2,
+   "first_dealt": null,
+   "first_taken": 0.88,
+   "turn_steps": 25,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.31142555668109756,
+   "corr_seen": 0.7293401831342294,
+   "corr_true": 0.7014985299984698,
+   "ent_yaw_first5": 0.28828717172145846,
+   "ent_yaw": 0.5705921964889223,
+   "ent_att": 0.5150885397663594,
+   "resp": [
+    [
+     0.0,
+     1.0
+    ],
+    [
+     1.0,
+     1.15
+    ],
+    [
+     3.0,
+     1.5833333333333333
+    ],
+    [
+     8.0,
+     0.75
+    ],
+    [
+     16.0,
+     3.0625
+    ],
+    [
+     30.0,
+     5.333333333333333
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.4,
+   "dist": 840,
+   "start_err": 20.7,
+   "steps": 35,
+   "acquire_t": 0.88,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 1,
+   "shots": 11,
+   "shots_off": 7,
+   "shots_far_off": 0,
+   "first_dealt": 0.84,
+   "first_taken": 1.2,
+   "turn_steps": 12,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.6279623743853602,
+   "corr_seen": 0.8743714480758162,
+   "corr_true": 0.8055076789813587,
+   "ent_yaw_first5": 0.5728926718235016,
+   "ent_yaw": 0.6188233929021018,
+   "ent_att": 0.6006682443831648,
+   "resp": [
+    [
+     0.0,
+     0.3611111111111111
+    ],
+    [
+     1.0,
+     0.9166666666666666
+    ],
+    [
+     3.0,
+     1.0357142857142858
+    ],
+    [
+     8.0,
+     0.5
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.56,
+   "dist": 366,
+   "start_err": 30.9,
+   "steps": 14,
+   "acquire_t": 0.36,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 1,
+   "shots": 0,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 0.36,
+   "turn_steps": 9,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.2603693388594179,
+   "corr_seen": 0.7157212483663525,
+   "corr_true": 0.6989764936221698,
+   "ent_yaw_first5": 0.3823506414890289,
+   "ent_yaw": 0.5111026700053897,
+   "ent_att": 0.34358380089647006,
+   "resp": [
+    [
+     0.0,
+     null
+    ],
+    [
+     1.0,
+     4.125
+    ],
+    [
+     3.0,
+     0.84375
+    ],
+    [
+     8.0,
+     2.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.6,
+   "dist": 371,
+   "start_err": 17.0,
+   "steps": 40,
+   "acquire_t": 0.12,
+   "settle_t": 0.28,
+   "overshoot": true,
+   "crossings": 4,
+   "shots": 17,
+   "shots_off": 6,
+   "shots_far_off": 2,
+   "first_dealt": 1.6,
+   "first_taken": 0.76,
+   "turn_steps": 19,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.46485037203067037,
+   "corr_seen": 0.8630794182988007,
+   "corr_true": 0.6592527299779215,
+   "ent_yaw_first5": 0.5789925932884217,
+   "ent_yaw": 0.6000056467950344,
+   "ent_att": 0.5839243445079774,
+   "resp": [
+    [
+     0.0,
+     0.4583333333333333
+    ],
+    [
+     1.0,
+     0.625
+    ],
+    [
+     3.0,
+     1.3181818181818181
+    ],
+    [
+     8.0,
+     1.75
+    ],
+    [
+     16.0,
+     5.333333333333333
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.12,
+   "dist": 767,
+   "start_err": 27.6,
+   "steps": 28,
+   "acquire_t": 0.24,
+   "settle_t": 0.24,
+   "overshoot": false,
+   "crossings": 3,
+   "shots": 10,
+   "shots_off": 2,
+   "shots_far_off": 0,
+   "first_dealt": 0.76,
+   "first_taken": null,
+   "turn_steps": 7,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.46316846327447414,
+   "corr_seen": 0.9372948520435284,
+   "corr_true": 0.8559554237300622,
+   "ent_yaw_first5": 0.44753437042236327,
+   "ent_yaw": 0.5931385489446777,
+   "ent_att": 0.554969537471022,
+   "resp": [
+    [
+     0.0,
+     0.15
+    ],
+    [
+     1.0,
+     0.5735294117647058
+    ],
+    [
+     3.0,
+     1.125
+    ],
+    [
+     8.0,
+     0.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 4.32,
+   "dist": 807,
+   "start_err": 32.2,
+   "steps": 108,
+   "acquire_t": 0.6,
+   "settle_t": 0.6,
+   "overshoot": true,
+   "crossings": 8,
+   "shots": 45,
+   "shots_off": 32,
+   "shots_far_off": 2,
+   "first_dealt": 1.48,
+   "first_taken": 1.6,
+   "turn_steps": 33,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.43889256408319227,
+   "corr_seen": 0.7701391697934055,
+   "corr_true": 0.7333788307136007,
+   "ent_yaw_first5": 0.4020269840955734,
+   "ent_yaw": 0.5677145845084278,
+   "ent_att": 0.5528043821816229,
+   "resp": [
+    [
+     0.0,
+     0.4083333333333333
+    ],
+    [
+     1.0,
+     0.5416666666666666
+    ],
+    [
+     3.0,
+     0.6036585365853658
+    ],
+    [
+     8.0,
+     7.0
+    ],
+    [
+     16.0,
+     1.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 6.92,
+   "dist": 393,
+   "start_err": 34.0,
+   "steps": 173,
+   "acquire_t": 2.2,
+   "settle_t": 2.2,
+   "overshoot": true,
+   "crossings": 8,
+   "shots": 88,
+   "shots_off": 76,
+   "shots_far_off": 1,
+   "first_dealt": 2.16,
+   "first_taken": 4.44,
+   "turn_steps": 70,
+   "stale_steps": 3,
+   "over_steps": 0,
+   "gain_seen": 0.3240485942091764,
+   "corr_seen": 0.837794109757928,
+   "corr_true": 0.7932487973084098,
+   "ent_yaw_first5": 0.40360535979270934,
+   "ent_yaw": 0.5732221951374429,
+   "ent_att": 0.5524129948358056,
+   "resp": [
+    [
+     0.0,
+     0.3409090909090909
+    ],
+    [
+     1.0,
+     0.5384615384615384
+    ],
+    [
+     3.0,
+     0.8243801652892562
+    ],
+    [
+     8.0,
+     2.8
+    ],
+    [
+     16.0,
+     6.0
+    ],
+    [
+     30.0,
+     6.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.68,
+   "dist": 601,
+   "start_err": 34.3,
+   "steps": 42,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 7,
+   "shots_off": 7,
+   "shots_far_off": 7,
+   "first_dealt": null,
+   "first_taken": 0.8,
+   "turn_steps": 14,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.1668613500711107,
+   "corr_seen": 0.8070449824861788,
+   "corr_true": 0.8048683468009644,
+   "ent_yaw_first5": 0.6863510608673096,
+   "ent_yaw": 0.6359789470831553,
+   "ent_att": 0.44537872288908276,
+   "resp": [
+    [
+     0.0,
+     null
+    ],
+    [
+     1.0,
+     null
+    ],
+    [
+     3.0,
+     null
+    ],
+    [
+     8.0,
+     0.8014705882352942
+    ],
+    [
+     16.0,
+     3.2
+    ],
+    [
+     30.0,
+     2.6666666666666665
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.28,
+   "dist": 715,
+   "start_err": 24.9,
+   "steps": 32,
+   "acquire_t": 1.04,
+   "settle_t": 1.04,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 8,
+   "shots_off": 4,
+   "shots_far_off": 0,
+   "first_dealt": 1.28,
+   "first_taken": 0.6,
+   "turn_steps": 14,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.4199229108998652,
+   "corr_seen": 0.7975713988594056,
+   "corr_true": 0.6671550115566867,
+   "ent_yaw_first5": 0.6044317126274109,
+   "ent_yaw": 0.6095975721254945,
+   "ent_att": 0.38656988568254746,
+   "resp": [
+    [
+     0.0,
+     1.1875
+    ],
+    [
+     1.0,
+     0.5
+    ],
+    [
+     3.0,
+     0.875
+    ],
+    [
+     8.0,
+     1.75
+    ],
+    [
+     16.0,
+     6.666666666666667
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.16,
+   "dist": 677,
+   "start_err": 36.7,
+   "steps": 29,
+   "acquire_t": 0.56,
+   "settle_t": 0.56,
+   "overshoot": false,
+   "crossings": 1,
+   "shots": 16,
+   "shots_off": 1,
+   "shots_far_off": 0,
+   "first_dealt": 0.36,
+   "first_taken": null,
+   "turn_steps": 8,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.3844489904072969,
+   "corr_seen": 0.9447681752228384,
+   "corr_true": 0.8673122869220287,
+   "ent_yaw_first5": 0.3383368819952011,
+   "ent_yaw": 0.5778638859247339,
+   "ent_att": 0.46277259932509784,
+   "resp": [
+    [
+     0.0,
+     0.20833333333333334
+    ],
+    [
+     1.0,
+     0.0
+    ],
+    [
+     3.0,
+     1.625
+    ],
+    [
+     8.0,
+     0.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 3.24,
+   "dist": 566,
+   "start_err": 17.0,
+   "steps": 81,
+   "acquire_t": 0.36,
+   "settle_t": 0.36,
+   "overshoot": true,
+   "crossings": 5,
+   "shots": 27,
+   "shots_off": 20,
+   "shots_far_off": 7,
+   "first_dealt": 0.4,
+   "first_taken": 1.08,
+   "turn_steps": 42,
+   "stale_steps": 3,
+   "over_steps": 1,
+   "gain_seen": 0.475299372108794,
+   "corr_seen": 0.4865129069295781,
+   "corr_true": 0.37839586987718565,
+   "ent_yaw_first5": 0.5816235601902008,
+   "ent_yaw": 0.6075830614125287,
+   "ent_att": 0.528955849600427,
+   "resp": [
+    [
+     0.0,
+     0.8863636363636364
+    ],
+    [
+     1.0,
+     0.9318181818181818
+    ],
+    [
+     3.0,
+     1.143939393939394
+    ],
+    [
+     8.0,
+     1.8181818181818181
+    ],
+    [
+     16.0,
+     3.5
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 2.68,
+   "dist": 765,
+   "start_err": 44.0,
+   "steps": 67,
+   "acquire_t": 0.76,
+   "settle_t": 0.76,
+   "overshoot": true,
+   "crossings": 5,
+   "shots": 39,
+   "shots_off": 27,
+   "shots_far_off": 0,
+   "first_dealt": 1.04,
+   "first_taken": 2.0,
+   "turn_steps": 27,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.5457614977816221,
+   "corr_seen": 0.8769764239403685,
+   "corr_true": 0.814842266343756,
+   "ent_yaw_first5": 0.23330621123313905,
+   "ent_yaw": 0.5856705098899443,
+   "ent_att": 0.5723836662164375,
+   "resp": [
+    [
+     0.0,
+     0.5357142857142857
+    ],
+    [
+     1.0,
+     0.6136363636363636
+    ],
+    [
+     3.0,
+     0.3392857142857143
+    ],
+    [
+     8.0,
+     8.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.12,
+   "dist": 345,
+   "start_err": 17.9,
+   "steps": 28,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 6,
+   "shots_off": 6,
+   "shots_far_off": 2,
+   "first_dealt": 1.12,
+   "first_taken": 0.96,
+   "turn_steps": 12,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.31598623872896114,
+   "corr_seen": 0.7895324662755713,
+   "corr_true": 0.6686040240895321,
+   "ent_yaw_first5": 0.649707043170929,
+   "ent_yaw": 0.6280154255884034,
+   "ent_att": 0.4468727042632444,
+   "resp": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     1.0,
+     0.5357142857142857
+    ],
+    [
+     3.0,
+     0.4375
+    ],
+    [
+     8.0,
+     3.5625
+    ],
+    [
+     16.0,
+     null
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.64,
+   "dist": 275,
+   "start_err": 37.2,
+   "steps": 41,
+   "acquire_t": 0.48,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 0,
+   "shots": 6,
+   "shots_off": 6,
+   "shots_far_off": 1,
+   "first_dealt": null,
+   "first_taken": 1.6400000000000001,
+   "turn_steps": 26,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.2840703199938267,
+   "corr_seen": 0.5418485648520832,
+   "corr_true": 0.4435985558003647,
+   "ent_yaw_first5": 0.24756191968917846,
+   "ent_yaw": 0.5688519485113097,
+   "ent_att": 0.5457746862183984,
+   "resp": [
+    [
+     0.0,
+     null
+    ],
+    [
+     1.0,
+     1.4166666666666667
+    ],
+    [
+     3.0,
+     1.7083333333333333
+    ],
+    [
+     8.0,
+     1.25
+    ],
+    [
+     16.0,
+     4.78125
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.76,
+   "dist": 413,
+   "start_err": 38.7,
+   "steps": 19,
+   "acquire_t": 0.32,
+   "settle_t": 0.48,
+   "overshoot": false,
+   "crossings": 2,
+   "shots": 8,
+   "shots_off": 2,
+   "shots_far_off": 0,
+   "first_dealt": 0.48,
+   "first_taken": null,
+   "turn_steps": 12,
+   "stale_steps": 2,
+   "over_steps": 1,
+   "gain_seen": 0.4736560542120566,
+   "corr_seen": 0.8260330514033234,
+   "corr_true": 0.7774894572720741,
+   "ent_yaw_first5": 0.2495480567216873,
+   "ent_yaw": 0.5010331437775963,
+   "ent_att": 0.4724089871160686,
+   "resp": [
+    [
+     0.0,
+     0.3333333333333333
+    ],
+    [
+     1.0,
+     0.75
+    ],
+    [
+     3.0,
+     3.0
+    ],
+    [
+     8.0,
+     1.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.88,
+   "dist": 419,
+   "start_err": 23.5,
+   "steps": 47,
+   "acquire_t": 0.36,
+   "settle_t": 0.36,
+   "overshoot": true,
+   "crossings": 2,
+   "shots": 31,
+   "shots_off": 25,
+   "shots_far_off": 2,
+   "first_dealt": 1.8800000000000001,
+   "first_taken": null,
+   "turn_steps": 20,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.5087893138678541,
+   "corr_seen": 0.7853834034912254,
+   "corr_true": 0.6062558428099111,
+   "ent_yaw_first5": 0.5646308660507202,
+   "ent_yaw": 0.5717461185252413,
+   "ent_att": 0.5264011456809462,
+   "resp": [
+    [
+     0.0,
+     0.4583333333333333
+    ],
+    [
+     1.0,
+     0.6125
+    ],
+    [
+     3.0,
+     1.2833333333333334
+    ],
+    [
+     8.0,
+     4.0
+    ],
+    [
+     16.0,
+     5.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 5.4,
+   "dist": 803,
+   "start_err": 32.0,
+   "steps": 135,
+   "acquire_t": 0.72,
+   "settle_t": 0.72,
+   "overshoot": true,
+   "crossings": 12,
+   "shots": 31,
+   "shots_off": 20,
+   "shots_far_off": 0,
+   "first_dealt": 2.2800000000000002,
+   "first_taken": 4.6000000000000005,
+   "turn_steps": 42,
+   "stale_steps": 1,
+   "over_steps": 6,
+   "gain_seen": 0.7256648850127018,
+   "corr_seen": 0.5851816871999538,
+   "corr_true": 0.594457279758444,
+   "ent_yaw_first5": 0.29960785061120987,
+   "ent_yaw": 0.6063533483280076,
+   "ent_att": 0.5135767303200232,
+   "resp": [
+    [
+     0.0,
+     0.85
+    ],
+    [
+     1.0,
+     1.0851063829787233
+    ],
+    [
+     3.0,
+     0.8214285714285714
+    ],
+    [
+     8.0,
+     3.0625
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.52,
+   "dist": 408,
+   "start_err": 40.2,
+   "steps": 38,
+   "acquire_t": 0.8,
+   "settle_t": 1.48,
+   "overshoot": true,
+   "crossings": 0,
+   "shots": 0,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 1.52,
+   "turn_steps": 17,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.21410414222181928,
+   "corr_seen": 0.7223694670683266,
+   "corr_true": 0.7025056547267144,
+   "ent_yaw_first5": 0.23774510622024536,
+   "ent_yaw": 0.6057544507478413,
+   "ent_att": 0.2298406538504519,
+   "resp": [
+    [
+     0.0,
+     null
+    ],
+    [
+     1.0,
+     2.1666666666666665
+    ],
+    [
+     3.0,
+     0.6911764705882353
+    ],
+    [
+     8.0,
+     1.4
+    ],
+    [
+     16.0,
+     3.4
+    ],
+    [
+     30.0,
+     5.666666666666667
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.96,
+   "dist": 382,
+   "start_err": 43.8,
+   "steps": 24,
+   "acquire_t": 0.44,
+   "settle_t": 0.64,
+   "overshoot": false,
+   "crossings": 1,
+   "shots": 11,
+   "shots_off": 2,
+   "shots_far_off": 0,
+   "first_dealt": 0.68,
+   "first_taken": null,
+   "turn_steps": 12,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.33258247774056027,
+   "corr_seen": 0.9184926117366062,
+   "corr_true": 0.8828495363406265,
+   "ent_yaw_first5": 0.3583794340491295,
+   "ent_yaw": 0.5528970531498393,
+   "ent_att": 0.41050065215677023,
+   "resp": [
+    [
+     0.0,
+     1.0
+    ],
+    [
+     1.0,
+     0.25
+    ],
+    [
+     3.0,
+     1.7142857142857142
+    ],
+    [
+     8.0,
+     1.5625
+    ],
+    [
+     16.0,
+     4.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.52,
+   "dist": 418,
+   "start_err": 16.8,
+   "steps": 13,
+   "acquire_t": 0.16,
+   "settle_t": 0.16,
+   "overshoot": false,
+   "crossings": 1,
+   "shots": 8,
+   "shots_off": 1,
+   "shots_far_off": 1,
+   "first_dealt": 0.24,
+   "first_taken": null,
+   "turn_steps": 3,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.9225280010064812,
+   "corr_seen": null,
+   "corr_true": null,
+   "ent_yaw_first5": 0.6610765814781189,
+   "ent_yaw": 0.6221364323909466,
+   "ent_att": 0.3013219316848196,
+   "resp": [
+    [
+     0.0,
+     1.25
+    ],
+    [
+     1.0,
+     0.20833333333333334
+    ],
+    [
+     3.0,
+     null
+    ],
+    [
+     8.0,
+     2.75
+    ],
+    [
+     16.0,
+     4.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 2.48,
+   "dist": 292,
+   "start_err": 41.1,
+   "steps": 62,
+   "acquire_t": 0.8,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 3,
+   "shots": 26,
+   "shots_off": 17,
+   "shots_far_off": 1,
+   "first_dealt": null,
+   "first_taken": 0.4,
+   "turn_steps": 35,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.2659786305401619,
+   "corr_seen": 0.8529665703588127,
+   "corr_true": 0.8509445484934974,
+   "ent_yaw_first5": 0.4513041257858276,
+   "ent_yaw": 0.5529456148224492,
+   "ent_att": 0.5422842343593196,
+   "resp": [
+    [
+     0.0,
+     0.1875
+    ],
+    [
+     1.0,
+     0.3888888888888889
+    ],
+    [
+     3.0,
+     1.3870967741935485
+    ],
+    [
+     8.0,
+     1.85
+    ],
+    [
+     16.0,
+     3.6
+    ],
+    [
+     30.0,
+     5.333333333333333
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.04,
+   "dist": 536,
+   "start_err": 33.3,
+   "steps": 26,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 2,
+   "shots_off": 2,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 0.84,
+   "turn_steps": 13,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.25180734016225687,
+   "corr_seen": 0.35226966658334086,
+   "corr_true": 0.38760477809544935,
+   "ent_yaw_first5": 0.3649482175707817,
+   "ent_yaw": 0.5450906166090415,
+   "ent_att": 0.3738994488779169,
+   "resp": [
+    [
+     0.0,
+     null
+    ],
+    [
+     1.0,
+     0.25
+    ],
+    [
+     3.0,
+     2.7222222222222223
+    ],
+    [
+     8.0,
+     0.5
+    ],
+    [
+     16.0,
+     3.3333333333333335
+    ],
+    [
+     30.0,
+     4.5
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 2.12,
+   "dist": 898,
+   "start_err": 38.4,
+   "steps": 53,
+   "acquire_t": 0.24,
+   "settle_t": 0.56,
+   "overshoot": true,
+   "crossings": 3,
+   "shots": 18,
+   "shots_off": 6,
+   "shots_far_off": 0,
+   "first_dealt": 0.72,
+   "first_taken": 1.04,
+   "turn_steps": 24,
+   "stale_steps": 1,
+   "over_steps": 2,
+   "gain_seen": 0.39370401483133277,
+   "corr_seen": 0.8061542150127126,
+   "corr_true": 0.747402519836497,
+   "ent_yaw_first5": 0.2662325769662857,
+   "ent_yaw": 0.6098564326200845,
+   "ent_att": 0.4026748176558681,
+   "resp": [
+    [
+     0.0,
+     0.9375
+    ],
+    [
+     1.0,
+     1.3409090909090908
+    ],
+    [
+     3.0,
+     1.0172413793103448
+    ],
+    [
+     8.0,
+     0.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 2.08,
+   "dist": 398,
+   "start_err": 29.9,
+   "steps": 52,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 12,
+   "shots_off": 9,
+   "shots_far_off": 3,
+   "first_dealt": null,
+   "first_taken": 1.48,
+   "turn_steps": 16,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.2750890569652671,
+   "corr_seen": 0.21590182620279294,
+   "corr_true": 0.1999399494393141,
+   "ent_yaw_first5": 0.5355339705944061,
+   "ent_yaw": 0.6063440757302138,
+   "ent_att": 0.6334066393856819,
+   "resp": [
+    [
+     0.0,
+     0.2727272727272727
+    ],
+    [
+     1.0,
+     1.0357142857142858
+    ],
+    [
+     3.0,
+     0.4807692307692308
+    ],
+    [
+     8.0,
+     2.357142857142857
+    ],
+    [
+     16.0,
+     1.5357142857142858
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 2.8,
+   "dist": 366,
+   "start_err": 31.5,
+   "steps": 70,
+   "acquire_t": 0.84,
+   "settle_t": 2.32,
+   "overshoot": true,
+   "crossings": 4,
+   "shots": 18,
+   "shots_off": 13,
+   "shots_far_off": 2,
+   "first_dealt": 2.36,
+   "first_taken": 0.48,
+   "turn_steps": 47,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.24942678813675637,
+   "corr_seen": 0.747938794757801,
+   "corr_true": 0.6821211857423608,
+   "ent_yaw_first5": 0.39132286310195924,
+   "ent_yaw": 0.5312007227114268,
+   "ent_att": 0.5447376612507339,
+   "resp": [
+    [
+     0.0,
+     0.45
+    ],
+    [
+     1.0,
+     1.2777777777777777
+    ],
+    [
+     3.0,
+     1.4404761904761905
+    ],
+    [
+     8.0,
+     1.6666666666666667
+    ],
+    [
+     16.0,
+     6.0
+    ],
+    [
+     30.0,
+     4.166666666666667
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.44,
+   "dist": 337,
+   "start_err": 29.2,
+   "steps": 11,
+   "acquire_t": 0.32,
+   "settle_t": 0.32,
+   "overshoot": false,
+   "crossings": 1,
+   "shots": 1,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 0.44,
+   "first_taken": null,
+   "turn_steps": 5,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.3868542543228337,
+   "corr_seen": 0.9687473537093885,
+   "corr_true": 0.8940477043652555,
+   "ent_yaw_first5": 0.4881468892097473,
+   "ent_yaw": 0.5151978189294989,
+   "ent_att": 0.2013857735490257,
+   "resp": [
+    [
+     0.0,
+     2.0
+    ],
+    [
+     1.0,
+     0.25
+    ],
+    [
+     3.0,
+     0.7
+    ],
+    [
+     8.0,
+     0.5
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 3.72,
+   "dist": 662,
+   "start_err": 37.9,
+   "steps": 93,
+   "acquire_t": 1.72,
+   "settle_t": 1.72,
+   "overshoot": true,
+   "crossings": 2,
+   "shots": 39,
+   "shots_off": 29,
+   "shots_far_off": 3,
+   "first_dealt": null,
+   "first_taken": 2.32,
+   "turn_steps": 36,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.3582753563505064,
+   "corr_seen": 0.7076997924342234,
+   "corr_true": 0.6798722605823929,
+   "ent_yaw_first5": 0.6145732700824738,
+   "ent_yaw": 0.6333562577924421,
+   "ent_att": 0.470761444309466,
+   "resp": [
+    [
+     0.0,
+     0.6071428571428571
+    ],
+    [
+     1.0,
+     0.3
+    ],
+    [
+     3.0,
+     1.0
+    ],
+    [
+     8.0,
+     1.425
+    ],
+    [
+     16.0,
+     2.1875
+    ],
+    [
+     30.0,
+     4.666666666666667
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 2.64,
+   "dist": 393,
+   "start_err": 36.0,
+   "steps": 66,
+   "acquire_t": 0.2,
+   "settle_t": 1.12,
+   "overshoot": true,
+   "crossings": 2,
+   "shots": 11,
+   "shots_off": 2,
+   "shots_far_off": 0,
+   "first_dealt": 1.28,
+   "first_taken": null,
+   "turn_steps": 29,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.3031656030136842,
+   "corr_seen": 0.6579608225550667,
+   "corr_true": 0.6099693582589139,
+   "ent_yaw_first5": 0.17535174190998076,
+   "ent_yaw": 0.6002687701221668,
+   "ent_att": 0.41716334999849397,
+   "resp": [
+    [
+     0.0,
+     0.6666666666666666
+    ],
+    [
+     1.0,
+     0.26785714285714285
+    ],
+    [
+     3.0,
+     1.0405405405405406
+    ],
+    [
+     8.0,
+     2.75
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     5.666666666666667
+    ]
+   ]
+  },
+  {
+   "outcome": "timeout",
+   "time": 8.44,
+   "dist": 604,
+   "start_err": 19.0,
+   "steps": 211,
+   "acquire_t": 0.56,
+   "settle_t": 0.56,
+   "overshoot": true,
+   "crossings": 9,
+   "shots": 62,
+   "shots_off": 45,
+   "shots_far_off": 21,
+   "first_dealt": null,
+   "first_taken": null,
+   "turn_steps": 66,
+   "stale_steps": 3,
+   "over_steps": 3,
+   "gain_seen": 0.23772689256906218,
+   "corr_seen": 0.3845831286264396,
+   "corr_true": 0.34385899443158224,
+   "ent_yaw_first5": 0.5686883211135865,
+   "ent_yaw": 0.60794766706313,
+   "ent_att": 0.5412861740490271,
+   "resp": [
+    [
+     0.0,
+     0.6022727272727273
+    ],
+    [
+     1.0,
+     0.6510416666666666
+    ],
+    [
+     3.0,
+     0.559322033898305
+    ],
+    [
+     8.0,
+     0.784375
+    ],
+    [
+     16.0,
+     4.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.72,
+   "dist": 663,
+   "start_err": 30.8,
+   "steps": 43,
+   "acquire_t": 0.4,
+   "settle_t": 0.4,
+   "overshoot": true,
+   "crossings": 3,
+   "shots": 15,
+   "shots_off": 5,
+   "shots_far_off": 2,
+   "first_dealt": 1.6400000000000001,
+   "first_taken": null,
+   "turn_steps": 25,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.24820981144759627,
+   "corr_seen": 0.5462111786472973,
+   "corr_true": 0.47308866619142687,
+   "ent_yaw_first5": 0.36641511917114256,
+   "ent_yaw": 0.5138242397197458,
+   "ent_att": 0.44726948822891816,
+   "resp": [
+    [
+     0.0,
+     2.0
+    ],
+    [
+     1.0,
+     0.2222222222222222
+    ],
+    [
+     3.0,
+     1.45
+    ],
+    [
+     8.0,
+     2.1666666666666665
+    ],
+    [
+     16.0,
+     4.666666666666667
+    ],
+    [
+     30.0,
+     1.5625
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 4.32,
+   "dist": 261,
+   "start_err": 44.7,
+   "steps": 108,
+   "acquire_t": 0.72,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 3,
+   "shots": 18,
+   "shots_off": 15,
+   "shots_far_off": 8,
+   "first_dealt": 3.72,
+   "first_taken": 1.8,
+   "turn_steps": 65,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.2043241283070318,
+   "corr_seen": 0.6973079714755437,
+   "corr_true": 0.6598657005035088,
+   "ent_yaw_first5": 0.5124314725399017,
+   "ent_yaw": 0.5700272934304343,
+   "ent_att": 0.4825040834472963,
+   "resp": [
+    [
+     0.0,
+     1.25
+    ],
+    [
+     1.0,
+     0.4375
+    ],
+    [
+     3.0,
+     1.0092592592592593
+    ],
+    [
+     8.0,
+     1.9035087719298245
+    ],
+    [
+     16.0,
+     2.5
+    ],
+    [
+     30.0,
+     5.178571428571429
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 4.2,
+   "dist": 635,
+   "start_err": 30.8,
+   "steps": 105,
+   "acquire_t": 0.24,
+   "settle_t": 4.16,
+   "overshoot": true,
+   "crossings": 8,
+   "shots": 29,
+   "shots_off": 18,
+   "shots_far_off": 1,
+   "first_dealt": 4.2,
+   "first_taken": 0.64,
+   "turn_steps": 52,
+   "stale_steps": 3,
+   "over_steps": 4,
+   "gain_seen": 0.4154268485322554,
+   "corr_seen": 0.6477556204445178,
+   "corr_true": 0.5146362359439414,
+   "ent_yaw_first5": 0.5002386271953583,
+   "ent_yaw": 0.5941755104632604,
+   "ent_att": 0.565803592226335,
+   "resp": [
+    [
+     0.0,
+     1.1666666666666667
+    ],
+    [
+     1.0,
+     0.7631578947368421
+    ],
+    [
+     3.0,
+     1.3836206896551724
+    ],
+    [
+     8.0,
+     3.409090909090909
+    ],
+    [
+     16.0,
+     2.5555555555555554
+    ],
+    [
+     30.0,
+     16.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.68,
+   "dist": 323,
+   "start_err": 19.0,
+   "steps": 17,
+   "acquire_t": 0.08,
+   "settle_t": 0.6,
+   "overshoot": true,
+   "crossings": 2,
+   "shots": 9,
+   "shots_off": 4,
+   "shots_far_off": 0,
+   "first_dealt": 0.48,
+   "first_taken": null,
+   "turn_steps": 9,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.4848434967189895,
+   "corr_seen": 0.9380081743382785,
+   "corr_true": 0.7377083054983363,
+   "ent_yaw_first5": 0.4984579384326935,
+   "ent_yaw": 0.5753893151002771,
+   "ent_att": 0.622332749532207,
+   "resp": [
+    [
+     0.0,
+     2.0
+    ],
+    [
+     1.0,
+     0.5555555555555556
+    ],
+    [
+     3.0,
+     0.75
+    ],
+    [
+     8.0,
+     4.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.84,
+   "dist": 545,
+   "start_err": 40.7,
+   "steps": 21,
+   "acquire_t": 0.4,
+   "settle_t": 0.4,
+   "overshoot": false,
+   "crossings": 3,
+   "shots": 9,
+   "shots_off": 1,
+   "shots_far_off": 0,
+   "first_dealt": 0.72,
+   "first_taken": null,
+   "turn_steps": 12,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.27456316886932847,
+   "corr_seen": 0.8292578415500157,
+   "corr_true": 0.8467362107264527,
+   "ent_yaw_first5": 0.3806929051876068,
+   "ent_yaw": 0.4936307739643824,
+   "ent_att": 0.2720232846304065,
+   "resp": [
+    [
+     0.0,
+     0.5
+    ],
+    [
+     1.0,
+     1.0
+    ],
+    [
+     3.0,
+     2.0
+    ],
+    [
+     8.0,
+     1.7
+    ],
+    [
+     16.0,
+     5.0
+    ],
+    [
+     30.0,
+     6.666666666666667
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.92,
+   "dist": 525,
+   "start_err": 26.4,
+   "steps": 23,
+   "acquire_t": 0.28,
+   "settle_t": 0.28,
+   "overshoot": false,
+   "crossings": 3,
+   "shots": 5,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 0.52,
+   "first_taken": 0.72,
+   "turn_steps": 11,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.5245208872739496,
+   "corr_seen": 0.9535081309748339,
+   "corr_true": 0.9034190099184498,
+   "ent_yaw_first5": 0.4523423671722412,
+   "ent_yaw": 0.5425405411616616,
+   "ent_att": 0.43919860828748863,
+   "resp": [
+    [
+     0.0,
+     0.5
+    ],
+    [
+     1.0,
+     0.4583333333333333
+    ],
+    [
+     3.0,
+     2.5
+    ],
+    [
+     8.0,
+     2.0
+    ],
+    [
+     16.0,
+     5.333333333333333
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 6.72,
+   "dist": 634,
+   "start_err": 34.3,
+   "steps": 168,
+   "acquire_t": 0.24,
+   "settle_t": 0.24,
+   "overshoot": true,
+   "crossings": 24,
+   "shots": 60,
+   "shots_off": 25,
+   "shots_far_off": 0,
+   "first_dealt": 4.04,
+   "first_taken": 6.68,
+   "turn_steps": 53,
+   "stale_steps": 3,
+   "over_steps": 1,
+   "gain_seen": 0.9642023855267942,
+   "corr_seen": 0.7973601541470042,
+   "corr_true": 0.7752560369395228,
+   "ent_yaw_first5": 0.36549941897392274,
+   "ent_yaw": 0.5549142694189435,
+   "ent_att": 0.4468188837622403,
+   "resp": [
+    [
+     0.0,
+     0.5659722222222222
+    ],
+    [
+     1.0,
+     0.4583333333333333
+    ],
+    [
+     3.0,
+     0.9895833333333334
+    ],
+    [
+     8.0,
+     3.0
+    ],
+    [
+     16.0,
+     5.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.68,
+   "dist": 341,
+   "start_err": 29.9,
+   "steps": 17,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 2,
+   "shots_off": 2,
+   "shots_far_off": 2,
+   "first_dealt": null,
+   "first_taken": 0.68,
+   "turn_steps": 9,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.28242719761286184,
+   "corr_seen": 0.9354926055758134,
+   "corr_true": 0.9070021231173103,
+   "ent_yaw_first5": 0.48987328708171846,
+   "ent_yaw": 0.6065355705864289,
+   "ent_att": 0.42879305500537157,
+   "resp": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     1.0,
+     2.0
+    ],
+    [
+     3.0,
+     1.65
+    ],
+    [
+     8.0,
+     1.0357142857142858
+    ],
+    [
+     16.0,
+     5.333333333333333
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.64,
+   "dist": 344,
+   "start_err": 19.2,
+   "steps": 16,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 3,
+   "shots_off": 3,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 0.56,
+   "turn_steps": 5,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.4373076230935906,
+   "corr_seen": 0.9486896499386974,
+   "corr_true": 0.8346222190321866,
+   "ent_yaw_first5": 0.5478118479251861,
+   "ent_yaw": 0.6047159414738417,
+   "ent_att": 0.6423655946273357,
+   "resp": [
+    [
+     0.0,
+     0.25
+    ],
+    [
+     1.0,
+     0.5
+    ],
+    [
+     3.0,
+     0.5
+    ],
+    [
+     8.0,
+     1.25
+    ],
+    [
+     16.0,
+     5.333333333333333
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 6.12,
+   "dist": 503,
+   "start_err": 30.3,
+   "steps": 153,
+   "acquire_t": 0.28,
+   "settle_t": 1.04,
+   "overshoot": true,
+   "crossings": 12,
+   "shots": 65,
+   "shots_off": 26,
+   "shots_far_off": 2,
+   "first_dealt": 1.16,
+   "first_taken": 3.8000000000000003,
+   "turn_steps": 47,
+   "stale_steps": 2,
+   "over_steps": 3,
+   "gain_seen": 0.5646619277903051,
+   "corr_seen": 0.7730756797787829,
+   "corr_true": 0.7522256677060309,
+   "ent_yaw_first5": 0.4502726137638092,
+   "ent_yaw": 0.5508331933052711,
+   "ent_att": 0.508557513697085,
+   "resp": [
+    [
+     0.0,
+     0.5357142857142857
+    ],
+    [
+     1.0,
+     0.5
+    ],
+    [
+     3.0,
+     0.8138297872340425
+    ],
+    [
+     8.0,
+     1.9166666666666667
+    ],
+    [
+     16.0,
+     4.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.28,
+   "dist": 709,
+   "start_err": 27.5,
+   "steps": 32,
+   "acquire_t": 0.92,
+   "settle_t": 0.92,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 1,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 1.28,
+   "first_taken": null,
+   "turn_steps": 11,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.30725417455196813,
+   "corr_seen": 0.7900100414556596,
+   "corr_true": 0.8234437796911825,
+   "ent_yaw_first5": 0.5839901030063629,
+   "ent_yaw": 0.5972016779705882,
+   "ent_att": 0.2757338318042457,
+   "resp": [
+    [
+     0.0,
+     0.3
+    ],
+    [
+     1.0,
+     0.4583333333333333
+    ],
+    [
+     3.0,
+     0.4411764705882353
+    ],
+    [
+     8.0,
+     4.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 4.72,
+   "dist": 302,
+   "start_err": 22.8,
+   "steps": 118,
+   "acquire_t": 1.44,
+   "settle_t": 1.96,
+   "overshoot": true,
+   "crossings": 7,
+   "shots": 58,
+   "shots_off": 46,
+   "shots_far_off": 2,
+   "first_dealt": 2.16,
+   "first_taken": 3.8000000000000003,
+   "turn_steps": 45,
+   "stale_steps": 1,
+   "over_steps": 4,
+   "gain_seen": 0.4902007281419221,
+   "corr_seen": 0.6270794361487652,
+   "corr_true": 0.5456930473817839,
+   "ent_yaw_first5": 0.6831764936447143,
+   "ent_yaw": 0.6124227981446153,
+   "ent_att": 0.4885282506455936,
+   "resp": [
+    [
+     0.0,
+     0.5555555555555556
+    ],
+    [
+     1.0,
+     0.9625
+    ],
+    [
+     3.0,
+     1.0240384615384615
+    ],
+    [
+     8.0,
+     3.3333333333333335
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.72,
+   "dist": 960,
+   "start_err": 22.9,
+   "steps": 43,
+   "acquire_t": 0.44,
+   "settle_t": 0.44,
+   "overshoot": false,
+   "crossings": 8,
+   "shots": 23,
+   "shots_off": 4,
+   "shots_far_off": 0,
+   "first_dealt": 0.92,
+   "first_taken": 1.72,
+   "turn_steps": 13,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.7173908228350123,
+   "corr_seen": 0.8308418508546574,
+   "corr_true": 0.8265899109020934,
+   "ent_yaw_first5": 0.5251284897327423,
+   "ent_yaw": 0.5744578484878984,
+   "ent_att": 0.43831022781168305,
+   "resp": [
+    [
+     0.0,
+     0.5357142857142857
+    ],
+    [
+     1.0,
+     0.5333333333333333
+    ],
+    [
+     3.0,
+     2.1875
+    ],
+    [
+     8.0,
+     0.5
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.72,
+   "dist": 808,
+   "start_err": 43.7,
+   "steps": 43,
+   "acquire_t": 0.28,
+   "settle_t": 0.28,
+   "overshoot": false,
+   "crossings": 5,
+   "shots": 21,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 0.72,
+   "first_taken": null,
+   "turn_steps": 19,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.5292693174188848,
+   "corr_seen": 0.8453367400774207,
+   "corr_true": 0.7730904112666231,
+   "ent_yaw_first5": 0.23716249763965608,
+   "ent_yaw": 0.529093831431034,
+   "ent_att": 0.5693115254560875,
+   "resp": [
+    [
+     0.0,
+     0.625
+    ],
+    [
+     1.0,
+     0.5384615384615384
+    ],
+    [
+     3.0,
+     3.0
+    ],
+    [
+     8.0,
+     2.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     7.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.88,
+   "dist": 666,
+   "start_err": 16.3,
+   "steps": 22,
+   "acquire_t": 0.48,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 2,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 0.88,
+   "turn_steps": 7,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.3566463725723615,
+   "corr_seen": 0.7952920794732383,
+   "corr_true": 0.7404315285105816,
+   "ent_yaw_first5": 0.6528003454208374,
+   "ent_yaw": 0.6462969942526384,
+   "ent_att": 0.4166861694644798,
+   "resp": [
+    [
+     0.0,
+     0.25
+    ],
+    [
+     1.0,
+     0.625
+    ],
+    [
+     3.0,
+     0.6136363636363636
+    ],
+    [
+     8.0,
+     2.75
+    ],
+    [
+     16.0,
+     null
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.64,
+   "dist": 392,
+   "start_err": 42.6,
+   "steps": 16,
+   "acquire_t": 0.24,
+   "settle_t": 0.24,
+   "overshoot": false,
+   "crossings": 3,
+   "shots": 6,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 0.32,
+   "first_taken": 0.44,
+   "turn_steps": 10,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.36829459998080105,
+   "corr_seen": 0.9068345693973751,
+   "corr_true": 0.8405370232600252,
+   "ent_yaw_first5": 0.25822524279356,
+   "ent_yaw": 0.5053561083041131,
+   "ent_att": 0.37405481858877465,
+   "resp": [
+    [
+     0.0,
+     0.42857142857142855
+    ],
+    [
+     1.0,
+     0.6666666666666666
+    ],
+    [
+     3.0,
+     null
+    ],
+    [
+     8.0,
+     2.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 2.08,
+   "dist": 254,
+   "start_err": 39.6,
+   "steps": 52,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 11,
+   "shots_off": 9,
+   "shots_far_off": 1,
+   "first_dealt": 1.36,
+   "first_taken": null,
+   "turn_steps": 26,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.2891351893959887,
+   "corr_seen": 0.694404519175607,
+   "corr_true": 0.6538136514878254,
+   "ent_yaw_first5": 0.31105879247188567,
+   "ent_yaw": 0.635504606538094,
+   "ent_att": 0.5623113565290203,
+   "resp": [
+    [
+     0.0,
+     null
+    ],
+    [
+     1.0,
+     0.5833333333333334
+    ],
+    [
+     3.0,
+     0.9625
+    ],
+    [
+     8.0,
+     1.9318181818181819
+    ],
+    [
+     16.0,
+     2.125
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.44,
+   "dist": 638,
+   "start_err": 27.8,
+   "steps": 36,
+   "acquire_t": 0.76,
+   "settle_t": 0.76,
+   "overshoot": false,
+   "crossings": 3,
+   "shots": 12,
+   "shots_off": 2,
+   "shots_far_off": 0,
+   "first_dealt": 0.84,
+   "first_taken": null,
+   "turn_steps": 19,
+   "stale_steps": 2,
+   "over_steps": 1,
+   "gain_seen": 0.3410648225022065,
+   "corr_seen": 0.8538297706393989,
+   "corr_true": 0.7894392118184552,
+   "ent_yaw_first5": 0.49183557033538816,
+   "ent_yaw": 0.594497745235761,
+   "ent_att": 0.5029779993411567,
+   "resp": [
+    [
+     0.0,
+     0.4642857142857143
+    ],
+    [
+     1.0,
+     1.125
+    ],
+    [
+     3.0,
+     1.25
+    ],
+    [
+     8.0,
+     3.3333333333333335
+    ],
+    [
+     16.0,
+     4.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 3.04,
+   "dist": 516,
+   "start_err": 44.7,
+   "steps": 76,
+   "acquire_t": 0.28,
+   "settle_t": 0.28,
+   "overshoot": true,
+   "crossings": 6,
+   "shots": 44,
+   "shots_off": 34,
+   "shots_far_off": 0,
+   "first_dealt": 3.04,
+   "first_taken": 0.8,
+   "turn_steps": 33,
+   "stale_steps": 2,
+   "over_steps": 2,
+   "gain_seen": 0.8116812475840252,
+   "corr_seen": 0.8809150618105577,
+   "corr_true": 0.8179184993859214,
+   "ent_yaw_first5": 0.29229443669319155,
+   "ent_yaw": 0.5355573139692608,
+   "ent_att": 0.5642996126491773,
+   "resp": [
+    [
+     0.0,
+     0.66
+    ],
+    [
+     1.0,
+     0.7291666666666666
+    ],
+    [
+     3.0,
+     1.394736842105263
+    ],
+    [
+     8.0,
+     3.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     6.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.92,
+   "dist": 486,
+   "start_err": 23.8,
+   "steps": 23,
+   "acquire_t": 0.16,
+   "settle_t": 0.16,
+   "overshoot": false,
+   "crossings": 3,
+   "shots": 11,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 0.72,
+   "turn_steps": 14,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.5490235218653874,
+   "corr_seen": 0.9340331234301161,
+   "corr_true": 0.8965507649478701,
+   "ent_yaw_first5": 0.5328916609287262,
+   "ent_yaw": 0.6186261034530142,
+   "ent_att": 0.5412468733265996,
+   "resp": [
+    [
+     0.0,
+     0.9285714285714286
+    ],
+    [
+     1.0,
+     0.5555555555555556
+    ],
+    [
+     3.0,
+     2.0625
+    ],
+    [
+     8.0,
+     4.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.92,
+   "dist": 322,
+   "start_err": 37.1,
+   "steps": 23,
+   "acquire_t": 0.48,
+   "settle_t": 0.48,
+   "overshoot": false,
+   "crossings": 2,
+   "shots": 15,
+   "shots_off": 3,
+   "shots_far_off": 0,
+   "first_dealt": 0.72,
+   "first_taken": null,
+   "turn_steps": 11,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.37906498297132873,
+   "corr_seen": 0.8981804210391678,
+   "corr_true": 0.7930593810004212,
+   "ent_yaw_first5": 0.29087026715278624,
+   "ent_yaw": 0.5077672548916029,
+   "ent_att": 0.4056115578050199,
+   "resp": [
+    [
+     0.0,
+     0.4166666666666667
+    ],
+    [
+     1.0,
+     0.6428571428571429
+    ],
+    [
+     3.0,
+     1.21875
+    ],
+    [
+     8.0,
+     8.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 4.24,
+   "dist": 890,
+   "start_err": 23.5,
+   "steps": 106,
+   "acquire_t": 0.4,
+   "settle_t": 0.4,
+   "overshoot": true,
+   "crossings": 10,
+   "shots": 38,
+   "shots_off": 22,
+   "shots_far_off": 0,
+   "first_dealt": 0.56,
+   "first_taken": 3.48,
+   "turn_steps": 47,
+   "stale_steps": 6,
+   "over_steps": 2,
+   "gain_seen": 0.6384928155735896,
+   "corr_seen": 0.6529476894976809,
+   "corr_true": 0.592723687172711,
+   "ent_yaw_first5": 0.4945956587791443,
+   "ent_yaw": 0.5970436129367577,
+   "ent_att": 0.5169529690284211,
+   "resp": [
+    [
+     0.0,
+     0.6363636363636364
+    ],
+    [
+     1.0,
+     0.8548387096774194
+    ],
+    [
+     3.0,
+     1.053030303030303
+    ],
+    [
+     8.0,
+     1.8333333333333333
+    ],
+    [
+     16.0,
+     3.3333333333333335
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.68,
+   "dist": 283,
+   "start_err": 23.7,
+   "steps": 17,
+   "acquire_t": 0.4,
+   "settle_t": 0.4,
+   "overshoot": false,
+   "crossings": 3,
+   "shots": 2,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 0.48,
+   "turn_steps": 11,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.33892560451493114,
+   "corr_seen": 0.6115257247827659,
+   "corr_true": 0.7063375998090592,
+   "ent_yaw_first5": 0.4413581073284149,
+   "ent_yaw": 0.5209119337446549,
+   "ent_att": 0.315916554783197,
+   "resp": [
+    [
+     0.0,
+     1.0
+    ],
+    [
+     1.0,
+     1.25
+    ],
+    [
+     3.0,
+     2.0
+    ],
+    [
+     8.0,
+     1.6666666666666667
+    ],
+    [
+     16.0,
+     3.3333333333333335
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.56,
+   "dist": 351,
+   "start_err": 43.0,
+   "steps": 39,
+   "acquire_t": 0.32,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 1,
+   "shots": 7,
+   "shots_off": 7,
+   "shots_far_off": 2,
+   "first_dealt": null,
+   "first_taken": 0.88,
+   "turn_steps": 24,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.22784886321837397,
+   "corr_seen": 0.8683430385426952,
+   "corr_true": 0.8146807179400333,
+   "ent_yaw_first5": 0.3527124524116516,
+   "ent_yaw": 0.5516360868246127,
+   "ent_att": 0.399862320568317,
+   "resp": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     1.0,
+     2.0
+    ],
+    [
+     3.0,
+     1.3571428571428572
+    ],
+    [
+     8.0,
+     1.75
+    ],
+    [
+     16.0,
+     1.75
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 2.2,
+   "dist": 995,
+   "start_err": 23.0,
+   "steps": 55,
+   "acquire_t": 0.24,
+   "settle_t": 0.68,
+   "overshoot": true,
+   "crossings": 6,
+   "shots": 5,
+   "shots_off": 1,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 0.8,
+   "turn_steps": 30,
+   "stale_steps": 3,
+   "over_steps": 5,
+   "gain_seen": 0.42046919860448134,
+   "corr_seen": 0.6851649799392799,
+   "corr_true": 0.633780515480864,
+   "ent_yaw_first5": 0.481355744600296,
+   "ent_yaw": 0.6272135723720897,
+   "ent_att": 0.3231372618539767,
+   "resp": [
+    [
+     0.0,
+     0.9375
+    ],
+    [
+     1.0,
+     1.6805555555555556
+    ],
+    [
+     3.0,
+     1.15625
+    ],
+    [
+     8.0,
+     1.3333333333333333
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 2.88,
+   "dist": 348,
+   "start_err": 44.2,
+   "steps": 72,
+   "acquire_t": 0.48,
+   "settle_t": 1.96,
+   "overshoot": true,
+   "crossings": 6,
+   "shots": 28,
+   "shots_off": 15,
+   "shots_far_off": 2,
+   "first_dealt": 2.0,
+   "first_taken": 1.84,
+   "turn_steps": 30,
+   "stale_steps": 1,
+   "over_steps": 2,
+   "gain_seen": 0.30837053954819826,
+   "corr_seen": 0.8097033178984373,
+   "corr_true": 0.7718727378390822,
+   "ent_yaw_first5": 0.3166504889726639,
+   "ent_yaw": 0.5916663650423288,
+   "ent_att": 0.6476540154932687,
+   "resp": [
+    [
+     0.0,
+     0.625
+    ],
+    [
+     1.0,
+     1.0576923076923077
+    ],
+    [
+     3.0,
+     0.68
+    ],
+    [
+     8.0,
+     1.8666666666666667
+    ],
+    [
+     16.0,
+     4.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 2.84,
+   "dist": 292,
+   "start_err": 17.7,
+   "steps": 71,
+   "acquire_t": 0.16,
+   "settle_t": 2.7600000000000002,
+   "overshoot": true,
+   "crossings": 5,
+   "shots": 39,
+   "shots_off": 25,
+   "shots_far_off": 9,
+   "first_dealt": 0.76,
+   "first_taken": 0.6,
+   "turn_steps": 37,
+   "stale_steps": 2,
+   "over_steps": 2,
+   "gain_seen": 0.327614451514818,
+   "corr_seen": 0.8845339192859372,
+   "corr_true": 0.8371621298034824,
+   "ent_yaw_first5": 0.6057743549346923,
+   "ent_yaw": 0.5708416595425404,
+   "ent_att": 0.43821327419112055,
+   "resp": [
+    [
+     0.0,
+     1.2857142857142858
+    ],
+    [
+     1.0,
+     0.25
+    ],
+    [
+     3.0,
+     0.8035714285714286
+    ],
+    [
+     8.0,
+     2.0476190476190474
+    ],
+    [
+     16.0,
+     4.0625
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.68,
+   "dist": 567,
+   "start_err": 39.6,
+   "steps": 17,
+   "acquire_t": 0.32,
+   "settle_t": 0.32,
+   "overshoot": false,
+   "crossings": 2,
+   "shots": 8,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 0.48,
+   "first_taken": null,
+   "turn_steps": 7,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.20211097661580688,
+   "corr_seen": 0.640967735675031,
+   "corr_true": 0.6816649059399743,
+   "ent_yaw_first5": 0.46035586595535277,
+   "ent_yaw": 0.5266011620269102,
+   "ent_att": 0.1780647048726678,
+   "resp": [
+    [
+     0.0,
+     0.2916666666666667
+    ],
+    [
+     1.0,
+     0.0
+    ],
+    [
+     3.0,
+     1.0
+    ],
+    [
+     8.0,
+     0.5
+    ],
+    [
+     16.0,
+     4.666666666666667
+    ],
+    [
+     30.0,
+     6.666666666666667
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 3.52,
+   "dist": 737,
+   "start_err": 24.2,
+   "steps": 88,
+   "acquire_t": 0.68,
+   "settle_t": 0.68,
+   "overshoot": true,
+   "crossings": 8,
+   "shots": 37,
+   "shots_off": 26,
+   "shots_far_off": 0,
+   "first_dealt": 0.84,
+   "first_taken": 2.04,
+   "turn_steps": 42,
+   "stale_steps": 1,
+   "over_steps": 2,
+   "gain_seen": 0.49463675348029323,
+   "corr_seen": 0.5279485508974824,
+   "corr_true": 0.49951772169999453,
+   "ent_yaw_first5": 0.5331257998943328,
+   "ent_yaw": 0.5763073363764719,
+   "ent_att": 0.45798060643507843,
+   "resp": [
+    [
+     0.0,
+     0.8214285714285714
+    ],
+    [
+     1.0,
+     0.9464285714285714
+    ],
+    [
+     3.0,
+     1.5182926829268293
+    ],
+    [
+     8.0,
+     2.5
+    ],
+    [
+     16.0,
+     4.25
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 1.28,
+   "dist": 560,
+   "start_err": 44.3,
+   "steps": 32,
+   "acquire_t": 0.36,
+   "settle_t": 0.36,
+   "overshoot": false,
+   "crossings": 3,
+   "shots": 12,
+   "shots_off": 3,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 1.0,
+   "turn_steps": 19,
+   "stale_steps": 3,
+   "over_steps": 1,
+   "gain_seen": 0.3698040630180155,
+   "corr_seen": 0.8776739581567218,
+   "corr_true": 0.8450884861790293,
+   "ent_yaw_first5": 0.22282295674085617,
+   "ent_yaw": 0.5489337749313563,
+   "ent_att": 0.5723492555553094,
+   "resp": [
+    [
+     0.0,
+     0.6875
+    ],
+    [
+     1.0,
+     0.875
+    ],
+    [
+     3.0,
+     1.8333333333333333
+    ],
+    [
+     8.0,
+     2.0
+    ],
+    [
+     16.0,
+     5.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 3.32,
+   "dist": 864,
+   "start_err": 40.5,
+   "steps": 83,
+   "acquire_t": 1.16,
+   "settle_t": 1.16,
+   "overshoot": true,
+   "crossings": 7,
+   "shots": 17,
+   "shots_off": 4,
+   "shots_far_off": 0,
+   "first_dealt": 1.6,
+   "first_taken": 3.12,
+   "turn_steps": 33,
+   "stale_steps": 2,
+   "over_steps": 2,
+   "gain_seen": 0.768876647962785,
+   "corr_seen": 0.7090918442400154,
+   "corr_true": 0.6542945581857776,
+   "ent_yaw_first5": 0.2644053280353546,
+   "ent_yaw": 0.5963180456534926,
+   "ent_att": 0.4820239653204938,
+   "resp": [
+    [
+     0.0,
+     0.6442307692307693
+    ],
+    [
+     1.0,
+     1.0138888888888888
+    ],
+    [
+     3.0,
+     1.0576923076923077
+    ],
+    [
+     8.0,
+     3.6666666666666665
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 5.04,
+   "dist": 617,
+   "start_err": 25.9,
+   "steps": 126,
+   "acquire_t": 1.48,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 5,
+   "shots": 38,
+   "shots_off": 36,
+   "shots_far_off": 1,
+   "first_dealt": 3.04,
+   "first_taken": 0.64,
+   "turn_steps": 51,
+   "stale_steps": 2,
+   "over_steps": 4,
+   "gain_seen": 0.3553775426314113,
+   "corr_seen": 0.7781424439756729,
+   "corr_true": 0.7359318618450258,
+   "ent_yaw_first5": 0.5988627076148987,
+   "ent_yaw": 0.6072537960514189,
+   "ent_att": 0.488036825868582,
+   "resp": [
+    [
+     0.0,
+     0.9642857142857143
+    ],
+    [
+     1.0,
+     0.49166666666666664
+    ],
+    [
+     3.0,
+     1.102112676056338
+    ],
+    [
+     8.0,
+     0.9444444444444444
+    ],
+    [
+     16.0,
+     16.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.84,
+   "dist": 527,
+   "start_err": 23.7,
+   "steps": 46,
+   "acquire_t": 0.28,
+   "settle_t": 1.16,
+   "overshoot": true,
+   "crossings": 1,
+   "shots": 20,
+   "shots_off": 7,
+   "shots_far_off": 0,
+   "first_dealt": 0.84,
+   "first_taken": 0.92,
+   "turn_steps": 18,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.6074914293408478,
+   "corr_seen": 0.8525460924347538,
+   "corr_true": 0.8219967867230277,
+   "ent_yaw_first5": 0.5038505226373673,
+   "ent_yaw": 0.5813219220094059,
+   "ent_att": 0.3913867847953478,
+   "resp": [
+    [
+     0.0,
+     0.875
+    ],
+    [
+     1.0,
+     0.3888888888888889
+    ],
+    [
+     3.0,
+     1.1477272727272727
+    ],
+    [
+     8.0,
+     0.25
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 3.88,
+   "dist": 754,
+   "start_err": 21.6,
+   "steps": 97,
+   "acquire_t": 0.28,
+   "settle_t": 0.28,
+   "overshoot": true,
+   "crossings": 12,
+   "shots": 67,
+   "shots_off": 61,
+   "shots_far_off": 2,
+   "first_dealt": 0.32,
+   "first_taken": 2.32,
+   "turn_steps": 36,
+   "stale_steps": 1,
+   "over_steps": 2,
+   "gain_seen": 0.7069210521433742,
+   "corr_seen": 0.6065097630952799,
+   "corr_true": 0.6601228997329506,
+   "ent_yaw_first5": 0.4652786016464233,
+   "ent_yaw": 0.5834802588851181,
+   "ent_att": 0.5210347440977072,
+   "resp": [
+    [
+     0.0,
+     0.7717391304347826
+    ],
+    [
+     1.0,
+     0.7651515151515151
+    ],
+    [
+     3.0,
+     1.032258064516129
+    ],
+    [
+     8.0,
+     3.0
+    ],
+    [
+     16.0,
+     3.0833333333333335
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.92,
+   "dist": 295,
+   "start_err": 19.9,
+   "steps": 23,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 14,
+   "shots_off": 6,
+   "shots_far_off": 0,
+   "first_dealt": 0.72,
+   "first_taken": 0.72,
+   "turn_steps": 9,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.25661180238187503,
+   "corr_seen": 0.6689687867634295,
+   "corr_true": 0.5744567773528431,
+   "ent_yaw_first5": 0.41580234169960023,
+   "ent_yaw": 0.5119572800138722,
+   "ent_att": 0.1780728873209623,
+   "resp": [
+    [
+     0.0,
+     0.7
+    ],
+    [
+     1.0,
+     0.28125
+    ],
+    [
+     3.0,
+     2.0
+    ],
+    [
+     8.0,
+     2.5
+    ],
+    [
+     16.0,
+     2.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 2.24,
+   "dist": 258,
+   "start_err": 28.6,
+   "steps": 56,
+   "acquire_t": 1.08,
+   "settle_t": 1.08,
+   "overshoot": true,
+   "crossings": 2,
+   "shots": 14,
+   "shots_off": 5,
+   "shots_far_off": 0,
+   "first_dealt": 1.92,
+   "first_taken": null,
+   "turn_steps": 25,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.46114801701484265,
+   "corr_seen": 0.6394640138670714,
+   "corr_true": 0.687467480543811,
+   "ent_yaw_first5": 0.5372180640697479,
+   "ent_yaw": 0.6268872698502881,
+   "ent_att": 0.39870021633604275,
+   "resp": [
+    [
+     0.0,
+     1.6666666666666667
+    ],
+    [
+     1.0,
+     0.5357142857142857
+    ],
+    [
+     3.0,
+     1.41
+    ],
+    [
+     8.0,
+     1.275
+    ],
+    [
+     16.0,
+     4.25
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.4,
+   "dist": 504,
+   "start_err": 19.2,
+   "steps": 35,
+   "acquire_t": 1.2,
+   "settle_t": 1.2,
+   "overshoot": false,
+   "crossings": 2,
+   "shots": 9,
+   "shots_off": 4,
+   "shots_far_off": 0,
+   "first_dealt": 1.32,
+   "first_taken": null,
+   "turn_steps": 13,
+   "stale_steps": 0,
+   "over_steps": 2,
+   "gain_seen": 0.6184037110969471,
+   "corr_seen": 0.7807986939594687,
+   "corr_true": 0.7168056601447778,
+   "ent_yaw_first5": 0.5130899012088775,
+   "ent_yaw": 0.6174563348293305,
+   "ent_att": 0.5689712096005678,
+   "resp": [
+    [
+     0.0,
+     0.7083333333333334
+    ],
+    [
+     1.0,
+     0.625
+    ],
+    [
+     3.0,
+     1.4615384615384615
+    ],
+    [
+     8.0,
+     3.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 4.28,
+   "dist": 377,
+   "start_err": 42.2,
+   "steps": 107,
+   "acquire_t": 0.8,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 2,
+   "shots": 59,
+   "shots_off": 52,
+   "shots_far_off": 5,
+   "first_dealt": 0.64,
+   "first_taken": null,
+   "turn_steps": 51,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.39396638284482477,
+   "corr_seen": 0.8567222893598915,
+   "corr_true": 0.8494018550100193,
+   "ent_yaw_first5": 0.17235197126865387,
+   "ent_yaw": 0.5702711927278019,
+   "ent_att": 0.5484670408278982,
+   "resp": [
+    [
+     0.0,
+     0.5277777777777778
+    ],
+    [
+     1.0,
+     0.6
+    ],
+    [
+     3.0,
+     1.2769230769230768
+    ],
+    [
+     8.0,
+     1.75
+    ],
+    [
+     16.0,
+     4.25
+    ],
+    [
+     30.0,
+     6.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 2.64,
+   "dist": 966,
+   "start_err": 24.0,
+   "steps": 66,
+   "acquire_t": 0.4,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 9,
+   "shots": 12,
+   "shots_off": 12,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 1.76,
+   "turn_steps": 34,
+   "stale_steps": 2,
+   "over_steps": 3,
+   "gain_seen": 0.6062756269988798,
+   "corr_seen": 0.641462278124406,
+   "corr_true": 0.6403221317702703,
+   "ent_yaw_first5": 0.5698147773742676,
+   "ent_yaw": 0.61272849910187,
+   "ent_att": 0.567120890104861,
+   "resp": [
+    [
+     0.0,
+     0.9615384615384616
+    ],
+    [
+     1.0,
+     1.2380952380952381
+    ],
+    [
+     3.0,
+     1.0520833333333333
+    ],
+    [
+     8.0,
+     1.7083333333333333
+    ],
+    [
+     16.0,
+     5.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.96,
+   "dist": 395,
+   "start_err": 28.9,
+   "steps": 24,
+   "acquire_t": 0.2,
+   "settle_t": 0.48,
+   "overshoot": false,
+   "crossings": 4,
+   "shots": 14,
+   "shots_off": 2,
+   "shots_far_off": 0,
+   "first_dealt": 0.72,
+   "first_taken": null,
+   "turn_steps": 11,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.3823584537574889,
+   "corr_seen": 0.8819457493334469,
+   "corr_true": 0.8324946761055539,
+   "ent_yaw_first5": 0.415221181511879,
+   "ent_yaw": 0.5468193261573712,
+   "ent_att": 0.338099689843754,
+   "resp": [
+    [
+     0.0,
+     0.3333333333333333
+    ],
+    [
+     1.0,
+     1.4375
+    ],
+    [
+     3.0,
+     1.25
+    ],
+    [
+     8.0,
+     2.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.52,
+   "dist": 278,
+   "start_err": 34.1,
+   "steps": 13,
+   "acquire_t": 0.16,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 2,
+   "shots": 6,
+   "shots_off": 4,
+   "shots_far_off": 0,
+   "first_dealt": 0.24,
+   "first_taken": null,
+   "turn_steps": 9,
+   "stale_steps": 0,
+   "over_steps": 3,
+   "gain_seen": 0.6695539687393319,
+   "corr_seen": 0.8499592923620629,
+   "corr_true": 0.7512619213257944,
+   "ent_yaw_first5": 0.3210926249623299,
+   "ent_yaw": 0.5143635576734176,
+   "ent_att": 0.5007453861717994,
+   "resp": [
+    [
+     0.0,
+     1.5
+    ],
+    [
+     1.0,
+     1.25
+    ],
+    [
+     3.0,
+     4.0
+    ],
+    [
+     8.0,
+     0.5
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.72,
+   "dist": 737,
+   "start_err": 34.0,
+   "steps": 18,
+   "acquire_t": 0.52,
+   "settle_t": 0.52,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 1,
+   "shots_off": 1,
+   "shots_far_off": 1,
+   "first_dealt": null,
+   "first_taken": 0.52,
+   "turn_steps": 8,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.36838513027503694,
+   "corr_seen": 0.8629462230828325,
+   "corr_true": 0.8096253749891926,
+   "ent_yaw_first5": 0.35288712978363035,
+   "ent_yaw": 0.5646496878729926,
+   "ent_att": 0.2635961822751496,
+   "resp": [
+    [
+     0.0,
+     0.0
+    ],
+    [
+     1.0,
+     0.5
+    ],
+    [
+     3.0,
+     0.625
+    ],
+    [
+     8.0,
+     8.0
+    ],
+    [
+     16.0,
+     6.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.88,
+   "dist": 543,
+   "start_err": 21.4,
+   "steps": 22,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 1,
+   "shots_off": 1,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 0.56,
+   "turn_steps": 6,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.4923797344194964,
+   "corr_seen": 0.9160835615566106,
+   "corr_true": 0.8776847012286612,
+   "ent_yaw_first5": 0.540233027935028,
+   "ent_yaw": 0.6094417382370342,
+   "ent_att": 0.3584064875136722,
+   "resp": [
+    [
+     0.0,
+     1.5
+    ],
+    [
+     1.0,
+     0.3076923076923077
+    ],
+    [
+     3.0,
+     0.6666666666666666
+    ],
+    [
+     8.0,
+     0.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 2.36,
+   "dist": 974,
+   "start_err": 32.7,
+   "steps": 59,
+   "acquire_t": 0.56,
+   "settle_t": 0.56,
+   "overshoot": true,
+   "crossings": 3,
+   "shots": 20,
+   "shots_off": 8,
+   "shots_far_off": 0,
+   "first_dealt": 0.72,
+   "first_taken": 0.76,
+   "turn_steps": 18,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.43248541171051447,
+   "corr_seen": 0.7588565014924021,
+   "corr_true": 0.6765322479721767,
+   "ent_yaw_first5": 0.29135966300964355,
+   "ent_yaw": 0.5658141490766557,
+   "ent_att": 0.44334613471844436,
+   "resp": [
+    [
+     0.0,
+     0.4342105263157895
+    ],
+    [
+     1.0,
+     0.3958333333333333
+    ],
+    [
+     3.0,
+     1.125
+    ],
+    [
+     8.0,
+     2.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     3.5
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.52,
+   "dist": 501,
+   "start_err": 17.1,
+   "steps": 38,
+   "acquire_t": 0.56,
+   "settle_t": 0.56,
+   "overshoot": true,
+   "crossings": 2,
+   "shots": 16,
+   "shots_off": 2,
+   "shots_far_off": 1,
+   "first_dealt": 0.64,
+   "first_taken": 1.04,
+   "turn_steps": 13,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.48421083740930654,
+   "corr_seen": 0.8657776882712371,
+   "corr_true": 0.829435169058537,
+   "ent_yaw_first5": 0.6576201558113098,
+   "ent_yaw": 0.5910396701411197,
+   "ent_att": 0.5923842211302958,
+   "resp": [
+    [
+     0.0,
+     0.15
+    ],
+    [
+     1.0,
+     0.4264705882352941
+    ],
+    [
+     3.0,
+     1.65
+    ],
+    [
+     8.0,
+     0.0
+    ],
+    [
+     16.0,
+     5.416666666666667
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.56,
+   "dist": 499,
+   "start_err": 19.0,
+   "steps": 14,
+   "acquire_t": 0.36,
+   "settle_t": 0.36,
+   "overshoot": false,
+   "crossings": 1,
+   "shots": 5,
+   "shots_off": 1,
+   "shots_far_off": 0,
+   "first_dealt": 0.44,
+   "first_taken": null,
+   "turn_steps": 4,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.507330680009272,
+   "corr_seen": 0.7039936276552783,
+   "corr_true": 0.7346590381118399,
+   "ent_yaw_first5": 0.6017165184020996,
+   "ent_yaw": 0.6014370449951717,
+   "ent_att": 0.5752439669200352,
+   "resp": [
+    [
+     0.0,
+     0.16666666666666666
+    ],
+    [
+     1.0,
+     1.5
+    ],
+    [
+     3.0,
+     1.3333333333333333
+    ],
+    [
+     8.0,
+     0.75
+    ],
+    [
+     16.0,
+     4.0
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 3.56,
+   "dist": 473,
+   "start_err": 18.7,
+   "steps": 89,
+   "acquire_t": 0.28,
+   "settle_t": 0.28,
+   "overshoot": true,
+   "crossings": 3,
+   "shots": 41,
+   "shots_off": 26,
+   "shots_far_off": 13,
+   "first_dealt": 0.32,
+   "first_taken": 0.72,
+   "turn_steps": 36,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.3214621605915041,
+   "corr_seen": 0.05788205145797178,
+   "corr_true": 0.03251476858224414,
+   "ent_yaw_first5": 0.37474088072776796,
+   "ent_yaw": 0.5930333462324036,
+   "ent_att": 0.42420501230556645,
+   "resp": [
+    [
+     0.0,
+     0.325
+    ],
+    [
+     1.0,
+     0.5
+    ],
+    [
+     3.0,
+     1.0810810810810811
+    ],
+    [
+     8.0,
+     3.2
+    ],
+    [
+     16.0,
+     1.25
+    ],
+    [
+     30.0,
+     0.8125
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.8,
+   "dist": 440,
+   "start_err": 21.0,
+   "steps": 20,
+   "acquire_t": 0.4,
+   "settle_t": 0.4,
+   "overshoot": false,
+   "crossings": 2,
+   "shots": 5,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 0.6,
+   "turn_steps": 7,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.38547520022762893,
+   "corr_seen": 0.9765200270898035,
+   "corr_true": 0.9387164759992512,
+   "ent_yaw_first5": 0.5374091446399689,
+   "ent_yaw": 0.6072204604744911,
+   "ent_att": 0.5424496434628964,
+   "resp": [
+    [
+     0.0,
+     0.65625
+    ],
+    [
+     1.0,
+     0.25
+    ],
+    [
+     3.0,
+     2.0
+    ],
+    [
+     8.0,
+     1.28125
+    ],
+    [
+     16.0,
+     4.125
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 6.28,
+   "dist": 493,
+   "start_err": 42.6,
+   "steps": 157,
+   "acquire_t": 1.44,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 12,
+   "shots": 83,
+   "shots_off": 76,
+   "shots_far_off": 4,
+   "first_dealt": 5.2,
+   "first_taken": 4.4,
+   "turn_steps": 54,
+   "stale_steps": 5,
+   "over_steps": 1,
+   "gain_seen": 0.43801431084736253,
+   "corr_seen": 0.8193302361185936,
+   "corr_true": 0.8023632460533996,
+   "ent_yaw_first5": 0.2998752400279045,
+   "ent_yaw": 0.5676413644935675,
+   "ent_att": 0.6092549646391895,
+   "resp": [
+    [
+     0.0,
+     0.5258620689655172
+    ],
+    [
+     1.0,
+     0.4385245901639344
+    ],
+    [
+     3.0,
+     1.0458333333333334
+    ],
+    [
+     8.0,
+     4.0
+    ],
+    [
+     16.0,
+     4.25
+    ],
+    [
+     30.0,
+     5.333333333333333
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.72,
+   "dist": 330,
+   "start_err": 34.7,
+   "steps": 18,
+   "acquire_t": 0.32,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 7,
+   "shots_off": 6,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 0.72,
+   "turn_steps": 10,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.36786126286251414,
+   "corr_seen": 0.6862670446765612,
+   "corr_true": 0.5757123854904452,
+   "ent_yaw_first5": 0.3804978609085083,
+   "ent_yaw": 0.534368591176139,
+   "ent_att": 0.29876751610491836,
+   "resp": [
+    [
+     0.0,
+     1.0
+    ],
+    [
+     1.0,
+     0.5833333333333334
+    ],
+    [
+     3.0,
+     1.5357142857142858
+    ],
+    [
+     8.0,
+     2.0
+    ],
+    [
+     16.0,
+     4.0
+    ],
+    [
+     30.0,
+     5.666666666666667
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.72,
+   "dist": 737,
+   "start_err": 34.6,
+   "steps": 18,
+   "acquire_t": 0.16,
+   "settle_t": 0.16,
+   "overshoot": false,
+   "crossings": 3,
+   "shots": 8,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 0.32,
+   "first_taken": 0.48,
+   "turn_steps": 9,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.6276668013244097,
+   "corr_seen": 0.8954172309698287,
+   "corr_true": 0.8302594840471822,
+   "ent_yaw_first5": 0.30986617654562,
+   "ent_yaw": 0.5260968816777071,
+   "ent_att": 0.41465994542361134,
+   "resp": [
+    [
+     0.0,
+     0.8928571428571429
+    ],
+    [
+     1.0,
+     0.6666666666666666
+    ],
+    [
+     3.0,
+     0.8333333333333334
+    ],
+    [
+     8.0,
+     0.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 7.08,
+   "dist": 552,
+   "start_err": 45.6,
+   "steps": 177,
+   "acquire_t": 1.28,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 16,
+   "shots": 99,
+   "shots_off": 88,
+   "shots_far_off": 16,
+   "first_dealt": 1.56,
+   "first_taken": 1.36,
+   "turn_steps": 78,
+   "stale_steps": 3,
+   "over_steps": 3,
+   "gain_seen": 0.37027422832301027,
+   "corr_seen": 0.304017733251472,
+   "corr_true": 0.2644880137672047,
+   "ent_yaw_first5": 0.6937879800796509,
+   "ent_yaw": 0.568032891568491,
+   "ent_att": 0.46447478077968973,
+   "resp": [
+    [
+     0.0,
+     0.6339285714285714
+    ],
+    [
+     1.0,
+     1.0
+    ],
+    [
+     3.0,
+     0.9058441558441559
+    ],
+    [
+     8.0,
+     2.0681818181818183
+    ],
+    [
+     16.0,
+     1.9
+    ],
+    [
+     30.0,
+     1.8611111111111112
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 4.76,
+   "dist": 864,
+   "start_err": 32.2,
+   "steps": 119,
+   "acquire_t": null,
+   "settle_t": null,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 29,
+   "shots_off": 29,
+   "shots_far_off": 25,
+   "first_dealt": null,
+   "first_taken": 3.96,
+   "turn_steps": 47,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.13478403660821306,
+   "corr_seen": 0.7057628881204755,
+   "corr_true": 0.6386845889975752,
+   "ent_yaw_first5": 0.41780148446559906,
+   "ent_yaw": 0.6238722369200042,
+   "ent_att": 0.5281696662056345,
+   "resp": [
+    [
+     0.0,
+     null
+    ],
+    [
+     1.0,
+     null
+    ],
+    [
+     3.0,
+     1.3571428571428572
+    ],
+    [
+     8.0,
+     0.6954022988505747
+    ],
+    [
+     16.0,
+     1.921875
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.92,
+   "dist": 395,
+   "start_err": 17.8,
+   "steps": 23,
+   "acquire_t": 0.36,
+   "settle_t": 0.36,
+   "overshoot": false,
+   "crossings": 3,
+   "shots": 9,
+   "shots_off": 1,
+   "shots_far_off": 1,
+   "first_dealt": 0.72,
+   "first_taken": 0.68,
+   "turn_steps": 12,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.44637685255882614,
+   "corr_seen": 0.6853584577735748,
+   "corr_true": 0.6738016573812031,
+   "ent_yaw_first5": 0.6501531839370728,
+   "ent_yaw": 0.6377823093663091,
+   "ent_att": 0.59315273983647,
+   "resp": [
+    [
+     0.0,
+     2.0
+    ],
+    [
+     1.0,
+     0.5454545454545454
+    ],
+    [
+     3.0,
+     1.2
+    ],
+    [
+     8.0,
+     0.5
+    ],
+    [
+     16.0,
+     3.4166666666666665
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 7.24,
+   "dist": 420,
+   "start_err": 31.0,
+   "steps": 181,
+   "acquire_t": 0.36,
+   "settle_t": 0.36,
+   "overshoot": true,
+   "crossings": 12,
+   "shots": 78,
+   "shots_off": 53,
+   "shots_far_off": 0,
+   "first_dealt": 3.12,
+   "first_taken": null,
+   "turn_steps": 67,
+   "stale_steps": 3,
+   "over_steps": 2,
+   "gain_seen": 0.43958631155753614,
+   "corr_seen": 0.5528642630716962,
+   "corr_true": 0.5418716856792297,
+   "ent_yaw_first5": 0.36013643741607665,
+   "ent_yaw": 0.611919737323213,
+   "ent_att": 0.38771296269388983,
+   "resp": [
+    [
+     0.0,
+     0.5725806451612904
+    ],
+    [
+     1.0,
+     0.7721518987341772
+    ],
+    [
+     3.0,
+     1.1614583333333333
+    ],
+    [
+     8.0,
+     1.25
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.88,
+   "dist": 812,
+   "start_err": 43.6,
+   "steps": 22,
+   "acquire_t": 0.4,
+   "settle_t": null,
+   "overshoot": true,
+   "crossings": 1,
+   "shots": 2,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 0.6,
+   "first_taken": 0.88,
+   "turn_steps": 14,
+   "stale_steps": 0,
+   "over_steps": 1,
+   "gain_seen": 0.4275734454125527,
+   "corr_seen": 0.6619065948084716,
+   "corr_true": 0.5176916552561946,
+   "ent_yaw_first5": 0.2529111415147781,
+   "ent_yaw": 0.5546873489564116,
+   "ent_att": 0.2884953375905752,
+   "resp": [
+    [
+     0.0,
+     0.6666666666666666
+    ],
+    [
+     1.0,
+     1.6666666666666667
+    ],
+    [
+     3.0,
+     0.75
+    ],
+    [
+     8.0,
+     8.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     5.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 2.04,
+   "dist": 897,
+   "start_err": 42.6,
+   "steps": 51,
+   "acquire_t": 0.48,
+   "settle_t": 0.48,
+   "overshoot": true,
+   "crossings": 5,
+   "shots": 15,
+   "shots_off": 1,
+   "shots_far_off": 0,
+   "first_dealt": 0.8,
+   "first_taken": 1.36,
+   "turn_steps": 18,
+   "stale_steps": 0,
+   "over_steps": 2,
+   "gain_seen": 0.3087481828035262,
+   "corr_seen": 0.6669102315126668,
+   "corr_true": 0.6343588985349016,
+   "ent_yaw_first5": 0.42566781044006347,
+   "ent_yaw": 0.6075659622164333,
+   "ent_att": 0.5112731675891315,
+   "resp": [
+    [
+     0.0,
+     0.4166666666666667
+    ],
+    [
+     1.0,
+     1.09375
+    ],
+    [
+     3.0,
+     0.8421052631578947
+    ],
+    [
+     8.0,
+     6.0
+    ],
+    [
+     16.0,
+     6.0
+    ],
+    [
+     30.0,
+     6.666666666666667
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 2.04,
+   "dist": 656,
+   "start_err": 45.9,
+   "steps": 51,
+   "acquire_t": 1.44,
+   "settle_t": 1.44,
+   "overshoot": false,
+   "crossings": 4,
+   "shots": 16,
+   "shots_off": 7,
+   "shots_far_off": 2,
+   "first_dealt": null,
+   "first_taken": 1.84,
+   "turn_steps": 22,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.28692411862783296,
+   "corr_seen": 0.6829921121165144,
+   "corr_true": 0.6475931291956984,
+   "ent_yaw_first5": 0.5953619420528412,
+   "ent_yaw": 0.5932827808108985,
+   "ent_att": 0.5146390289689103,
+   "resp": [
+    [
+     0.0,
+     0.421875
+    ],
+    [
+     1.0,
+     1.7
+    ],
+    [
+     3.0,
+     1.15
+    ],
+    [
+     8.0,
+     1.0
+    ],
+    [
+     16.0,
+     4.125
+    ],
+    [
+     30.0,
+     3.75
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.64,
+   "dist": 344,
+   "start_err": 43.7,
+   "steps": 16,
+   "acquire_t": 0.28,
+   "settle_t": 0.48,
+   "overshoot": true,
+   "crossings": 1,
+   "shots": 6,
+   "shots_off": 1,
+   "shots_far_off": 0,
+   "first_dealt": 0.44,
+   "first_taken": null,
+   "turn_steps": 12,
+   "stale_steps": 1,
+   "over_steps": 1,
+   "gain_seen": 0.3410785112665775,
+   "corr_seen": 0.6872439877182331,
+   "corr_true": 0.5969937313990735,
+   "ent_yaw_first5": 0.3522468537092209,
+   "ent_yaw": 0.5235890345647931,
+   "ent_att": 0.2929123906651512,
+   "resp": [
+    [
+     0.0,
+     0.25
+    ],
+    [
+     1.0,
+     1.8125
+    ],
+    [
+     3.0,
+     2.125
+    ],
+    [
+     8.0,
+     0.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     5.25
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.84,
+   "dist": 387,
+   "start_err": 33.9,
+   "steps": 21,
+   "acquire_t": 0.32,
+   "settle_t": 0.32,
+   "overshoot": false,
+   "crossings": 2,
+   "shots": 8,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 0.4,
+   "first_taken": null,
+   "turn_steps": 10,
+   "stale_steps": 1,
+   "over_steps": 0,
+   "gain_seen": 0.3363513389013205,
+   "corr_seen": 0.9131099011618906,
+   "corr_true": 0.9035580331566696,
+   "ent_yaw_first5": 0.4682169914245605,
+   "ent_yaw": 0.5225719994022733,
+   "ent_att": 0.42255463143478017,
+   "resp": [
+    [
+     0.0,
+     null
+    ],
+    [
+     1.0,
+     0.625
+    ],
+    [
+     3.0,
+     2.0
+    ],
+    [
+     8.0,
+     1.4166666666666667
+    ],
+    [
+     16.0,
+     4.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.52,
+   "dist": 661,
+   "start_err": 33.3,
+   "steps": 13,
+   "acquire_t": 0.24,
+   "settle_t": 0.24,
+   "overshoot": false,
+   "crossings": 1,
+   "shots": 8,
+   "shots_off": 0,
+   "shots_far_off": 0,
+   "first_dealt": 0.32,
+   "first_taken": null,
+   "turn_steps": 5,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.2751609712780058,
+   "corr_seen": 0.5981562245853097,
+   "corr_true": 0.3230178126808085,
+   "ent_yaw_first5": 0.3618968665599823,
+   "ent_yaw": 0.4763645369272966,
+   "ent_att": 0.27744529442861676,
+   "resp": [
+    [
+     0.0,
+     0.1
+    ],
+    [
+     1.0,
+     0.0
+    ],
+    [
+     3.0,
+     1.0
+    ],
+    [
+     8.0,
+     0.5
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     6.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 2.04,
+   "dist": 260,
+   "start_err": 26.9,
+   "steps": 51,
+   "acquire_t": 1.76,
+   "settle_t": 1.76,
+   "overshoot": false,
+   "crossings": 1,
+   "shots": 10,
+   "shots_off": 4,
+   "shots_far_off": 2,
+   "first_dealt": 1.84,
+   "first_taken": null,
+   "turn_steps": 34,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.18113576013901866,
+   "corr_seen": 0.7018865245751837,
+   "corr_true": 0.5980963678588926,
+   "ent_yaw_first5": 0.4790555238723755,
+   "ent_yaw": 0.5015469766130635,
+   "ent_att": 0.3200452922405127,
+   "resp": [
+    [
+     0.0,
+     0.25
+    ],
+    [
+     1.0,
+     0.5
+    ],
+    [
+     3.0,
+     0.9791666666666666
+    ],
+    [
+     8.0,
+     1.7962962962962963
+    ],
+    [
+     16.0,
+     4.666666666666667
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 4.6,
+   "dist": 824,
+   "start_err": 29.0,
+   "steps": 115,
+   "acquire_t": 0.64,
+   "settle_t": 0.64,
+   "overshoot": true,
+   "crossings": 9,
+   "shots": 38,
+   "shots_off": 15,
+   "shots_far_off": 0,
+   "first_dealt": 0.76,
+   "first_taken": 3.2,
+   "turn_steps": 31,
+   "stale_steps": 1,
+   "over_steps": 3,
+   "gain_seen": 0.7215046737436317,
+   "corr_seen": 0.8373588830480797,
+   "corr_true": 0.7251923980928423,
+   "ent_yaw_first5": 0.4464792191982269,
+   "ent_yaw": 0.6043300123318381,
+   "ent_att": 0.5132055659494971,
+   "resp": [
+    [
+     0.0,
+     0.425
+    ],
+    [
+     1.0,
+     0.4777777777777778
+    ],
+    [
+     3.0,
+     1.0714285714285714
+    ],
+    [
+     8.0,
+     3.3333333333333335
+    ],
+    [
+     16.0,
+     5.333333333333333
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 0.68,
+   "dist": 357,
+   "start_err": 42.3,
+   "steps": 17,
+   "acquire_t": 0.56,
+   "settle_t": 0.56,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 4,
+   "shots_off": 3,
+   "shots_far_off": 0,
+   "first_dealt": null,
+   "first_taken": 0.6,
+   "turn_steps": 9,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.2658619463892809,
+   "corr_seen": 0.7466977403983561,
+   "corr_true": 0.6748823582181382,
+   "ent_yaw_first5": 0.24842953085899352,
+   "ent_yaw": 0.525174980654436,
+   "ent_att": 0.4320081545806983,
+   "resp": [
+    [
+     0.0,
+     null
+    ],
+    [
+     1.0,
+     0.125
+    ],
+    [
+     3.0,
+     1.0
+    ],
+    [
+     8.0,
+     2.6
+    ],
+    [
+     16.0,
+     4.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 1.6,
+   "dist": 409,
+   "start_err": 17.4,
+   "steps": 40,
+   "acquire_t": 1.56,
+   "settle_t": 1.56,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 8,
+   "shots_off": 5,
+   "shots_far_off": 0,
+   "first_dealt": 1.6,
+   "first_taken": 1.0,
+   "turn_steps": 21,
+   "stale_steps": 0,
+   "over_steps": 3,
+   "gain_seen": 0.30487856114727213,
+   "corr_seen": 0.4488945475733031,
+   "corr_true": 0.5245317688744566,
+   "ent_yaw_first5": 0.6050472259521484,
+   "ent_yaw": 0.5977745018899441,
+   "ent_att": 0.3978540710173547,
+   "resp": [
+    [
+     0.0,
+     0.25
+    ],
+    [
+     1.0,
+     3.0
+    ],
+    [
+     3.0,
+     1.3235294117647058
+    ],
+    [
+     8.0,
+     1.7678571428571428
+    ],
+    [
+     16.0,
+     null
+    ],
+    [
+     30.0,
+     null
+    ]
+   ]
+  },
+  {
+   "outcome": "kill",
+   "time": 0.48,
+   "dist": 256,
+   "start_err": 36.4,
+   "steps": 12,
+   "acquire_t": 0.32,
+   "settle_t": 0.32,
+   "overshoot": false,
+   "crossings": 0,
+   "shots": 7,
+   "shots_off": 2,
+   "shots_far_off": 1,
+   "first_dealt": 0.28,
+   "first_taken": null,
+   "turn_steps": 6,
+   "stale_steps": 0,
+   "over_steps": 0,
+   "gain_seen": 0.3152325969911563,
+   "corr_seen": 0.8938465170269998,
+   "corr_true": 0.7668709896887034,
+   "ent_yaw_first5": 0.32496780157089233,
+   "ent_yaw": 0.4799192100763321,
+   "ent_att": 0.1964835520290459,
+   "resp": [
+    [
+     0.0,
+     0.4583333333333333
+    ],
+    [
+     1.0,
+     null
+    ],
+    [
+     3.0,
+     0.25
+    ],
+    [
+     8.0,
+     4.0
+    ],
+    [
+     16.0,
+     8.0
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  },
+  {
+   "outcome": "death",
+   "time": 4.6,
+   "dist": 577,
+   "start_err": 42.5,
+   "steps": 115,
+   "acquire_t": 0.68,
+   "settle_t": 1.68,
+   "overshoot": true,
+   "crossings": 10,
+   "shots": 42,
+   "shots_off": 29,
+   "shots_far_off": 0,
+   "first_dealt": 1.2,
+   "first_taken": 3.8000000000000003,
+   "turn_steps": 35,
+   "stale_steps": 3,
+   "over_steps": 1,
+   "gain_seen": 0.6963263478578684,
+   "corr_seen": 0.8419988599976821,
+   "corr_true": 0.805878619314509,
+   "ent_yaw_first5": 0.31634281873703,
+   "ent_yaw": 0.557302758227224,
+   "ent_att": 0.5719115810549777,
+   "resp": [
+    [
+     0.0,
+     0.6666666666666666
+    ],
+    [
+     1.0,
+     0.5545454545454546
+    ],
+    [
+     3.0,
+     0.6666666666666666
+    ],
+    [
+     8.0,
+     1.3125
+    ],
+    [
+     16.0,
+     4.125
+    ],
+    [
+     30.0,
+     8.0
+    ]
+   ]
+  }
+ ]
+}

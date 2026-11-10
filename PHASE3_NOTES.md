@@ -182,3 +182,18 @@ Archived in `checkpoints/_baseline/`.
   delay ramp (40-200 ms, 0-1050 u, all rounds, provisional 50% gates) follows stage 12 directly. Re-enable with
   `max_dist=2000` when training at a higher resolution (5080 Ti PC).
 - Next after the delay ramp: movement/strafing/hard targets (seen missing in the human duel).
+
+## Stage-14 (80 ms) plateau and the autopilot (2026-11-10, ~06:00)
+- 40 ms passed in 15 min (60%, 62%); 80 ms sat at 39-50% per window (pooled ~45%) for 2 h; exams 51 -> 46 -> 42%.
+  Perfect-aim ceiling with delayed positions but knowledge of its own view: 94-98% at every delay (gates are fair).
+- **Diagnosis (`train/diag_delay.py`, snapshot 9525, 150 rounds each):** 40 vs 80 ms: acquisition the same (0.40 vs 0.36 s),
+  settling 0.52 -> **0.76 s**, overshoot 51 -> 63%, stale-direction turns (toward the target it sees while the true target
+  is already on the other side) 3.5 -> **8.7%**, same yaw response curve at both delays (no delay-aware control), yaw
+  entropy 0.57 at both, 60-65% of shots >4 deg off at both, bot hits first in 62-63% of deaths at both. So: the delay costs
+  settling through closed-loop control on stale frames; the policy has no way to know what it did since the frame it sees.
+- **Autopilot** (`train/autopilot.py`, design in `scratch/autopilot/DESIGN.md`, journal in `scratch/autopilot/JOURNAL.md`):
+  pooled-window plateau test, then a pre-registered ladder, one change at a time, each branched from `pre_<tag>_last.pt`
+  and rolled back to the best checkpoint by exam: (1) `--act-hist 3` (last 3 actions as policy input, zero-init: the
+  textbook Markov augmentation for delayed observations), (2) insert a 60 ms stage (`--delay-ramp`), (3) yaw entropy
+  multiplier 5 -> 1, (4) lr 5e-5. Crash/NaN/hang restarts, stage-pass releases, waits for the human when the ladder ends.
+- Trainer: `--lr` now applies on resume (the saved optimiser's lr used to win silently; both were 1e-4 so far).

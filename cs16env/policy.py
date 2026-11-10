@@ -38,10 +38,14 @@ class _Stage(nn.Module):
 
 
 class Policy(nn.Module):
-    def __init__(self, in_hw=(120, 160), chans=(32, 64, 64), hidden=512, fovea=0, fovea_chans=(16, 32, 32)):
+    def __init__(self, in_hw=(120, 160), chans=(32, 64, 64), hidden=512, fovea=0, fovea_chans=(16, 32, 32), act_hist=0):
         super().__init__()
         self.in_hw = tuple(in_hw)
         self.fovea = int(fovea)
+        # optional (default off): the last `act_hist` actions as an extra input (yaw/48, pitch/16, attack per action,
+        # most recent first). With delayed frames this makes the problem Markov again (the agent knows what it has
+        # done since the frame it sees). Zero-initialised, so an existing checkpoint behaves exactly as before.
+        self.act_hist = int(act_hist)
         self.cnn = self._tower(chans)
         with torch.no_grad():
             n = self.cnn(torch.zeros(1, 3, *in_hw)).numel()
@@ -56,6 +60,10 @@ class Policy(nn.Module):
         # training-only auxiliary head: where is the nearest enemy relative to the crosshair
         # (yaw error, pitch error, in-view logit); never used to act
         self.aux = nn.Linear(hidden, 3)
+        if self.act_hist:
+            self.act_in = nn.Linear(3 * self.act_hist, hidden)
+            nn.init.zeros_(self.act_in.weight)
+            nn.init.zeros_(self.act_in.bias)
         self.hidden = hidden
 
     @staticmethod
@@ -70,8 +78,8 @@ class Policy(nn.Module):
     def _img(t: torch.Tensor) -> torch.Tensor:
         return t.reshape(-1, *t.shape[2:]).permute(0, 3, 1, 2).float().div_(255.0)
 
-    def encode(self, frames: torch.Tensor, fovea: torch.Tensor | None = None) -> torch.Tensor:
-        """frames: uint8 [B, T, H, W, 3] (+ fovea uint8 [B, T, F, F, 3]) -> features [B, T, hidden]."""
+    def encode(self, frames: torch.Tensor, fovea: torch.Tensor | None = None, hist: torch.Tensor | None = None) -> torch.Tensor:
+        """frames: uint8 [B, T, H, W, 3] (+ fovea uint8 [B, T, F, F, 3], + hist float [B, T, 3 * act_hist]) -> [B, T, hidden]."""
         B, T = frames.shape[:2]
         x = self._img(frames)
         if x.shape[-2:] != self.in_hw:
@@ -80,11 +88,15 @@ class Policy(nn.Module):
         if self.fovea:
             assert fovea is not None and fovea.shape[2] == self.fovea, "this policy needs the fovea crop"
             feats.append(F.relu(self.fcnn(self._img(fovea))).flatten(1))
-        return F.relu(self.fc(torch.cat(feats, 1))).view(B, T, -1)
+        z = self.fc(torch.cat(feats, 1))
+        if self.act_hist:
+            assert hist is not None and hist.shape[-1] == 3 * self.act_hist, "this policy needs its action history"
+            z = z + self.act_in(hist.reshape(B * T, -1).to(z.dtype))
+        return F.relu(z).view(B, T, -1)
 
-    def forward(self, frames: torch.Tensor, state=None, fovea: torch.Tensor | None = None):
+    def forward(self, frames: torch.Tensor, state=None, fovea: torch.Tensor | None = None, hist: torch.Tensor | None = None):
         """Returns (logits [B, T, sum(NVEC)], value [B, T], new LSTM state)."""
-        z = self.encode(frames, fovea)
+        z = self.encode(frames, fovea, hist)
         with torch.autocast(z.device.type, enabled=False):  # LSTM in fp32 (no MPS autocast support)
             h, state = self.lstm(z.float(), state)
             return self.heads(h), self.value(h).squeeze(-1), state
