@@ -625,6 +625,10 @@ class Autopilot:
                 self.start_next_rung(info)
         elif st["phase"] == "trial":
             tr = st["trial"]
+            if tr.get("stage") is not None and st["stage"] != tr["stage"]:
+                # never compare windows across stages: a trial that outlived its stage ended with that promotion
+                self.end_trial("success", dict(reason=f"stage changed during the trial ({tr['stage']} -> {st['stage']})"))
+                return
             trial_wins = wins
             verdict, info = trial_verdict(st["base_windows"], trial_wins, tr["budget_windows"], False)
             if verdict is None:
@@ -699,7 +703,7 @@ class Autopilot:
         self.decide("branch_point", f"pre-trial checkpoint saved as {Path(str(pre)).name}")
         st["trial"] = dict(tag=rung["tag"], started=time.time(), budget_windows=rung["budget_windows"],
                            prev_regime=dict(st["regime"]), pre_ckpt=str(pre), start_update=(st["last_update"] or {}).get("update", 0),
-                           target_knobs=knobs)
+                           target_knobs=knobs, stage=st.get("stage"))
         st["phase"] = "trial"
         self.launch_trainer(regime, pre, stage0, f"trial {rung['tag']}")
         self.restart_eval(regime.get("delay_ramp", ""), "regime changed: exams restarted so they run the matching code and stage indices")
@@ -707,16 +711,18 @@ class Autopilot:
     def end_trial(self, verdict, info):
         st = self.s
         tr = st["trial"]
+        info = dict(info)
+        why = info.pop("reason", "")  # passing reason=... twice to decide() crashed every trial end (2026-11-10)
         if verdict == "success":
             st["rungs_done"].append(tr["tag"]); st["rung_idx"] += 1
-            self.decide("trial_success", f"rung '{tr['tag']}' kept: {info.get('reason')}", **info)
+            self.decide("trial_success", f"rung '{tr['tag']}' kept: {why}", **info)
             st["phase"] = "observe"; st["trial"] = None
             st["base_windows"] = []
             self.save()
             return
         # fail / abort: roll back to the best checkpoint BY EXAM at the target condition, in the previous regime
         st["rungs_done"].append(tr["tag"]); st["rung_idx"] += 1
-        self.decide("trial_" + verdict, f"rung '{tr['tag']}' reverted: {info.get('reason')}", **info)
+        self.decide("trial_" + verdict, f"rung '{tr['tag']}' reverted: {why}", **info)
         self.stop_trainer(f"rolling back rung {tr['tag']}")
         self.backup_last(f"end_{tr['tag']}")  # the trial's own final state is kept too (never delete, never overwrite)
         ck, how = self.best_by_exam(tr["start_update"], tr["target_knobs"], tr["pre_ckpt"])
@@ -804,6 +810,11 @@ def selftest():
     assert trial_verdict(base, [win(0.45) for _ in range(60)], 60, False)[0] == "fail"
     assert trial_verdict(base, [], 60, True)[0] == "success"
     lo, hi = wilson(0.44, 2000); assert 0.41 < lo < 0.42 and 0.46 < hi < 0.47, (lo, hi)
+    ap = Autopilot(dry=True)  # regression: end_trial with a verdict that carries "reason" (crash-looped live)
+    ap.s.update(phase="trial", rungs_done=[], rung_idx=0, trial=dict(tag="t", started=0, budget_windows=60, prev_regime={},
+                pre_ckpt="x", start_update=0, target_knobs={}, stage=13))
+    ap.end_trial("success", dict(reason="promoted to the next stage"))
+    assert ap.s["phase"] == "observe" and ap.s["rungs_done"] == ["t"]
     print("selftest ok")
 
 
