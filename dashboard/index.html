@@ -201,6 +201,7 @@ async function refresh() {
   line('c_kill', [{ label: 'kill rate', data: hk.map(h => ({ x: h.steps, y: h.kill_rate })), borderColor: css('--accent'), pointRadius: 0, borderWidth: 1.5, tension: .3 }], stages, gate);
 
   // curriculum
+  document.querySelector('.groups').style.gridTemplateColumns = `4fr 7fr 1fr ${Math.max(1, s.stages.length - 12)}fr`;
   $('strip').style.gridTemplateColumns = innerWidth > 900 ? `repeat(${s.stages.length}, 1fr)` : '';
   $('strip').innerHTML = s.stages.map(x => `<div class="seg ${x.i < cur ? 'done' : x.i === cur ? 'cur' : ''}" data-tip="${x.i + 1} · ${short(x)}"><span>${x.i + 1}</span></div>`).join('');
   $('curtext').textContent = short(st);

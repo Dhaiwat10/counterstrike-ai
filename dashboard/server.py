@@ -92,7 +92,7 @@ def run_state(name):
     age = time.time() - (d / "log.jsonl").stat().st_mtime if (d / "log.jsonl").exists() else None
     return dict(
         name=name, about=RUNS.get(name, ""), alive=running(f"train.ppo --run {name}"), log_age_s=age,
-        lr=args.get("lr"), latest=latest, stage=st, stage_desc=stage_desc(stages[st]) if st is not None else "",
+        lr=args.get("lr"), delay_ramp=args.get("delay_ramp") or None, latest=latest, stage=st, stage_desc=stage_desc(stages[st]) if st is not None else "",
         gate=(stages[st].get("gate") if st is not None else None),
         hist=hist, curriculum=cur, windows=[dict(steps=w["steps"], kill=w["kill_rate"], passes=w["passes"]) for w in stage_wins], version_marks=version_marks[1:], exams=exams[-40:],
         current_version_updates=len(cur_ups), snapshots=len(snaps),
@@ -101,12 +101,13 @@ def run_state(name):
 
 
 def state():
-    stages = curriculum_stages()
+    runs = [run_state(r) for r in RUNS]
+    stages = curriculum_stages(delay_ramp=runs[0].get("delay_ramp") if runs else None)  # same ramp as the run (autopilot inserts steps)
     load = os.getloadavg()
     du = shutil.disk_usage(REPO)
     return dict(
         now=time.strftime("%Y-%m-%d %H:%M:%S"),
-        runs=[run_state(r) for r in RUNS],
+        runs=runs,
         exam_alive=running("train.eval_suite"),
         stages=[dict(i=i, desc=stage_desc(s), **s) for i, s in enumerate(stages)],
         machine=dict(load1=load[0], load5=load[1], cores=os.cpu_count(), disk_free_gb=du.free / 1e9),
