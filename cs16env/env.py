@@ -177,7 +177,7 @@ class CS16Env(gym.Env):
         first = frame if frame is not None else self._blank
         self._obs_queue = collections.deque([first] * (self.delay_steps + 1), maxlen=self.delay_steps + 1)
         # privileged labels aligned with the (delayed) observation, for auxiliary training losses only
-        lab = self._aux_label(s)
+        lab = self._target(s)
         self._aux_queue = collections.deque([lab] * (self.delay_steps + 1), maxlen=self.delay_steps + 1)
         return self._obs_queue[0], self._info(s)
 
@@ -233,7 +233,7 @@ class CS16Env(gym.Env):
         reward -= self.time_penalty
         frame = b.frame()
         self._obs_queue.append(frame if frame is not None else self._obs_queue[-1])
-        self._aux_queue.append(self._aux_label(s))
+        self._aux_queue.append(self._target(s))
         truncated = (s.time - self._ep_start) >= self.episode_seconds and not terminated
         self._no_contest = False
         if self.no_contest_after and not terminated and self._me(s).alive and self._others_alive(s):
@@ -259,6 +259,34 @@ class CS16Env(gym.Env):
         freeze, ignore = {0: (1, 1), 1: (1, 1), 2: (1, 0)}.get(self.bot_level, (0, 0))
         self.bridge.command(f"yb_freeze_bots {freeze}; yb_ignore_enemies {ignore}")
         self._bot_level_applied = self.bot_level
+
+    def _target(self, s):
+        """[yaw err, pitch err, in-view, world yaw, world pitch, valid] of the nearest live enemy's chest (degrees).
+        The first three are the auxiliary label; the world angles let the teacher label below aim at where the enemy
+        was in the frame the agent sees, from where the crosshair points now."""
+        lab = self._aux_label(s)
+        valid = float(self._me(s).alive and any(k != s.playernum and p.connected and p.alive for k, p in enumerate(s.players)))
+        return np.array([lab[0], lab[1], lab[2], lab[0] + s.viewangles[1], lab[1] + s.viewangles[0], valid], np.float32)
+
+    def _aux_ext(self, s):
+        """Training-only labels (never observed by the policy), 6 values:
+        [0:3] the auxiliary label NOW (the agent sees it `delay_steps` steps late: predicting it = undoing the delay);
+        [3:6] teacher action (yaw bin, pitch bin, valid): what the delayed oracle (scratch/ceiling_delay.py, 94-98% at
+        every delay) does -- turn toward where the enemy was in the frame the agent sees, from the current view angles.
+        Valid only when that frame shows the enemy in view and the agent is alive."""
+        q = getattr(self, "_aux_queue", None)
+        if not q:
+            return np.zeros(6, np.float32)
+        past, now = q[0], q[-1]
+        out = np.zeros(6, np.float32)
+        out[0:3] = now[0:3]
+        if past[5] > 0 and past[2] > 0 and self._me(s).alive:
+            dy = (float(past[3]) - s.viewangles[1] + 180.0) % 360.0 - 180.0
+            dp = float(past[4]) - s.viewangles[0]
+            out[3] = int(np.argmin(np.abs(YAW_TABLE - dy)))
+            out[4] = int(np.argmin(np.abs(-PITCH_TABLE - dp)))  # the env turns the view pitch by -PITCH_TABLE[a1]
+            out[5] = 1.0
+        return out
 
     def _aux_label(self, s):
         """(signed yaw error, signed pitch error, in-view flag) of the nearest live enemy's chest relative
@@ -537,5 +565,6 @@ class CS16Env(gym.Env):
             "leashed": bool(self._leash is not None),
             "pocket_vis": self._pocket_vis,
             "acquire_time": self._acquired_t,
-            "aux": self._aux_queue[0] if getattr(self, "_aux_queue", None) else np.zeros(3, np.float32),
+            "aux": self._aux_queue[0][:3].copy() if getattr(self, "_aux_queue", None) else np.zeros(3, np.float32),
+            "aux_ext": self._aux_ext(s),
         }

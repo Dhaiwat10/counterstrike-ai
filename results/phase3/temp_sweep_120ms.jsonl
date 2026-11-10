@@ -1,0 +1,3 @@
+{"ckpt": "checkpoints/aim_640/pre_lrhalf_last.pt", "temperature": 1.0, "rounds": 200, "no_contests": 43, "kill_rate": 0.465, "death_rate": 0.53, "time_to_kill": 1.7199999615550041}
+{"ckpt": "checkpoints/aim_640/pre_lrhalf_last.pt", "temperature": 0.5, "rounds": 200, "no_contests": 55, "kill_rate": 0.52, "death_rate": 0.465, "time_to_kill": 1.939999956637621}
+{"ckpt": "checkpoints/aim_640/pre_lrhalf_last.pt", "temperature": 0.0, "rounds": 200, "no_contests": 52, "kill_rate": 0.59, "death_rate": 0.395, "time_to_kill": 1.7999999597668648}

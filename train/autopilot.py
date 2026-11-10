@@ -52,8 +52,12 @@ ABORT = dict(after_windows=8, drop=0.08, z=2.5)
 # flags common to every launch (the human's current command, minus what the autopilot manages)
 BASE_FLAGS = ["--envs", "12", "--offtarget-cost", "0.0015", "--acquire-bonus", "0.3", "--rand-delay", "0.25",
               "--no-contest", "0.5", "--leash", "150", "--leash-frac", "0.8", "--min-vis", "0.75",
-              "--kl-prior", "checkpoints/bc_fov80/best.pt", "--kl-coef", "0.01", "--all-rounds", "11"]
-BASE_REGIME = dict(lr=1e-4, ent_yaw_mult=5.0, rehearsal=0.1, delay_ramp="", act_hist=0)
+              "--all-rounds", "11"]
+KL_PRIOR = "checkpoints/bc_fov80/best.pt"
+# kl_coef (prior strength), ent, teacher_coef / aux_now (delayed-oracle kick-starting, undelayed aux label) are regime keys so
+# rungs can change them; states saved before they existed default to the old command (kl 0.01, no teacher, no aux-now)
+BASE_REGIME = dict(lr=1e-4, ent_yaw_mult=5.0, rehearsal=0.1, delay_ramp="", act_hist=0, kl_coef=0.01, teacher_coef=0.0, aux_now=0.0,
+                   ent=0.01)
 
 # ---------------------------------------------------------------------------- the remedy ladder (pre-registered)
 # Ranked from the 80 ms diagnosis (results/phase3/diag_delay_update_009525_{40,80}ms.json): the delay costs settling
@@ -75,6 +79,18 @@ RUNGS = [
     dict(tag="lrhalf", budget_windows=40, change=dict(lr=5e-5),
          why="Last resort: lower the step size for fine-tuning (approx KL 0.005/update and clip fraction 0.05 say the "
              "LR is not too high, so this is unlikely to be the cause; Andrychowicz et al. 2020 on LR sensitivity)."),
+    # added 2026-11-10 from scratch/autopilot/IDEAS_delay_plateau.md (Fable's diagnosis: the delay cost is settling of a
+    # reactive loop near its stability limit; the oracle, with the agent's information, wins 94-98% at every delay)
+    dict(tag="denoise", budget_windows=40, change=dict(kl_coef=0.0, ent_yaw_mult=1.0, ent=0.003),
+         why="Action noise is the measured bottleneck: the same 120 ms checkpoint kills 46.5% sampling at temperature 1, "
+             "52% at 0.5 and 59% greedy (200 rounds each, results/phase3/temp_sweep_120ms.jsonl). Noise injected into "
+             "a delayed loop cannot be corrected for d steps. Remove what keeps the policy spread: the mass-covering KL "
+             "to a 0 ms human prior, the 5x yaw entropy weight, and most of the entropy bonus (yawent1 left the KL and "
+             "base entropy on, so it did not test this). Rehearsal kill rate is the alarm for lost flicks."),
+    dict(tag="auxnow6", budget_windows=60, change=dict(aux_now=0.5, act_hist=6),
+         why="Second aux head predicts where the target is NOW from delayed frames + own actions (a dense label for "
+             "the Smith-predictor computation; Wang et al. 2024: undelayed-state prediction + action history), and the "
+             "history widens 3 -> 6 so it covers 160/200 ms (K=3 covers exactly 120 ms). Both zero-impact at launch.")
 ]
 
 sys.path.insert(0, str(REPO))
@@ -376,6 +392,15 @@ class Autopilot:
             cmd += ["--delay-ramp", regime["delay_ramp"]]
         if regime.get("act_hist"):
             cmd += ["--act-hist", str(regime["act_hist"])]
+        if regime.get("ent", 0.01) != 0.01:
+            cmd += ["--ent", f"{regime['ent']:g}"]
+        kl = regime.get("kl_coef", 0.01)
+        if kl > 0:
+            cmd += ["--kl-prior", KL_PRIOR, "--kl-coef", f"{kl:g}"]
+        if regime.get("teacher_coef"):
+            cmd += ["--teacher-coef", f"{regime['teacher_coef']:g}", "--teacher-min", f"{regime['teacher_coef'] / 10:g}"]
+        if regime.get("aux_now"):
+            cmd += ["--aux-now", f"{regime['aux_now']:g}"]
         if stage0 is not None:
             cmd += ["--stage0", str(stage0)]
         return cmd
@@ -689,7 +714,8 @@ class Autopilot:
             below = [x for x in ramp if x < d - 1e-9]
             prev = max(below) if below else 0.0
             mid = round((prev + d) / 2, 3)
-            if mid in ramp or mid <= prev or d - prev < 0.03:
+            q = lambda x: int(round(x / 0.04))  # the env runs the delay in whole 40 ms agent steps: round(0.1/0.04) == 2 == 80 ms
+            if mid in ramp or mid <= prev or d - prev < 0.03 or q(mid) in (q(prev), q(d)):
                 st["rungs_done"].append(rung["tag"]); st["rung_idx"] += 1
                 self.decide("skip_rung", f"{rung['tag']} not applicable (ramp {ramp}, stage delay {d})")
                 return self.start_next_rung(plateau_info)

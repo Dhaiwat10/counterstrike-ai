@@ -88,7 +88,10 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
     def views(o):
         return views_from_frame(o, hw, fovea, extra_scale=prior_scale)
 
-    remote.send((views(obs), info["aux"]))
+    def labels(inf):  # training-only labels: aux (3) + aux now (3) + teacher action (3); see CS16Env._aux_ext
+        return np.concatenate([inf["aux"], inf.get("aux_ext", np.zeros(6, np.float32))]).astype(np.float32)
+
+    remote.send((views(obs), labels(info)))
     ep_ret = 0.0
     try:
         while True:
@@ -107,7 +110,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
                         final = views(obs)  # bootstrap V(final obs) on a time-limit cut
                     choose_round()
                     obs, info = env.reset()
-                remote.send((views(obs), info["aux"], r, bool(term), bool(trunc), final, ep))
+                remote.send((views(obs), labels(info), r, bool(term), bool(trunc), final, ep))
             elif cmd == "knobs":
                 state["cur"] = dict(data); state["pool"] = list(data.get("pool", []))
                 remote.send(True)  # takes effect from the next round
@@ -284,7 +287,41 @@ def seq_forward(model, frames, fov, state, starts, hist=None):
             o, (h, c) = model.lstm(z[:, t:t + 1].float(), (h, c))
             outs.append(o)
         o = torch.cat(outs, 1)
-        return model.heads(o), model.value(o).squeeze(-1), model.aux(o)
+        ax = model.aux(o)
+        if hasattr(model, "aux_now"):
+            ax = torch.cat([ax, model.aux_now(o)], -1)
+        return model.heads(o), model.value(o).squeeze(-1), ax
+
+
+def grow_state(saved, target):
+    """Saved weights -> this model's shapes: a tensor smaller only in its last dim (the action-history input after
+    --act-hist grows) is zero-padded at the end (the older, new slots start with no influence)."""
+    out = {}
+    for k, v in saved.items():
+        v = v.float() if v.is_floating_point() else v
+        t = target.get(k)
+        if t is not None and v.shape != t.shape and v.dim() == t.dim() and v.shape[:-1] == t.shape[:-1] and v.shape[-1] < t.shape[-1]:
+            v = torch.cat([v, torch.zeros(*v.shape[:-1], t.shape[-1] - v.shape[-1], dtype=v.dtype)], -1)
+        out[k] = v
+    return out
+
+
+def teacher_loss(lg, lab):
+    """Cross-entropy of the yaw and pitch heads toward the teacher's bins (lab[..., 6:9] = yaw bin, pitch bin, valid),
+    averaged over valid steps. Returns (loss, share of valid steps where the policy's top yaw bin equals the teacher's)."""
+    parts = Policy.split(lg)
+    valid = lab[..., 8].reshape(-1)
+    n = valid.sum()
+    if n < 1:
+        return lg.sum() * 0.0, float("nan")
+    loss = 0.0
+    for h, col in ((HEADS.index("yaw"), 6), (HEADS.index("pitch"), 7)):
+        logits = parts[h].reshape(-1, parts[h].shape[-1])
+        ce = F.cross_entropy(logits, lab[..., col].reshape(-1).long(), reduction="none")
+        loss = loss + (ce * valid).sum() / n
+    yaw = parts[HEADS.index("yaw")].reshape(-1, parts[HEADS.index("yaw")].shape[-1]).argmax(-1)
+    agree = (((yaw == lab[..., 6].reshape(-1).long()).float() * valid).sum() / n).item()
+    return loss, agree
 
 
 def aux_loss(pred, label):
@@ -298,21 +335,49 @@ def aux_loss(pred, label):
 # ---------------------------------------------------------------------------------- main
 def build_optimizer(model, lr, resume=None):
     """Adam over the model; restores a resumed optimiser state and applies `lr` on top of it (the saved state carries its
-    old lr). The action-history input (--act-hist) lives in its own parameter group, so a checkpoint saved without it
-    (one group) and one saved with it (two groups) both resume cleanly."""
-    hist_params = [q for n, q in model.named_parameters() if n.startswith("act_in.")]
-    main_params = [q for n, q in model.named_parameters() if not n.startswith("act_in.")]
-    opt = torch.optim.Adam(main_params, lr=lr, eps=1e-5)
-    saved = resume.get("opt") if resume is not None else None
-    if hist_params and saved is not None and len(saved["param_groups"]) == 2:
-        opt.add_param_group(dict(params=hist_params))  # saved with the history input: same two groups
-        hist_params = []
-    if saved is not None:
-        opt.load_state_dict(saved)
-        for g in opt.param_groups:
-            g["lr"] = lr
+    old lr). Groups: "main", then the optional "hist" (--act-hist input) and "aux_now" (--aux-now head) groups, so
+    checkpoints saved with or without either resume cleanly. Saved per-parameter Adam moments are matched by group and
+    position; a moment smaller only in its last dim (history input grown) is zero-padded; anything that does not match
+    starts fresh (Adam re-estimates it within a few hundred steps)."""
+    def grp(prefix):
+        return [q for n, q in model.named_parameters() if n.startswith(prefix)]
+    hist_params, now_params = grp("act_in."), grp("aux_now.")
+    main_params = [q for n, q in model.named_parameters() if not n.startswith(("act_in.", "aux_now."))]
+    opt = torch.optim.Adam([dict(params=main_params, name="main")], lr=lr, eps=1e-5)
+    mine = {"main": main_params}
     if hist_params:
-        opt.add_param_group(dict(params=hist_params))  # new to this run: fresh group
+        opt.add_param_group(dict(params=hist_params, name="hist")); mine["hist"] = hist_params
+    if now_params:
+        opt.add_param_group(dict(params=now_params, name="aux_now")); mine["aux_now"] = now_params
+    saved = resume.get("opt") if resume is not None else None
+    if saved is not None:
+        sgs = saved["param_groups"]
+        names = [g.get("name") or ("main" if k == 0 else "hist") for k, g in enumerate(sgs)]  # legacy: [main] or [main, hist]
+        restored = 0
+        for name, g in zip(names, sgs):
+            for pos, pid in enumerate(g["params"]):
+                if name not in mine or pos >= len(mine[name]) or pid not in saved["state"]:
+                    continue
+                q, st = mine[name][pos], saved["state"][pid]
+                new = {}
+                for key, v in st.items():
+                    if torch.is_tensor(v) and v.dim() > 0:
+                        if v.shape != q.shape:
+                            if v.dim() == q.dim() and v.shape[:-1] == q.shape[:-1] and v.shape[-1] < q.shape[-1]:
+                                v = torch.cat([v, torch.zeros(*v.shape[:-1], q.shape[-1] - v.shape[-1], dtype=v.dtype)], -1)
+                            else:
+                                new = None
+                                break
+                        v = v.to(q.device, dtype=q.dtype)
+                    elif torch.is_tensor(v):
+                        v = v.clone()
+                    new[key] = v
+                if new:
+                    opt.state[q] = new
+                    restored += 1
+        assert restored >= len(main_params) * 0.9, f"optimizer resume matched only {restored} parameters"
+    for g in opt.param_groups:
+        g["lr"] = lr
     return opt
 
 
@@ -394,6 +459,14 @@ def main():
     ap.add_argument("--delay-ramp", default="",
                     help="reaction-delay stages in seconds, e.g. 0.04,0.06,0.08,0.12,0.16,0.2 (default: 40/80/120/160/200 ms); "
                          "inserting a step keeps the SAME stage index pointing at an easier delay, so pass --stage0 as needed")
+    ap.add_argument("--aux-now", type=float, default=0.0,
+                    help="coef of a second auxiliary loss: where the enemy is NOW (the frames are delayed), i.e. learn to undo "
+                         "the delay from the action history. Adds a training-only head (0 = off, unchanged behaviour)")
+    ap.add_argument("--teacher-coef", type=float, default=0.0,
+                    help="kick-starting: weight of cross-entropy toward the delayed oracle's yaw/pitch action (privileged, "
+                         "training-only label; the policy still sees only delayed pixels and its own actions). 0 = off")
+    ap.add_argument("--teacher-min", type=float, default=0.0, help="teacher weight after decay")
+    ap.add_argument("--teacher-decay-steps", type=float, default=4e6, help="linear decay of the teacher weight (env steps from launch)")
     ap.add_argument("--act-hist", type=int, default=0,
                     help="feed the last K actions to the policy (zero-initialised extra input; 0 = off, unchanged behaviour). "
                          "With delayed frames this lets the agent know where its crosshair is NOW")
@@ -436,12 +509,14 @@ def main():
     if resume is not None:
         ra = resume["args"]
         hw, chans, fovea = tuple(ra["hw"]), tuple(ra["chans"]), int(ra["fovea"])
-        assert a.act_hist == 0 or int(ra.get("act_hist", 0)) in (0, a.act_hist), "cannot change --act-hist length on a trained history input"
-        model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist or int(ra.get("act_hist", 0)))
-        missing, unexpected = model.load_state_dict({k: v.float() for k, v in resume["model"].items()}, strict=False)
-        assert not unexpected and all(k.startswith("act_in.") for k in missing), (missing, unexpected)  # only the (zero) history input may be new
-    elif a.act_hist:
-        model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist)
+        k_old = int(ra.get("act_hist", 0))
+        assert a.act_hist == 0 or a.act_hist >= k_old, "--act-hist can grow on resume (zero-padded), never shrink"
+        has_now = any(k.startswith("aux_now.") for k in resume["model"])
+        model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist or k_old, aux_now=bool(a.aux_now) or has_now)
+        missing, unexpected = model.load_state_dict(grow_state(resume["model"], model.state_dict()), strict=False)
+        assert not unexpected and all(k.startswith(("act_in.", "aux_now.")) for k in missing), (missing, unexpected)  # only new zero/aux inputs
+    elif a.act_hist or a.aux_now:
+        model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist, aux_now=bool(a.aux_now))
         if a.init:
             model.load_state_dict({k: v.float() if v.is_floating_point() else v for k, v in ck["model"].items()}, strict=False)
     K = model.act_hist
@@ -469,7 +544,8 @@ def main():
     else:
         prior_scale = 0.0
     opt = build_optimizer(model, a.lr, resume)
-    warm_params = list(model.value.parameters()) + list(model.aux.parameters())
+    warm_params = list(model.value.parameters()) + list(model.aux.parameters()) + \
+        (list(model.aux_now.parameters()) if hasattr(model, "aux_now") else [])
     wopt = torch.optim.Adam(warm_params, lr=1e-3)
 
     stages = curriculum_stages(delay_ramp=a.delay_ramp or None)
@@ -530,7 +606,7 @@ def main():
             P = torch.zeros((N, T, *cur_p.shape[1:]), dtype=torch.uint8, device=dev)
             Fv = torch.zeros((N, T, *cur_f.shape[1:]), dtype=torch.uint8, device=dev) if fovea else None
             FvP = torch.zeros((N, T, *cur_fp.shape[1:]), dtype=torch.uint8, device=dev) if cur_fp is not None else None
-            AUX = torch.zeros((N, T, 3), device=dev)
+            AUX = torch.zeros((N, T, 9), device=dev)  # aux label (3) + aux now (3) + teacher yaw bin, pitch bin, valid
             HIST = torch.zeros((N, T, 3 * K), device=dev) if K else None
             A = torch.zeros((N, T, len(NVEC)), dtype=torch.long, device=dev)
             LP = torch.zeros((N, T), device=dev)
@@ -616,6 +692,8 @@ def main():
             adv, ret = gae(R, V, V_next, TERM, a.gamma, a.lam)
             prior_lp = None
             kl_coef = 0.0
+            teacher_coef = max(a.teacher_min, a.teacher_coef - (a.teacher_coef - a.teacher_min) * (steps - steps0)
+                               / max(1.0, a.teacher_decay_steps)) if a.teacher_coef > 0 else 0.0
             if prior is not None:  # frozen imitation policy's turning distribution on this rollout (once, no grad)
                 kl_coef = max(a.kl_min, a.kl_coef - (a.kl_coef - a.kl_min) * (steps - steps0) / max(1.0, a.kl_decay_steps))
                 with torch.no_grad(), torch.autocast(dev.type, dtype=torch.bfloat16, enabled=dev.type != "cpu"):
@@ -640,7 +718,11 @@ def main():
                         lg, v, ax = seq_forward(model, P[j], Fv[j] if fovea else None, (h0[0][:, j], h0[1][:, j]), S[j],
                                                 HIST[j] if K else None)
                     vloss = 0.5 * (v - ret[j]).pow(2).mean()
-                    xloss = aux_loss(ax.float(), AUX[j]) if a.aux else torch.zeros((), device=dev)
+                    xloss = aux_loss(ax[..., :3].float(), AUX[j][..., :3]) if a.aux else torch.zeros((), device=dev)
+                    if a.aux_now and ax.shape[-1] >= 6:
+                        nloss = aux_loss(ax[..., 3:6].float(), AUX[j][..., 3:6])
+                        xloss = xloss + (a.aux_now / max(a.aux, 1e-8)) * nloss  # (xloss is multiplied by a.aux below)
+                        stats["aux_now"].append(nloss.item())
                     if warm:
                         wopt.zero_grad(set_to_none=True)
                         (vloss + a.aux * xloss).backward()
@@ -656,6 +738,10 @@ def main():
                     ratio = (lp - LP[j]).exp()
                     pg = -torch.min(ratio * adv_j, ratio.clamp(1 - a.clip, 1 + a.clip) * adv_j).mean()
                     loss = pg + a.vf * vloss - a.ent * ent_w.mean() * head_w.mean() + a.aux * xloss
+                    if teacher_coef > 0:  # kick-starting toward the delayed oracle (masked to rounds/steps where it is defined)
+                        tl, tagree = teacher_loss(lg.float(), AUX[j])
+                        loss = loss + teacher_coef * tl
+                        stats["teacher"].append(tl.item()); stats["teacher_agree"].append(tagree)
                     if prior_lp is not None:  # KL(prior || policy): penalises near-zero probability where the pros had mass
                         lparts = Policy.split(lg.float())
                         kl = sum((plp[j].exp() * (plp[j] - F.log_softmax(lparts[h], -1))).sum(-1).mean()
@@ -717,7 +803,7 @@ def main():
                        if any(e.get("acquire") is not None for e in E) else None,
                        stage=stage, gate=float(gate), passes=passes, window_fill=len(win),
                        kill_rehearsal=float(np.mean([e["kills"] > 0 for e in reh])) if reh else None,
-                       no_contest_rate=float(np.mean(nc)) if nc else None, kl_coef=kl_coef,
+                       no_contest_rate=float(np.mean(nc)) if nc else None, kl_coef=kl_coef, teacher_coef=teacher_coef,
                        kill_delayed=float(np.mean([e["kills"] > 0 for e in dly])) if dly else None,
                        **{f"kill_{b}": float(np.mean([e["kills"] > 0 for e in E if band_of(e["dist"]) == b]))
                           for b in ("close", "medium", "long") if any(band_of(e["dist"]) == b for e in E)},

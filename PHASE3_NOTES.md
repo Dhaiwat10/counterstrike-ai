@@ -197,3 +197,44 @@ Archived in `checkpoints/_baseline/`.
   textbook Markov augmentation for delayed observations), (2) insert a 60 ms stage (`--delay-ramp`), (3) yaw entropy
   multiplier 5 -> 1, (4) lr 5e-5. Crash/NaN/hang restarts, stage-pass releases, waits for the human when the ladder ends.
 - Trainer: `--lr` now applies on resume (the saved optimiser's lr used to win silently; both were 1e-4 so far).
+
+## Night of 2026-11-10: the 120 ms plateau
+
+**Facts established**
+- **"100 ms" never existed.** The env runs delay in whole 40 ms agent steps and `round(0.1 / 0.04) == 2`, so the
+  inserted stage 15 was 80 ms again (found by Fable, `scratch/autopilot/IDEAS_delay_plateau.md`). The autopilot now
+  refuses a midpoint that rounds onto an existing delay. Stage 16 (120 ms) is the real next step after 80 ms.
+- **Action noise is the measured bottleneck at 120 ms.** Same checkpoint (pre_lrhalf_last.pt), 200 rounds, seed 4321:
+
+  | Sampling temperature | Kill rate |
+  |---|---|
+  | 1.0 (as in training) | 46.5% |
+  | 0.5 | 52% |
+  | 0 (greedy) | **59%** |
+
+  Results in `results/phase3/temp_sweep_120ms.jsonl`. The greedy policy already clears the 50% gate. The training
+  windows, which sample, sit around 42%.
+- **The teacher labels are correct.** An agent that just follows them scores 88% at 0 ms and 82% at 120 ms
+  (`scratch/teacher_check.py`).
+
+**Kick-starting toward the delayed oracle failed its smoke test.** The code is in, default off (`--teacher-coef`).
+- With 2 envs at 120 ms, kills collapsed to near zero at coef 0.5 and also at coef 0.1. Firing stopped.
+- Teacher agreement stayed around 10% while the cross-entropy fell, so the policy hedged (entropy rose) instead of
+  learning the labels.
+- The baseline, denoise and aux-now smoke runs held steady at about 26–38% in the same setup.
+- If revisited, consider soft labels, a small coefficient after an imitation-only warm-up, or masking to large-error
+  steps.
+
+**New code, all default-off (unchanged behaviour unless the flag is set)**
+- `--aux-now`: a second aux head that predicts where the target is now, labelled from `info["aux_ext"]`.
+- `--teacher-coef` / `--teacher-min` / `--teacher-decay-steps`.
+- `--act-hist` can grow on resume (zero-padded, so the policy acts identically).
+- The optimizer resumes by named group with moment padding.
+- Tests: `tests/test_teacher_resume.py`.
+
+**Autopilot ladder**, extended after `lrhalf`:
+1. `denoise`: kl_coef 0, ent_yaw_mult 1, ent 0.003.
+2. `auxnow6`: aux_now 0.5, act_hist 6.
+
+kl_coef, ent, teacher_coef and aux_now are now regime keys. The `decide()` logger can no longer crash on
+duplicate keys.

@@ -38,7 +38,7 @@ class _Stage(nn.Module):
 
 
 class Policy(nn.Module):
-    def __init__(self, in_hw=(120, 160), chans=(32, 64, 64), hidden=512, fovea=0, fovea_chans=(16, 32, 32), act_hist=0):
+    def __init__(self, in_hw=(120, 160), chans=(32, 64, 64), hidden=512, fovea=0, fovea_chans=(16, 32, 32), act_hist=0, aux_now=False):
         super().__init__()
         self.in_hw = tuple(in_hw)
         self.fovea = int(fovea)
@@ -60,6 +60,8 @@ class Policy(nn.Module):
         # training-only auxiliary head: where is the nearest enemy relative to the crosshair
         # (yaw error, pitch error, in-view logit); never used to act
         self.aux = nn.Linear(hidden, 3)
+        if aux_now:  # training-only (--aux-now): where the enemy is NOW, i.e. undo the observation delay; never used to act
+            self.aux_now = nn.Linear(hidden, 3)
         if self.act_hist:
             self.act_in = nn.Linear(3 * self.act_hist, hidden)
             nn.init.zeros_(self.act_in.weight)
