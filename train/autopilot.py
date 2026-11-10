@@ -280,9 +280,16 @@ class Autopilot:
             tmp.write_text(json.dumps(self.s, indent=1, default=str))
             tmp.replace(STATE)
 
-    def decide(self, kind, reason, **data):
+    def decide(self, kind, reason, /, **data):
+        # kind and reason are positional-only, so a data dict that also carries "reason" (plateau_test, trial_verdict,
+        # release info all do) can never raise "got multiple values for argument 'reason'" -- that crashed us twice.
+        if "reason" in data:
+            sub = data.pop("reason")
+            if sub and str(sub) not in str(reason):
+                reason = f"{reason} ({sub})"
         rec = dict(time=now(), kind=kind, reason=reason, phase=self.s["phase"], stage=self.s.get("stage"),
-                   rung=self.s.get("rung_idx"), **data)
+                   rung=self.s.get("rung_idx"))
+        rec.update({(f"data_{k}" if k in rec else k): v for k, v in data.items()})  # a data key named stage/phase/... never collides
         line = f"- **{rec['time']} — {kind}** ({'dry-run' if self.dry else 'live'}): {reason}"
         extra = {k: v for k, v in data.items() if k not in ("cmd",)}
         if extra:
@@ -619,7 +626,9 @@ class Autopilot:
         gate = st.get("gate") or 0.5
         if st["phase"] == "observe":
             plateau, info = plateau_test(wins, gate)
-            self.decide("plateau_check", "plateau" if plateau else "no plateau", **info) if (len(wins) % 5 == 0 or plateau) else None
+            if len(wins) % 5 == 0 or plateau:
+                extra = {k: v for k, v in info.items() if k != "reason"}  # info may carry reason= (too few windows); never pass it twice
+                self.decide("plateau_check", ("plateau" if plateau else "no plateau") + (f" ({info['reason']})" if info.get("reason") else ""), **extra)
             if plateau:
                 st["base_windows"] = wins[-SUCCESS["compare_windows"]:]
                 self.start_next_rung(info)
@@ -814,6 +823,15 @@ def selftest():
     ap.s.update(phase="trial", rungs_done=[], rung_idx=0, trial=dict(tag="t", started=0, budget_windows=60, prev_regime={},
                 pre_ckpt="x", start_update=0, target_knobs={}, stage=13))
     ap.end_trial("success", dict(reason="promoted to the next stage"))
+    # regression: every helper that returns an info dict may include "reason"; decide() must accept all of them
+    ap.decide("t_plateau", "no plateau", **plateau_test([0.4, 0.41], 0.5)[1])
+    ap.decide("t_plateau", "no plateau", **plateau_test([0.4] * 50, 0.5)[1])
+    for v, info in [trial_verdict([0.4] * 10, [0.4] * 3, 45, False), trial_verdict([0.4] * 10, [0.2] * 20, 45, False),
+                    trial_verdict([0.4] * 10, [0.6] * 20, 45, False), trial_verdict([0.4] * 10, [0.4] * 45, 45, False),
+                    trial_verdict([0.4] * 10, [0.4] * 5, 45, True)]:
+        ap.decide("t_verdict", str(v), **(info or {}))
+    ap.decide("t_release", "release", ok=False, reason="x", error="y")
+    ap.decide("t_collide", "keys", stage=3, phase="p", time=1, rung=2, kind="k")
     assert ap.s["phase"] == "observe" and ap.s["rungs_done"] == ["t"]
     print("selftest ok")
 
