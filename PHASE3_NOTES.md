@@ -263,3 +263,28 @@ duplicate keys.
    0.29)**. About 20 and 50 lines of new trainer code. Too risky to write and launch unattended.
 3. **Run the delay ramp at 0–800 units (Fable 10).** Medium range drags every delay stage; `kill_medium` is about
    0.29 against about 0.54 close.
+
+### Evening of 2026-11-10: rollback to 11:02, and promotion to 160 ms on a greedy exam (human decision)
+
+Same 300 rounds (seed 777, `scratch/greedy_check.py`, `results/phase3/greedy_check.jsonl`):
+
+| Checkpoint | Greedy 120 ms | Greedy 160 ms | Sampled 120 ms |
+|---|---|---|---|
+| `pre_lrhalf_last.pt` (11:02) | **56.3%** | **40.0%** | 50.3% |
+| update 12025 (after lrhalf + auxnow6) | 45.3% | 20.7% | 45.0% |
+
+- **The afternoon's "kept" rungs made the policy worse.** The gaps are z 2.7 at 120 ms and z 5.2 at 160 ms. Trial
+  verdicts on noisy training windows, plus rollback picks from single 100-round exams, cannot tell 5 pp apart. The
+  160 ms loss was invisible because training never measures it.
+- **At 19:22 training restarted from `pre_lrhalf_last.pt`** with its own regime (lr 1e-4, act_hist 3, kl 0.01, no
+  aux-now), at `--stage0 16` = 160 ms. Dashboard numbering: stage 17 of 18.
+- **The promotion is a rule change.** The 11:02 checkpoint passed 120 ms on a greedy exam: 56.3% over 300 rounds,
+  with a 95% lower bound of 50.7%. It did not pass on two sampled windows.
+- **Backup:** the 11:02 checkpoint is in private release `aim_640-stage16-120ms-greedy`, checksum re-verified.
+- **Afternoon model kept for reference:** `checkpoints/aim_640/post_afternoon_auxnow6_last.pt`. Its snapshots
+  (updates 10700–12250) were moved to `snapshots_afternoon_archive/`, because exams pick the highest update
+  number. The restarted run's numbers start again at 10635. `update_010650.pt` was overwritten by the new run.
+- **The autopilot now only supervises.** It handles crash restarts and backups at stage passes. Its ladder is left
+  exhausted on purpose, so it will not run noisy trials again.
+- **Promotion at 160/200 ms still uses the trainer's sampled two-window rule.** Greedy gating is not built in. If
+  160 ms plateaus, repeat the greedy check by hand.
