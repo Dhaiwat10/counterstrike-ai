@@ -296,6 +296,26 @@ def aux_loss(pred, label):
 
 
 # ---------------------------------------------------------------------------------- main
+def build_optimizer(model, lr, resume=None):
+    """Adam over the model; restores a resumed optimiser state and applies `lr` on top of it (the saved state carries its
+    old lr). The action-history input (--act-hist) lives in its own parameter group, so a checkpoint saved without it
+    (one group) and one saved with it (two groups) both resume cleanly."""
+    hist_params = [q for n, q in model.named_parameters() if n.startswith("act_in.")]
+    main_params = [q for n, q in model.named_parameters() if not n.startswith("act_in.")]
+    opt = torch.optim.Adam(main_params, lr=lr, eps=1e-5)
+    saved = resume.get("opt") if resume is not None else None
+    if hist_params and saved is not None and len(saved["param_groups"]) == 2:
+        opt.add_param_group(dict(params=hist_params))  # saved with the history input: same two groups
+        hist_params = []
+    if saved is not None:
+        opt.load_state_dict(saved)
+        for g in opt.param_groups:
+            g["lr"] = lr
+    if hist_params:
+        opt.add_param_group(dict(params=hist_params))  # new to this run: fresh group
+    return opt
+
+
 def _install_stop_handlers():
     """Background launches start with SIGINT ignored, so Ctrl-C/`kill -INT` never reached the trainer.
     Make SIGINT and SIGTERM both raise KeyboardInterrupt in the main process -> the `finally` block saves
@@ -448,17 +468,7 @@ def main():
         prior_scale = res[0] / prior_res[0] if fovea else 0.0  # >1: the prior gets its own, wider fovea crop
     else:
         prior_scale = 0.0
-    # a history input added on resume (--act-hist) is new to the saved optimiser: it gets its own fresh param group
-    new_params = [q for n, q in model.named_parameters() if n.startswith("act_in.")] if (resume is not None and
-                  not any(k.startswith("act_in.") for k in resume["model"])) else []
-    old_params = [q for n, q in model.named_parameters() if not (new_params and n.startswith("act_in."))]
-    opt = torch.optim.Adam(old_params, lr=a.lr, eps=1e-5)
-    if resume is not None and "opt" in resume:
-        opt.load_state_dict(resume["opt"])
-        for g in opt.param_groups:  # the saved optimiser carries its old lr; the flag on the command line wins
-            g["lr"] = a.lr
-    if new_params:
-        opt.add_param_group(dict(params=new_params))
+    opt = build_optimizer(model, a.lr, resume)
     warm_params = list(model.value.parameters()) + list(model.aux.parameters())
     wopt = torch.optim.Adam(warm_params, lr=1e-3)
 

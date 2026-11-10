@@ -67,3 +67,16 @@ assert curriculum_stages() == r, "environment variable must give the same ramp"
 assert curriculum_stages(delay_ramp="0.04,0.08,0.12,0.16,0.2") == d, "an explicit ramp beats the environment"
 del os.environ["CS2AI_DELAY_RAMP"]
 print("ok")
+
+# 4) optimiser groups: resume a checkpoint saved without the history input (1 group) and one saved with it (2 groups)
+from train.ppo import build_optimizer  # noqa: E402
+o0 = build_optimizer(base, 1e-4)
+assert len(o0.param_groups) == 1
+saved1 = dict(opt=o0.state_dict())
+o1 = build_optimizer(aug, 5e-5, saved1)
+assert len(o1.param_groups) == 2 and all(g["lr"] == 5e-5 for g in o1.param_groups[:1]) and o1.param_groups[1]["params"] == list(aug.act_in.parameters())
+saved2 = dict(opt=o1.state_dict())
+o2 = build_optimizer(aug, 1e-4, saved2)
+assert len(o2.param_groups) == 2 and all(g["lr"] == 1e-4 for g in o2.param_groups)
+assert build_optimizer(base, 1e-4, saved1).param_groups[0]["lr"] == 1e-4
+print("optimizer groups ok")
