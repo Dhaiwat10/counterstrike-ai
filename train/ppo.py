@@ -24,6 +24,7 @@ import collections
 import json
 import math
 import multiprocessing as mp
+import multiprocessing.connection
 import os
 import time
 from pathlib import Path
@@ -112,8 +113,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
                     obs, info = env.reset()
                 remote.send((views(obs), labels(info), r, bool(term), bool(trunc), final, ep))
             elif cmd == "knobs":
-                state["cur"] = dict(data); state["pool"] = list(data.get("pool", []))
-                remote.send(True)  # takes effect from the next round
+                state["cur"] = dict(data); state["pool"] = list(data.get("pool", []))  # takes effect from the next round
             elif cmd == "close":
                 break
     finally:
@@ -138,11 +138,20 @@ class VecEnv:
             r.send(("step", a))
         return [r.recv() for r in self.remotes]
 
+    def send(self, i, action):
+        """Asynchronous use: start game i's next step; its reply arrives through wait()."""
+        self.remotes[i].send(("step", action))
+
+    def wait(self, idxs, timeout=None):
+        """Replies that are ready among games `idxs` as [(i, reply)]; blocks until at least one is (or `timeout` s)."""
+        conns = {self.remotes[i]: i for i in idxs}
+        return [(conns[c], c.recv()) for c in mp.connection.wait(list(conns), timeout)]
+
     def set_knobs(self, knobs):
+        # no acknowledgement: a worker handles its messages in order, and with asynchronous collection a step reply
+        # may still be in the pipe
         for r in self.remotes:
             r.send(("knobs", dict(knobs)))
-        for r in self.remotes:
-            r.recv()
 
     def close(self):
         for r in self.remotes:
@@ -150,10 +159,153 @@ class VecEnv:
                 r.send(("close", None))
             except Exception:
                 pass
+        # With asynchronous collection a worker can be blocked sending a step reply nobody has read (a reply is larger
+        # than the pipe buffer), and then never sees "close": keep reading until the workers have exited.
+        live, t_end = list(self.remotes), time.time() + 15
+        while live and any(p.is_alive() for p in self.procs) and time.time() < t_end:
+            for c in mp.connection.wait(live, 0.2):
+                try:
+                    c.recv()
+                except (EOFError, OSError):
+                    live.remove(c)
         for p in self.procs:
-            p.join(timeout=10)
+            p.join(timeout=2)
             if p.is_alive():
                 p.kill()
+
+
+class Collector:
+    """Asynchronous experience collection: every game steps at its own pace.
+
+    The synchronous loop sends one action to every game and waits for all of them, so every step costs as much as the
+    slowest game (a round restart, an efficiency core, a readback hiccup): measured 61 ms per step of 12 games that
+    need ~9 ms each. Here the trainer serves whichever games have a fresh frame in one batched forward pass while the
+    others keep running. Each game fills its own T-step segment; collect(n) returns as soon as n segments are complete,
+    as the same [n, T] tensors the synchronous loop builds. Unfinished segments carry over to the next call: their
+    first steps were then produced by weights one update older, which PPO accounts for through the recorded
+    log-probabilities (the importance ratio is taken against the policy that actually acted).
+    """
+
+    def __init__(self, venv, model, dev, T, mask, gamma, fovea, K):
+        self.venv, self.model, self.dev, self.T, self.mask = venv, model, dev, T, mask
+        self.gamma, self.fovea, self.K = gamma, bool(fovea), K
+        N = self.N = len(venv.remotes)
+        self.cur = [(x[0], x[1]) for x in venv.first]  # per game: (views, labels) of the frame it is waiting on
+        v0 = self.cur[0][0]
+
+        def buf(shape=(), dtype=np.float32):
+            return np.zeros((N, T, *shape), dtype)
+
+        self.b = dict(P=buf(v0[0].shape, np.uint8), AUX=buf((9,)), A=buf((len(NVEC),), np.int64), LP=buf(), V=buf(),
+                      Vn=buf(), R=buf(), TERM=buf(), S=buf())
+        if self.fovea:
+            self.b["F"] = buf(v0[1].shape, np.uint8)
+        if len(v0) >= 3:  # the imitation prior's own, wider fovea crop
+            self.b["FP"] = buf(v0[2].shape, np.uint8)
+        if K:
+            self.b["HIST"] = buf((3 * K,))
+        self.h0 = np.zeros((2, N, model.hidden), np.float32)  # LSTM state at each game's segment start
+        self.H = torch.zeros(1, N, model.hidden, device=dev)
+        self.C = torch.zeros(1, N, model.hidden, device=dev)
+        self.hist = np.zeros((N, 3 * K), np.float32)          # last K actions per game (most recent first)
+        self.start = np.ones(N, np.float32)                    # 1 = the waiting frame opens a new round
+        self.t = [0] * N                                        # write position in each game's segment
+        self.ready, self.pending, self.boot = list(range(N)), set(), {}
+        self.finished = collections.deque()
+        self.serves = self.served = 0
+
+    def collect(self, n, on_episode):
+        """Run until n segments are complete; on_episode(record) is called for every finished round."""
+        self.serves = self.served = 0
+        while len(self.finished) < n:
+            if not self.ready:
+                for i, rep in self.venv.wait(self.pending):
+                    self._reply(i, rep, on_episode)
+            self._serve()
+        rows = [self.finished.popleft() for _ in range(n)]
+        out = {k: torch.from_numpy(np.stack([r[k] for r in rows])).to(self.dev) for k in rows[0] if k != "h0"}
+        h0 = torch.from_numpy(np.stack([r["h0"] for r in rows], 1)).to(self.dev)  # [2, n, hidden]
+        out["h0"] = (h0[0:1].contiguous(), h0[1:2].contiguous())
+        out["batch"] = self.served / max(1, self.serves)  # games served per forward pass
+        return out
+
+    def _reply(self, i, rep, on_episode):
+        views, labels, r, term, trunc, final, ep = rep
+        t = self.t[i]  # the step this reply completes
+        self.b["R"][i, t] = r
+        self.b["TERM"][i, t] = float(term or trunc)
+        if final is not None:  # time-limit cut: gamma * V(final frame) is added to this reward at the next forward pass
+            self.boot[i] = (final, t)
+        self.start[i] = float(term or trunc)
+        self.cur[i] = (views, labels)
+        self.t[i] = t + 1
+        self.pending.discard(i)
+        self.ready.append(i)
+        if ep is not None:
+            on_episode(ep)
+
+    def _serve(self):
+        """One forward pass for every game with a fresh frame: record the step, send the action."""
+        idx, self.ready = self.ready, []
+        if not idx:
+            return
+        b, T, dev = self.b, self.T, self.dev
+        boots = [i for i in idx if i in self.boot]
+        nb = len(boots)
+
+        def stack(k):  # view k of the bootstrap frames, then of the fresh frames
+            return torch.from_numpy(np.stack([self.boot[i][0][k] for i in boots] + [self.cur[i][0][k] for i in idx])).to(dev)
+
+        ii = torch.as_tensor(idx, device=dev)
+        keep_np = 1.0 - self.start[idx]
+        keep = torch.from_numpy(keep_np).to(dev).view(1, -1, 1)
+        h_pre, c_pre = self.H[:, ii], self.C[:, ii]
+        h, c = h_pre * keep, c_pre * keep                # a new round starts with an empty memory...
+        hist_reg = self.hist[idx] * keep_np[:, None]     # ...and an empty action history
+        hist_in = None
+        if nb:  # a bootstrap frame is valued with the state and history the game had after its last action
+            bb = torch.as_tensor(boots, device=dev)
+            h, c = torch.cat([self.H[:, bb], h], 1), torch.cat([self.C[:, bb], c], 1)
+        if self.K:
+            hist_in = torch.from_numpy(np.concatenate([self.hist[boots], hist_reg]) if nb else hist_reg).to(dev)[:, None]
+        with torch.no_grad():
+            lg, v, (h2, c2) = self.model(stack(0)[:, None], (h, c), fovea=stack(1)[:, None] if self.fovea else None,
+                                         hist=hist_in)
+            act, lp, _ = dist_stats(lg[nb:, 0], self.mask)
+        self.H[:, ii], self.C[:, ii] = h2[:, nb:], c2[:, nb:]
+        v_np, act_np, lp_np = v[:, 0].float().cpu().numpy(), act.cpu().numpy(), lp.float().cpu().numpy()
+        if any(self.t[i] in (0, T) for i in idx):
+            hp, cp = h_pre[0].cpu().numpy(), c_pre[0].cpu().numpy()
+        for k, i in enumerate(boots):
+            final, t = self.boot.pop(i)
+            b["R"][i, t] += self.gamma * v_np[k]
+        for k, i in enumerate(idx):
+            val, t = v_np[nb + k], self.t[i]
+            if t == T:  # the segment is full: this frame's value is the bootstrap for its last step
+                b["Vn"][i, T - 1] = val
+                self.finished.append(dict({key: arr[i].copy() for key, arr in b.items()}, h0=self.h0[:, i].copy()))
+                t = self.t[i] = 0
+            elif t > 0:
+                b["Vn"][i, t - 1] = val
+            if t == 0:  # like the synchronous loop: the state before zeroing; S says whether to zero it
+                self.h0[0, i], self.h0[1, i] = hp[k], cp[k]
+            views, labels = self.cur[i]
+            b["P"][i, t] = views[0]
+            if self.fovea:
+                b["F"][i, t] = views[1]
+            if "FP" in b:
+                b["FP"][i, t] = views[2]
+            b["AUX"][i, t], b["S"][i, t] = labels, self.start[i]
+            b["A"][i, t], b["LP"][i, t], b["V"][i, t] = act_np[k], lp_np[k], val
+            if self.K:
+                b["HIST"][i, t] = hist_reg[k]
+                a = act_np[k]
+                self.hist[i] = np.concatenate([[YAW_TABLE[a[0]] / 48.0, PITCH_TABLE[a[1]] / 16.0, float(a[4])],
+                                               hist_reg[k][:-3]])
+            self.venv.send(i, act_np[k])
+            self.pending.add(i)
+        self.serves += 1
+        self.served += len(idx)
 
 
 # ---------------------------------------------------------------------------------- curriculum
@@ -280,11 +432,16 @@ def seq_forward(model, frames, fov, state, starts, hist=None):
     z = model.encode(frames, fov, hist)  # [N, T, H] in one batch
     h, c = state
     outs = []
+    # One LSTM call per span between steps where some row starts a round (the state is zeroed only there), instead of
+    # one call per step: the same numbers, ~10x fewer calls (a rollout row holds ~2 round starts).
+    cut = (starts.sum(0) > 0).cpu().tolist()
+    cuts = [0] + [t for t in range(1, T) if cut[t]] + [T]
     with torch.autocast(z.device.type, enabled=False):
-        for t in range(T):
-            keep = (1.0 - starts[:, t]).view(1, N, 1)
+        z = z.float()
+        for t0, t1 in zip(cuts[:-1], cuts[1:]):
+            keep = (1.0 - starts[:, t0]).view(1, N, 1)
             h, c = h * keep, c * keep
-            o, (h, c) = model.lstm(z[:, t:t + 1].float(), (h, c))
+            o, (h, c) = model.lstm(z[:, t0:t1], (h, c))
             outs.append(o)
         o = torch.cat(outs, 1)
         ax = model.aux(o)
@@ -473,6 +630,9 @@ def main():
     ap.add_argument("--all-rounds", type=int, nargs="*", default=[],
                     help="0-based stage indices judged on ALL their rounds instead of the newest distance band only "
                          "(e.g. 11 = stage 12, 800-1050: the far band stalls near 37%% at 640x480)")
+    ap.add_argument("--collect", choices=("async", "sync"), default="async",
+                    help="async: every game steps at its own pace and the trainer serves whichever have a fresh frame "
+                         "(a slow game or a round restart no longer stalls the others); sync: the old lockstep loop")
     ap.add_argument("--snapshot-every", type=int, default=25, help="updates")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
@@ -597,95 +757,107 @@ def main():
               prior_scale=prior_scale,
               knobs=pub(knobs), stage=stage, n_stages=len(stages), resume=a.resume, rewards=rewards,
               delay_ramp=[s["delay"] for s in stages if s["delay"] > 0], act_hist=K, lr=a.lr, ent=a.ent,
+              collect=a.collect, epochs=a.epochs,
               ent_yaw_mult=a.ent_yaw_mult, params=sum(p.numel() for p in model.parameters())))
 
+    def on_episode(e):  # one finished round: which statistics it counts for
+        nonlocal all_eps, stage_eps
+        if e.get("rehearsal"):
+            reh.append(e); all_eps += 1
+            return
+        if e.get("delayed"):  # randomised-delay round at a 0 ms stage: tracked, never counted
+            if not e.get("no_contest"):
+                dly.append(e)
+            all_eps += 1
+            return
+        nc.append(bool(e.get("no_contest")))
+        if e.get("no_contest"):  # unwinnable (bot walked out of sight): never counted
+            all_eps += 1
+            return
+        eps.append(e)
+        all_eps += 1
+        stage_eps += 1
+        prev_max = stages[stage - 1]["dist"] if stage > 0 else 0.0
+        if knobs["dist"] > prev_max and e["dist"] > prev_max:
+            far.append(e)
+        in_band = e.get("offset", 0.0) >= knobs.get("offset_min", 0.0) - 1e-6  # review rounds don't count
+        if (stage in a.all_rounds or knobs["dist"] <= prev_max or e["dist"] > prev_max) and in_band:
+            win.append(e)
+
+    collector = Collector(venv, model, dev, T, mask, a.gamma, fovea, K) if a.collect == "async" else None
+    serve_batch = None
     try:
         while True:
             # ---------------- rollout
             model.eval()
-            P = torch.zeros((N, T, *cur_p.shape[1:]), dtype=torch.uint8, device=dev)
-            Fv = torch.zeros((N, T, *cur_f.shape[1:]), dtype=torch.uint8, device=dev) if fovea else None
-            FvP = torch.zeros((N, T, *cur_fp.shape[1:]), dtype=torch.uint8, device=dev) if cur_fp is not None else None
-            AUX = torch.zeros((N, T, 9), device=dev)  # aux label (3) + aux now (3) + teacher yaw bin, pitch bin, valid
-            HIST = torch.zeros((N, T, 3 * K), device=dev) if K else None
-            A = torch.zeros((N, T, len(NVEC)), dtype=torch.long, device=dev)
-            LP = torch.zeros((N, T), device=dev)
-            V = torch.zeros((N, T), device=dev)
-            V_next = torch.zeros((N, T), device=dev)
-            R = torch.zeros((N, T), device=dev)
-            TERM = torch.zeros((N, T), device=dev)
-            S = torch.zeros((N, T), device=dev)
-            h0 = (state[0].clone(), state[1].clone())
             tr = time.time()
-            for t in range(T):
-                P[:, t] = cur_p
-                if fovea:
-                    Fv[:, t] = cur_f
-                if FvP is not None:
-                    FvP[:, t] = cur_fp
-                AUX[:, t] = cur_aux
-                S[:, t] = start_flag
-                keep = (1.0 - start_flag).view(1, N, 1)
-                state = (state[0] * keep, state[1] * keep)
-                if K:
-                    hist = hist * (1.0 - start_flag).view(N, 1)  # a new round starts with an empty history
-                    HIST[:, t] = hist
-                with torch.no_grad():
-                    lg, v, state = model(cur_p[:, None], state, fovea=cur_f[:, None] if fovea else None,
-                                         hist=hist[:, None] if K else None)
-                    act, lp, _ = dist_stats(lg[:, 0], mask)
-                A[:, t], LP[:, t], V[:, t] = act, lp, v[:, 0]
-                if K:
-                    hist = torch.cat([action_features(act), hist[:, :-3]], 1)
-                res = venv.step(act.cpu().numpy())
-                cur_p, cur_f = to_dev([x[0] for x in res])
-                cur_fp = to_dev_prior([x[0] for x in res])
-                cur_aux = torch.from_numpy(np.stack([x[1] for x in res])).to(dev)
-                R[:, t] = torch.tensor([x[2] for x in res], device=dev)
-                term = torch.tensor([float(x[3]) for x in res], device=dev)
-                trunc = torch.tensor([float(x[4]) for x in res], device=dev)
-                # time-limit cut: fold gamma * V(final obs) into the reward (final obs is one LSTM step on)
-                cut = [n for n, x in enumerate(res) if x[5] is not None]
-                if cut:
-                    fp, ff = to_dev([res[n][5] for n in cut])  # (a 3rd, prior-only view is ignored here)
-                    j = torch.as_tensor(cut, device=dev)
+            if collector is not None:
+                ro = collector.collect(N, on_episode)
+                P, Fv, FvP, AUX, HIST = ro["P"], ro.get("F"), ro.get("FP"), ro["AUX"], ro.get("HIST")
+                A, LP, V, V_next, R, TERM, S = ro["A"], ro["LP"], ro["V"], ro["Vn"], ro["R"], ro["TERM"], ro["S"]
+                h0, serve_batch = ro["h0"], ro["batch"]
+            else:
+                P = torch.zeros((N, T, *cur_p.shape[1:]), dtype=torch.uint8, device=dev)
+                Fv = torch.zeros((N, T, *cur_f.shape[1:]), dtype=torch.uint8, device=dev) if fovea else None
+                FvP = torch.zeros((N, T, *cur_fp.shape[1:]), dtype=torch.uint8, device=dev) if cur_fp is not None else None
+                AUX = torch.zeros((N, T, 9), device=dev)  # aux label (3) + aux now (3) + teacher yaw bin, pitch bin, valid
+                HIST = torch.zeros((N, T, 3 * K), device=dev) if K else None
+                A = torch.zeros((N, T, len(NVEC)), dtype=torch.long, device=dev)
+                LP = torch.zeros((N, T), device=dev)
+                V = torch.zeros((N, T), device=dev)
+                V_next = torch.zeros((N, T), device=dev)
+                R = torch.zeros((N, T), device=dev)
+                TERM = torch.zeros((N, T), device=dev)
+                S = torch.zeros((N, T), device=dev)
+                h0 = (state[0].clone(), state[1].clone())
+                for t in range(T):
+                    P[:, t] = cur_p
+                    if fovea:
+                        Fv[:, t] = cur_f
+                    if FvP is not None:
+                        FvP[:, t] = cur_fp
+                    AUX[:, t] = cur_aux
+                    S[:, t] = start_flag
+                    keep = (1.0 - start_flag).view(1, N, 1)
+                    state = (state[0] * keep, state[1] * keep)
+                    if K:
+                        hist = hist * (1.0 - start_flag).view(N, 1)  # a new round starts with an empty history
+                        HIST[:, t] = hist
                     with torch.no_grad():
-                        _, vf, _ = model(fp[:, None], (state[0][:, j], state[1][:, j]),
-                                         fovea=ff[:, None] if fovea else None, hist=hist[j][:, None] if K else None)
-                    R[j, t] += a.gamma * vf[:, 0]
-                TERM[:, t] = torch.clamp(term + trunc, max=1.0)
-                start_flag = TERM[:, t].clone()
-                for x in res:
-                    if x[6] is not None:
-                        e = x[6]
-                        if e.get("rehearsal"):
-                            reh.append(e); all_eps += 1
-                            continue
-                        if e.get("delayed"):  # randomised-delay round at a 0 ms stage: tracked, never counted
-                            if not e.get("no_contest"):
-                                dly.append(e)
-                            all_eps += 1
-                            continue
-                        nc.append(bool(e.get("no_contest")))
-                        if e.get("no_contest"):  # unwinnable (bot walked out of sight): never counted
-                            all_eps += 1
-                            continue
-                        eps.append(e)
-                        all_eps += 1
-                        stage_eps += 1
-                        prev_max = stages[stage - 1]["dist"] if stage > 0 else 0.0
-                        if knobs["dist"] > prev_max and e["dist"] > prev_max:
-                            far.append(e)
-                        in_band = e.get("offset", 0.0) >= knobs.get("offset_min", 0.0) - 1e-6  # review rounds don't count
-                        if (stage in a.all_rounds or knobs["dist"] <= prev_max or e["dist"] > prev_max) and in_band:
-                            win.append(e)
-            with torch.no_grad():
-                keep = (1.0 - start_flag).view(1, N, 1)
-                _, vlast, _ = model(cur_p[:, None], (state[0] * keep, state[1] * keep),
-                                    fovea=cur_f[:, None] if fovea else None,
-                                    hist=(hist * (1.0 - start_flag).view(N, 1))[:, None] if K else None)
-            V_next[:, :-1] = V[:, 1:]
-            V_next[:, -1] = vlast[:, 0]
+                        lg, v, state = model(cur_p[:, None], state, fovea=cur_f[:, None] if fovea else None,
+                                             hist=hist[:, None] if K else None)
+                        act, lp, _ = dist_stats(lg[:, 0], mask)
+                    A[:, t], LP[:, t], V[:, t] = act, lp, v[:, 0]
+                    if K:
+                        hist = torch.cat([action_features(act), hist[:, :-3]], 1)
+                    res = venv.step(act.cpu().numpy())
+                    cur_p, cur_f = to_dev([x[0] for x in res])
+                    cur_fp = to_dev_prior([x[0] for x in res])
+                    cur_aux = torch.from_numpy(np.stack([x[1] for x in res])).to(dev)
+                    R[:, t] = torch.tensor([x[2] for x in res], device=dev)
+                    term = torch.tensor([float(x[3]) for x in res], device=dev)
+                    trunc = torch.tensor([float(x[4]) for x in res], device=dev)
+                    # time-limit cut: fold gamma * V(final obs) into the reward (final obs is one LSTM step on)
+                    cut = [n for n, x in enumerate(res) if x[5] is not None]
+                    if cut:
+                        fp, ff = to_dev([res[n][5] for n in cut])  # (a 3rd, prior-only view is ignored here)
+                        j = torch.as_tensor(cut, device=dev)
+                        with torch.no_grad():
+                            _, vf, _ = model(fp[:, None], (state[0][:, j], state[1][:, j]),
+                                             fovea=ff[:, None] if fovea else None, hist=hist[j][:, None] if K else None)
+                        R[j, t] += a.gamma * vf[:, 0]
+                    TERM[:, t] = torch.clamp(term + trunc, max=1.0)
+                    start_flag = TERM[:, t].clone()
+                    for x in res:
+                        if x[6] is not None:
+                            on_episode(x[6])
+                with torch.no_grad():
+                    keep = (1.0 - start_flag).view(1, N, 1)
+                    _, vlast, _ = model(cur_p[:, None], (state[0] * keep, state[1] * keep),
+                                        fovea=cur_f[:, None] if fovea else None,
+                                        hist=(hist * (1.0 - start_flag).view(N, 1))[:, None] if K else None)
+                V_next[:, :-1] = V[:, 1:]
+                V_next[:, -1] = vlast[:, 0]
             t_roll = time.time() - tr
             steps += N * T
 
@@ -759,7 +931,8 @@ def main():
                         stats["ent"].append(ent.mean().item())
                         stats["kl"].append((LP[j] - lp).mean().item())
                         stats["clipfrac"].append(((ratio - 1).abs() > a.clip).float().mean().item())
-            state = (state[0].detach(), state[1].detach())
+            if collector is None:
+                state = (state[0].detach(), state[1].detach())
             update += 1
             t_upd = time.time() - tu
             with torch.no_grad():  # explained variance of the value function on this batch
@@ -810,7 +983,7 @@ def main():
                        **{f"kill_ang_{b}": float(np.mean([e["kills"] > 0 for e in E if angle_band(e.get("offset", 0)) == b]))
                           for b in ("lt15", "15to30", "30plus") if any(angle_band(e.get("offset", 0)) == b for e in E)},
                        fire_frac=fire, expl_var=ev, knobs=pub(knobs), sps=(steps - steps0) / el,
-                       roll_s=round(t_roll, 2), upd_s=round(t_upd, 2),
+                       roll_s=round(t_roll, 2), upd_s=round(t_upd, 2), serve_batch=serve_batch,
                        **{k: float(np.mean(v)) for k, v in stats.items()})
             if update % 5 == 0 or update <= 3:
                 emit(rec)

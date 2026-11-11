@@ -97,6 +97,11 @@ SCENARIOS: dict[str, Scenario] = {
             # it over ~8-10 rounds and start fights in a forced 2.5 s reload. One round rarely uses >30 bullets, so
             # this is ~"full magazine every round". Revisit once the reload head is learned.
             "mp_infinite_ammo 1",
+            # NOTE: keep the shared `mp_forcerespawn 1`. The 1 s of game time between a kill/death and the next round
+            # (~100 engine ticks, 107 ms of a restart) looks like dead time, but it is the cool-down that makes
+            # rounds independent: with 0.05 the scripted delayed aimer fell from 97% to 58% kills on the 120 ms exam
+            # (deaths 3% -> 39%, no-contests 5 -> 27 per 150 rounds; 2026-11-12), i.e. the survivor carries its
+            # combat state (recoil, the bot's lock on the agent) into the next round.
         ],
         notes="Phase 3 stage 1: enemy in view, ends on kill/death/4 s. Distance and initial aim error are curriculum knobs.",
     ),

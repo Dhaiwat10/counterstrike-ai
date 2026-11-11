@@ -340,3 +340,76 @@ Plus the base flags in `train/autopilot.py`. Change the method rather than the k
 
 **Next:** phase 3 stage 2 in ROADMAP.md, 1v1 on Dust2 with movement, peeking and positioning. The policy has never
 learned to move.
+
+## Training speed (2026-11-12)
+
+Measured on the Mac Mini (M4 Pro) with the final run's settings: 12 games at 640x480, 20 updates from the final
+checkpoint per row (`--resume-warmup 0`).
+
+| Trainer | Playing (steps/s) | Play / learn per update (s) | Overall (steps/s) |
+|---|---|---|---|
+| Before (lockstep) | 199 | 7.7 / 5.8 | 114 |
+| Lockstep + pocket table + span-wise LSTM (`--collect sync`) | 251 | 6.1 / 4.8 | 140 |
+| `--collect async` (new default) | 369 | 4.2 / 5.0 | 167 |
+| async, `--epochs 1` | 345 | 4.5 / 1.8 | 246 |
+| async, 6 games (`--envs 6`) | 251 | 3.1 / 2.5 | 138 |
+
+Kill rate over the ~470 rounds of each 12-game run: 0.42 / 0.42 / 0.415 / 0.42 (same behaviour in every mode).
+
+**Where the time went (profile).** One game alone needs 6.7 ms per decision plus 2.7 ms of image preparation, so 12
+games could deliver ~1,000 steps/s. The lockstep loop took 61 ms per step of 12 games, because every step waits for
+the slowest game, and a restart after a kill or death takes ~146 ms (107 ms = the 1 s respawn wait, ~31 ms = the 72
+pocket traces). One gradient step on 768 frames takes 0.83 s (~930 frames/s per pass); 94% of it is the vision
+encoder.
+
+**Changes**
+- **Asynchronous collection** (`Collector` in `train/ppo.py`, `--collect async`, default). Every game steps at its
+  own pace; the trainer serves whichever games have a fresh frame in one batched forward pass. Each game fills its
+  own 128-step segment and an update starts when 12 segments are complete. A segment that spans an update was started
+  by the previous weights; the recorded log-probabilities account for it. It costs a little freshness: clip fraction
+  0.072 vs 0.05 and approximate KL 0.0073 vs 0.0054 per update.
+- **Pocket table** (`scripts/make_arena_pockets.py` -> `data/arena/dust2_pockets.npz`, 4 min, one engine). The
+  visibility check around the bot's spot is looked up instead of traced at every restart. The first heading is fixed
+  at 0 degrees instead of random per round. Scripted delayed aimer with leash + min_vis, 150 rounds each: 93.3%
+  (table) vs 94.7% (live traces). Without the file the env traces live as before; rebuild it after rebuilding the
+  spawn pairs (a stale file is ignored).
+- **Span-wise LSTM pass** in `seq_forward`: one call per span between round starts instead of one per step, same
+  numbers; the learning step went from 5.8 to 4.8 s.
+- Worker knob changes are no longer acknowledged (the reply could be mixed up with a step reply still in the pipe).
+
+**Do not shorten the respawn wait.** `mp_forcerespawn 0.05` cut restarts to 16 ms, but the scripted delayed aimer
+fell from 97.3% to 58% kills on the 120 ms exam (deaths 3% -> 39%, no-contests 5 -> 27 per 150 rounds). The 1 s
+between rounds is the cool-down that makes rounds independent (recoil settles, the bot has to re-acquire the agent).
+With the wait restored: 98.7%.
+
+**Not validated:** `--epochs 1` is 2.2x the old speed but changes the learning recipe (one pass over each batch
+instead of three). Compare checkpoints head-to-head on the same 300+ rounds before adopting it.
+
+**What limits it now:** (1) a forward pass serves only 3.7 games on average and one serve cycle takes ~10 ms;
+(2) the games idle during the learning step, 55% of wall time. Next: a learner that runs while the games play, then
+games on other machines feeding it.
+
+**Tests:** `tests/test_collector.py` (scripted fake games replying in random order: every recorded segment matches
+the lockstep bookkeeping; span-wise LSTM pass equals the per-step pass). Two failures predate this work and also fail
+on the previous commit: `tests/test_act_hist.py` (optimizer-resume assert) and one check in
+`tests/test_arena_env.py` (scripted aim kills >= 3 of 4).
+
+### Second machine: MacBook Pro M4 Pro (8 performance + 4 efficiency cores, 24 GB), 2026-11-12
+- Set up at `~/code/cs2-ai` on `Apple@192.168.1.8` by copying the working tree, `game-dev/` (the Mini's binaries run
+  as they are; Homebrew already had sdl2-compat, mpg123, libogg, libvorbis), `data/arena/` and the two checkpoints
+  the trainer needs; `uv` venv with the same Python 3.12.13 / torch 2.15.0. It is a plain copy, not a git checkout.
+- Engine works over SSH (hidden window): scripted delayed aimer 98.3% (exam setup) and 93.3% (leash + min_vis), 60
+  rounds each, the same as on the Mini.
+- Full trainer, `--collect async`, from the final checkpoint:
+
+  | Games | Playing (steps/s) | Play / learn per update (s) | Overall (steps/s) |
+  |---|---|---|---|
+  | 12 | 391 | 3.9 / 5.5 | 164 |
+  | 16 | 258 | 7.9 / 9.6 | 117 |
+  | 20 | ~200 | 10.7 / 14.6 | ~93 |
+
+  12 games is the ceiling there, the same as the Mini; more games made both playing and learning slower (cause not
+  isolated; swap was at 14 of 15 GB during the 20-game run). The tests ran on battery (72% -> 62% in ~20 min).
+- **Stop fix:** with asynchronous collection a worker could be blocked sending a step reply nobody had read and never
+  saw "close", so a stop took 10 s per stuck worker. `VecEnv.close()` now keeps reading until the workers exit;
+  SIGTERM in the middle of a collection: exit in 1 s with `last.pt` saved.

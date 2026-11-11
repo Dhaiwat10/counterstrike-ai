@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import collections
 import math
+import zlib
+from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
@@ -38,6 +40,17 @@ YAW_TABLE = np.concatenate([-YAW_BINS[:0:-1], YAW_BINS])      # 21 symmetric bin
 PITCH_TABLE = np.concatenate([-PITCH_BINS[:0:-1], PITCH_BINS])  # 11 symmetric bins
 WALK_SCALE = 0.52
 RUN_SPEED = 250.0  # CS maxspeed with rifles is <= 250; engine clamps to weapon speed
+
+
+def pockets_path(arena: str):
+    """data/arena/dust2_pairs.npz -> data/arena/dust2_pockets.npz (None if the name has no '_pairs')."""
+    p = Path(arena)
+    return p.with_name(p.name.replace("_pairs", "_pockets")) if "_pairs" in p.name else None
+
+
+def arena_crc(positions, pairs) -> int:
+    """Fingerprint of an arena's spawn data, stored in the pockets file so a stale one is never used."""
+    return zlib.crc32(np.ascontiguousarray(pairs).tobytes(), zlib.crc32(np.ascontiguousarray(positions).tobytes()))
 
 
 class CS16Env(gym.Env):
@@ -74,9 +87,15 @@ class CS16Env(gym.Env):
 
         self.bridge: EngineBridge | None = None
         self._arena = None
+        self._pockets = None  # precomputed pocket visibility per (pair, orientation); see _pocket()
         if self.scn.arena:
             z = np.load(self.scn.arena)
             self._arena = (z["positions"], z["pairs"], z["dist"])
+            pk = pockets_path(self.scn.arena)
+            if pk is not None and pk.exists():
+                zp = np.load(pk)
+                if int(zp["crc"]) == arena_crc(z["positions"], z["pairs"]):  # built for exactly these spawn pairs
+                    self._pockets = (zp["vis"], zp["mask"])
         self.arena_max_dist = self.scn.arena_max_dist
         # training-only shaping: reward per degree the crosshair moves toward the nearest live enemy
         # (potential-based, Phi = -angular error; computed from server state, never observed by the agent)
@@ -325,12 +344,14 @@ class CS16Env(gym.Env):
         self._pocket_vis = None
         leash = self.bot_level == 3 and self.arena_leash > 0 and self.np_random.random() < self.arena_leash_frac
         for attempt in range(12):
-            i, j = pairs[self.np_random.choice(ok)]
-            if self.np_random.random() < 0.5:
+            q = self.np_random.choice(ok)
+            i, j = pairs[q]
+            swap = self.np_random.random() < 0.5
+            if swap:
                 i, j = j, i
             a, e = P[i], P[j]
             if self.bot_level == 3 and (self.arena_min_vis > 0 or leash):
-                vis, pts = self._pocket(a, e)
+                vis, pts = self._pocket(a, e, key=(int(q), int(swap)))
                 self._pocket_vis = vis
                 if self.arena_min_vis > 0 and vis < self.arena_min_vis and attempt < 11:
                     continue  # cover right next to the bot's spot: another pair from the same distance band
@@ -444,31 +465,42 @@ class CS16Env(gym.Env):
         p = st["c"] + st["pos"] * st["u"]
         return f"cs2ai_place {st['bot']} {p[0]:.1f} {p[1]:.1f} {p[2]:.1f} 0 {st['face']:.1f}"
 
-    def _pocket(self, a, e):
-        """Visibility of the bot's surroundings: 24 points around its spot e (radii 64/128/192, 8 headings). A point is
-        REACHABLE if the hull-centre line from e is wall-free and there is floor ~36 units below it, VISIBLE if the agent's
-        eye at a sees the chest there. Returns (visible / reachable, list of visible reachable points within 128 units)."""
+    @staticmethod
+    def _pocket_points(e, rot=0.0):
+        """The 24 pocket points around spot e: radii 64/128/192, 8 headings each, first heading at `rot`."""
+        return [e + np.array([rad * math.cos(rot + k * math.pi / 4), rad * math.sin(rot + k * math.pi / 4), 0.0])
+                for rad in (64.0, 128.0, 192.0) for k in range(8)]
+
+    def _pocket_trace(self, a, e, rot=0.0):
+        """Trace the pocket in the engine (72 world traces = 24 engine steps). Returns (points, reachable[24],
+        visible-and-reachable[24]). A point is REACHABLE if the hull-centre line from e is wall-free and there is floor
+        ~36 units below it, VISIBLE if the agent's eye at a sees the chest there."""
         eye = a + (0.0, 0.0, 17.0)
-        rot = self.np_random.uniform(0.0, math.pi / 4)
-        pts, segs = [], []
-        for rad in (64.0, 128.0, 192.0):
-            for k in range(8):
-                t = rot + k * math.pi / 4
-                p = e + np.array([rad * math.cos(t), rad * math.sin(t), 0.0])
-                pts.append(p)
-                segs += [(e + (0, 0, 10), p + (0, 0, 10)), (p + (0, 0, 10), p - (0, 0, 80)), (eye, p + (0, 0, 10))]
+        pts, segs = self._pocket_points(e, rot), []
+        for p in pts:
+            segs += [(e + (0, 0, 10), p + (0, 0, 10)), (p + (0, 0, 10), p - (0, 0, 80)), (eye, p + (0, 0, 10))]
         fr = self._trace(segs)
-        reach = vis = 0
-        good = []
-        for q, p in enumerate(pts):
-            wall, floor, see = fr[3 * q], fr[3 * q + 1], fr[3 * q + 2]
-            if wall >= 0.999 and 26.0 <= floor * 90.0 <= 58.0:  # 90-unit drop trace stops 26-58 units down = level floor
-                reach += 1
-                if see >= 0.999:
-                    vis += 1
-                    if q < 16:
-                        good.append(p)
-        return (vis / reach if reach else 1.0), good
+        reach = np.zeros(len(pts), bool)
+        see = np.zeros(len(pts), bool)
+        for q in range(len(pts)):
+            wall, floor, vis = fr[3 * q], fr[3 * q + 1], fr[3 * q + 2]
+            reach[q] = wall >= 0.999 and 26.0 <= floor * 90.0 <= 58.0  # 90-unit drop trace stops 26-58 units down = level floor
+            see[q] = reach[q] and vis >= 0.999
+        return pts, reach, see
+
+    def _pocket(self, a, e, key=None):
+        """Visibility of the bot's surroundings (24 points around its spot e, see _pocket_trace).
+        Returns (visible / reachable, list of visible reachable points within 128 units).
+        The map never changes, so scripts/make_arena_pockets.py traces every (pair, orientation) once, with the first
+        heading at 0 degrees; with that table (`key` = (pair index, swapped)) this is a lookup instead of 24 engine
+        steps per reset attempt. Without the table it traces live, at a random rotation as before."""
+        if key is not None and self._pockets is not None:
+            mask = int(self._pockets[1][key])
+            pts = self._pocket_points(e, 0.0)
+            return float(self._pockets[0][key]), [pts[q] for q in range(16) if mask >> q & 1]
+        pts, reach, see = self._pocket_trace(a, e, self.np_random.uniform(0.0, math.pi / 4))
+        n = int(reach.sum())
+        return (float(see.sum()) / n if n else 1.0), [pts[q] for q in range(16) if see[q]]
 
     def _leash_tick(self):
         """Leashed free-roaming bot: when it has walked further than arena_leash from its spot, put it back on a random
