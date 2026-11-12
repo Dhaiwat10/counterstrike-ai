@@ -1,4 +1,7 @@
-"""Build the aim-arena spawn data for de_dust2 (data/arena/dust2_pairs.npz).
+"""Build the aim-arena spawn data for a map (default de_dust2 -> data/arena/dust2_pairs.npz).
+
+    python scripts/make_arena_pairs.py                                  # de_dust2, as before
+    python scripts/make_arena_pairs.py aim_map aim_map_pairs.npz 8000   # another map: name, output file, steps
 
 1. Run a bot deathmatch and record where bots stand (YaPB only walks valid ground).
 2. For random pairs 250-2000 units apart, keep those with a clear world line of sight
@@ -16,11 +19,14 @@ from cs16env.bridge import EngineBridge, EngineConfig  # noqa: E402
 
 out = Path("data/arena"); out.mkdir(parents=True, exist_ok=True)
 rng = np.random.default_rng(0)
+MAP = sys.argv[1] if len(sys.argv) > 1 else "de_dust2"
+OUT = sys.argv[2] if len(sys.argv) > 2 else "dust2_pairs.npz"
+STEPS = int(sys.argv[3]) if len(sys.argv) > 3 else 30000  # 30000 = 1200 s of game time
 
-env = CS16Env(dataclasses.replace(SCENARIOS["dm_dust2"], bots=10, episode_seconds=1e9))
+env = CS16Env(dataclasses.replace(SCENARIOS["dm_dust2"], name="dm_" + MAP, map=MAP, bots=10, episode_seconds=1e9))
 env.reset(seed=0); b = env.bridge
 noop = np.array([10, 5, 0, 0, 0, 0, 0, 0, 0]); P = []
-for t in range(30000):  # 1200 s of game time
+for t in range(STEPS):
     env.step(noop)
     if t % 10 == 0:
         s = b.state
@@ -31,7 +37,7 @@ _, u = np.unique(np.round(P / 48).astype(int), axis=0, return_index=True)
 P = P[u]
 print("unique spots", len(P))
 
-b = EngineBridge(EngineConfig(maxplayers=2)); b.command("map de_dust2")
+b = EngineBridge(EngineConfig(maxplayers=2)); b.command(f"map {MAP}")
 b.wait_until(lambda s: s.in_game, max_steps=100000)
 for _ in range(50):
     b.step()
@@ -55,4 +61,5 @@ for i in range(len(P)):
 b.close()
 good = np.array(good); dist = np.linalg.norm(P[good[:, 0]] - P[good[:, 1]], axis=1)
 print("visible pairs", len(good))
-np.savez(out / "dust2_pairs.npz", positions=P, pairs=good, dist=dist)
+np.savez(out / OUT, positions=P, pairs=good, dist=dist)
+print(f"{MAP}: {len(P)} spots, {len(good)} pairs, distance {dist.min():.0f}-{dist.max():.0f} (median {np.median(dist):.0f}) -> {out / OUT}")

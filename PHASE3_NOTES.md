@@ -551,3 +551,48 @@ within 5 deg of the target, then the hybrid on the 300-round exam at 120 and 200
 - **16:16: two experiments side by side, both continuing `nodelay_ppo_aim/last.pt` (update 9309, optimiser state kept):**
   Mini `nd_lr3e5` = learning rate 1e-4 -> 3e-5; MacBook `nd_focus600` = `--focus-dist 600` (half the rounds start
   beyond 600 units). Exams at update 9525 on both seeds.
+- **Plateau experiments, exams at update 9525 (600 rounds each, seeds 777 + 4242, greedy, 0 ms):**
+
+  | Run | Wins | Close | Medium | Time to kill |
+  |---|---|---|---|---|
+  | `nd_lr3e5` (lr 1e-4 -> 3e-5) | 90.2% (90.0 / 90.3) | 97% | 75% | 0.48 s |
+  | `nd_focus600` (half the rounds beyond 600 u) | 91.2% (91.0 / 91.3) | 97% | 78-79% | 0.44 s |
+
+  Neither breaks through: four snapshots from three settings sit at 88-91%. Nearly every round not won is a death
+  (8-10%), and they are at medium range. Both runs stopped at 16:59 (rule: two exams without a gain). The aim arena
+  at 0 ms vs this bot is done at ~91%; best file unchanged (`nodelay_ppo_aim` update 9025, released as
+  `aim_640-nodelay-update9025`). Ideas not tried: a zoomed fovea (render 1280x960, same 80x80 crop), a fire teacher
+  with a looser on-target rule, a harder bot.
+- **MacBook power:** its charger is 20 W. Under full training load the battery fell 84% -> 35% between 15:45 and
+  16:58 while "charging". Do not run long jobs there until it has a >= 70 W charger.
+
+## Aim maps (2026-11-12, evening)
+- **Maps (user-approved downloads from GameBanana, md5 verified, only .bsp/.txt inside, all textures from installed wads):**
+  `aim_map` (mods/82314, `aim_map_3.zip`, 94 KB) and `aim_ak-colt` (mods/93695, `_7183-.zip`, 37 KB), in
+  `game-dev/cstrike/maps/`. Scenarios `aim_aimmap` and `aim_akcolt` (same rules as `aim_dust2`).
+- **Bot navigation:** YaPB has no graph for these maps. On the first load it fetched one for aim_map from its online
+  database on its own (12 KB, author tag "[POD]Tassadarmaster", TLS unverified) -- not approved, so it was moved out of
+  the game folder unused. `addons/yapb/conf/yapb.cfg` now sets `yb_graph_url ""` (setting the cvar before `map` is too
+  early: it does not exist yet), and both graphs were then built locally by YaPB's analyser (flag 128, author "Player":
+  399 and 771 nodes). The first load of a new map can exceed the env's 3000-step boot wait while the analyser runs;
+  a second start works.
+- **Spawn pairs:** `scripts/make_arena_pairs.py MAP OUT STEPS` (was Dust2-only): aim_map 703 spots / 2,949 pairs
+  (250-1778 u), aim_ak-colt 1,152 spots / 7,317 pairs (250-1999 u). No pocket tables yet (live traces are used).
+- **First exam of the 91% model (update 9025) on maps it has never seen** (300 rounds, seed 777, greedy, 0 ms,
+  <= 1050 u, 15-45 deg):
+
+  | Map | Model | Close | Medium | Deaths | No-contests | Teacher |
+  |---|---|---|---|---|---|---|
+  | de_dust2 (trained on) | 92.3% | 98% | 82% | 7% | 16 | 99.3% |
+  | aim_map | **93.0%** | 96% | 90% | 5% | 20 | 95.0% |
+  | aim_ak-colt | **41.3%** | 75% | 1.5% | 29% | 114 | 99.0% |
+
+  aim_map is built from Dust textures and the aim carries over completely. aim_ak-colt has grey metal walls and grass:
+  at medium range the model does not pick the enemy out at all (screenshots: `scratch/aim_maps/`). The aim is not the
+  problem there, the looks are.
+- **17:36: `maps3`** = the winning recipe on all three maps at once (`--scenario aim_dust2,aim_aimmap,aim_akcolt`, 4 games
+  each, continuing `nd_focus600/last.pt`). Exam on all three maps at update 9775.
+- **17:55: `maps3` stopped by the user after 25 minutes (update 9710), before its exam.** Last training window (sampled,
+  all three maps pooled): kills 94.5%, close 99%, medium 88% -- unexamined; state in `checkpoints/maps3/last.pt` and
+  snapshot `update_009700.pt`. Under discussion: scope the project and the demo to aim_map only (aim_ak-colt dropped),
+  and test medium/long range against a bot that does not shoot back (never done beyond 800 units).

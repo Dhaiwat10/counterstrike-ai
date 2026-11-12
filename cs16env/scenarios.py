@@ -112,3 +112,13 @@ SCENARIOS: dict[str, Scenario] = {
         notes="Empty map, useful for testing movement and the env itself.",
     ),
 }
+
+# The same aim arena on community aim maps (added 2026-11-12; maps from GameBanana, bot navigation built locally by
+# YaPB's analyser, spawn pairs by scripts/make_arena_pairs.py MAP OUT STEPS). Both players are handed a rifle: the
+# rifles on the ground need walking, which the agent cannot do yet.
+for _name, _map, _pairs in (("aim_aimmap", "aim_map", "aim_map_pairs.npz"), ("aim_akcolt", "aim_ak-colt", "aim_ak_colt_pairs.npz")):
+    _base = SCENARIOS["aim_dust2"]
+    SCENARIOS[_name] = Scenario(
+        name=_name, map=_map, bots=_base.bots, bot_difficulty=_base.bot_difficulty, episode_seconds=_base.episode_seconds,
+        end_on_death=True, end_on_kill=True, arena=f"data/arena/{_pairs}", server_cmds=list(_base.server_cmds),
+        notes=f"Aim arena on {_map}: enemy placed in view, ends on kill/death/4 s.")

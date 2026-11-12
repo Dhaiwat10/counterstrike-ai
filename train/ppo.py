@@ -128,9 +128,10 @@ class VecEnv:
     def __init__(self, n, scenario, hw, fovea, knobs, rewards, seed=0, res=(320, 240), prior_scale=0.0):
         ctx = mp.get_context("spawn")
         self.remotes, self.procs = [], []
+        names = [x.strip() for x in scenario.split(",") if x.strip()]  # "a,b,c": the games are dealt round-robin over the maps
         for i in range(n):
             a, b = ctx.Pipe()
-            p = ctx.Process(target=_worker, args=(b, scenario, seed + i, hw, fovea, dict(knobs), rewards, tuple(res), prior_scale), daemon=True)
+            p = ctx.Process(target=_worker, args=(b, names[i % len(names)], seed + i, hw, fovea, dict(knobs), rewards, tuple(res), prior_scale), daemon=True)
             p.start()
             self.remotes.append(a)
             self.procs.append(p)
@@ -652,7 +653,7 @@ def main():
     _install_stop_handlers()
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True)
-    ap.add_argument("--scenario", default="aim_dust2")
+    ap.add_argument("--scenario", default="aim_dust2", help="one scenario, or several separated by commas (games dealt round-robin)")
     ap.add_argument("--init", default="", help="imitation checkpoint to start from (else random init)")
     ap.add_argument("--fovea", type=int, default=80, help="used when --init is not given")
     ap.add_argument("--res", default="", help="render resolution WxH (default: the resumed run's, else 320x240)")
