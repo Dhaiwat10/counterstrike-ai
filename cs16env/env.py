@@ -164,6 +164,12 @@ class CS16Env(gym.Env):
         b.wait_until(lambda s: s.in_game and s.playernum >= 0, max_steps=100000)
         # settle: bots connect, everyone spawns
         b.wait_until(lambda s: self._me(s).alive and self._bots_ready(s), max_steps=3000)
+        if "mp_weapons_allow_map_placed 0" in self.scn.server_cmds:
+            # the map's ground weapons are created at map load, before the setting takes effect: one round restart
+            # removes them (otherwise the first round of a session still shows the rifles)
+            t_restart = self.bridge.state.time
+            b.command("sv_restart 1")
+            b.wait_until(lambda s: s.time > t_restart + 1.2 and self._me(s).alive and self._bots_ready(s), max_steps=5000)
 
     def _me(self, s):
         return s.players[s.playernum] if 0 <= s.playernum < len(s.players) else s.players[0]

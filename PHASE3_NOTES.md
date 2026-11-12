@@ -673,3 +673,17 @@ within 5 deg of the target, then the hybrid on the 300-round exam at 120 and 200
   "about 60%" (pooled over three seeds, 600 rounds: ~59%), not a clean pass.
 - Scope (owner, 19:15): the demo is aim_map only; Dust2 is no longer examined. Live task page: `dashboard/task_server.py`
   (port 8051, reads `scratch/fire_fix_results.jsonl` and `scratch/fire_fix_log.md`).
+
+## Floor rifles removed, real-duel baseline for the new model (2026-11-12, 21:00)
+- `mp_weapons_allow_map_placed 0` added to the aim-map arena scenarios and to the new `duel_aimmap` scenario (the real
+  duel: assigned spawns, one life each, 45 s). The rifles are gone from the second round of a session on (the first
+  round after boot still shows them, until the first restart).
+- Exams of `fire_best` @9875 without the rifles, seed 9001, 300 rounds: 0-1050 u 96.3% (with rifles 97.7%), 1050-1800 u
+  57.3% (with rifles 55.7%). No real change: the stray long-range shots were not caused by the rifles.
+- **10 real duels, `fire_best`, movement off: 0 kills, 10 deaths, 0 damage, 2 firing steps in total.** It no longer stares
+  at the floor or shoots at nothing; it looks level at whatever is in front of it, does not turn to search, and is shot
+  from the side or behind (`scratch/aim_maps/real_duels_new_model_small.mp4`). The baseline for the search/navigation work.
+- The first-round rifles are fixed: `_boot` restarts the round once when the scenario sets `mp_weapons_allow_map_placed 0`.
+  In the real duels the model also ignored an enemy at 87 units (it never trained closer than 250) and at ~1200 units.
+  Decision (owner): no more real duels until it can move; next work is navigation + movement on aim_map, starting with
+  orientation (a navigator teacher that knows which way to turn, plus a "where am I" side-task; no coordinates as input).

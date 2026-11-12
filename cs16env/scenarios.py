@@ -120,5 +120,20 @@ for _name, _map, _pairs in (("aim_aimmap", "aim_map", "aim_map_pairs.npz"), ("ai
     _base = SCENARIOS["aim_dust2"]
     SCENARIOS[_name] = Scenario(
         name=_name, map=_map, bots=_base.bots, bot_difficulty=_base.bot_difficulty, episode_seconds=_base.episode_seconds,
-        end_on_death=True, end_on_kill=True, arena=f"data/arena/{_pairs}", server_cmds=list(_base.server_cmds),
+        end_on_death=True, end_on_kill=True, arena=f"data/arena/{_pairs}",
+        # no rifles lying on the ground: both players are handed one, and the agent locked onto the dark shapes
+        server_cmds=list(_base.server_cmds) + ["mp_weapons_allow_map_placed 0"],
         notes=f"Aim arena on {_map}: enemy placed in view, ends on kill/death/4 s.")
+
+# The real duel on aim_map (the demo target): both players at their own spawn side with a rifle, one life each,
+# first kill ends the round. No arena placement: the agent has to find the enemy.
+SCENARIOS["duel_aimmap"] = Scenario(
+    name="duel_aimmap", map="aim_map", bots=1, bot_difficulty=0, episode_seconds=45.0,
+    end_on_death=True, end_on_kill=True, reset_round=True,
+    server_cmds=_DM_BASE + [
+        "mp_freeforall 1",
+        "mp_t_default_weapons_primary ak47", "mp_ct_default_weapons_primary ak47",
+        "mp_t_default_weapons_secondary \"\"", "mp_ct_default_weapons_secondary \"\"",
+        "mp_weapons_allow_map_placed 0",
+    ],
+    notes="1v1 on aim_map from the assigned spawns; ends at the first kill or death, or after 45 s.")
