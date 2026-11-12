@@ -596,3 +596,80 @@ within 5 deg of the target, then the hybrid on the 300-round exam at 120 and 200
   all three maps pooled): kills 94.5%, close 99%, medium 88% -- unexamined; state in `checkpoints/maps3/last.pt` and
   snapshot `update_009700.pt`. Under discussion: scope the project and the demo to aim_map only (aim_ak-colt dropped),
   and test medium/long range against a bot that does not shoot back (never done beyond 800 units).
+
+## Real duels and firing style on aim_map (2026-11-12, 18:10)
+- **Goal restated by the user:** win proper duels on aim_map, both players starting at their assigned spawns: navigate,
+  find the enemy, move, aim and shoot. aim_ak-colt is out of scope.
+- **10 real duels, current model (update 9025), movement off, bot difficulty 0, 45 s limit** (scenario = `duel_dust2`
+  rules on aim_map; `scratch/aim_maps/aim_map_real_duels_small.mp4`, `..._sheet.jpg`): **0 kills, 8 deaths, 2 time-outs,
+  0 damage dealt in every round.** It has no search behaviour: with no enemy on screen it stares at the floor or a wall,
+  and it locks onto the rifles lying on the ground (dark shapes on sand) and sometimes shoots at them. The enemy walks up
+  and kills it. (The env's "in view" label is only an angle test, not line of sight: it was "in view" in 5 rounds
+  without a single hit.)
+- **Firing style** (`fire_analysis.py`, 40 arena duels on aim_map up to 1800 u, greedy): the user's observation is right.
+
+  | While firing | Model | Scripted teacher |
+  |---|---|---|
+  | steps with a vertical mouse move | 100% | 13% |
+  | mean vertical move per step | 1.59 deg | 0.04 deg |
+  | crosshair off the chest (yaw / pitch) | 1.3 / 2.0 deg | 0.2 / 0.1 deg |
+  | firing steps per kill | 7.6 | 4.2 |
+  | kills beyond 900 u | 1 of 3 | 5 of 6 |
+
+  Over all 866 steps the model never once chose "no vertical move" (teacher: 503 of 624). Typical firing stretch:
+  +3, -1, -1, -1, +3, -1, -1, -1, -1, +3 degrees: a sawtooth of ~3 degrees. At 1000+ units the enemy is about 1 degree
+  tall, so this wobble is the likely cause of the medium/long-range weakness, not eyesight.
+
+## Fire fix: the agent now holds still and taps (2026-11-12, 18:15-20:05)
+- **Recoil in this build (measured, `scratch/fire/recoil_probe.py`, `bullet_probe.py`):** holding fire never changes the
+  server view angle (pitch stayed 0.000 through a 14-step spray); the rendered picture kicks up (~24 px = ~4 deg after 14
+  steps) and settles in ~0.3 s; bullet holes from that spray climb to 3.6 deg above the crosshair, a single shot lands on
+  it. So it is CS 1.6 punchangle: the on-screen crosshair is where the gun shoots. Every label/metric based on the view
+  angle (teacher, aim shaping, off-target cost, fire_analysis "off chest") ignores the kick; for taps the two agree.
+- **Cause of the sawtooth (`scratch/fire/analyze_log.py`, `probs_probe.py`, `grad_probe.py`):**
+  1. Not recoil-fighting: the +-3 deg alternation is there with no shot in the last 10 steps (46% -3, 33% +3). Near the
+     target the pitch head put only 5% on "no vertical move" and ~40% on the 3-deg bins: a bang-bang controller with no
+     zero, which overshoots both ways. (During long sprays the -1 deg/step pulls are genuine recoil control.)
+  2. The teacher's turn at coef 0.02 was ~1/14 of the policy-gradient push on near-target steps, too weak to shape the
+     hold (10x near-target weight: no change in 40 updates; 50x: the change starts within 10 updates).
+  3. Greedy decoding of a broad ordinal distribution: after (2) the sampled choice matched the teacher on average (~45%
+     on -0.25/0/+0.25), but split three ways each lost to +-1, so greedy play kept moving. The teacher itself always
+     nudges by tiny amounts, so "0" never won. A dead band on the teacher's vertical turn (< 0.4 deg -> 0) fixed it.
+- **New trainer/env options (all default-off):** `--teacher-near-mult/--teacher-near-deg`, `--teacher-pitch-deadband`,
+  `--max-dist` (final stage range, with --no-delay), `--passive-frac` (share of strafing passive-bot rounds, not counted),
+  `--teacher-fire-coef/--teacher-fire-rule reach` (reachable fire label with cadence by distance; built, not used),
+  `--hold-cost/--hold-deg` (built, not used), `--ent-pitch-mult` (built, not used); `TorchAgent(decode="median")`
+  (+ `--decode median` in exam.py; built, not used for the results). Tests: collector, ppo_math, teacher_resume, remote pass.
+- **Runs:** `fire_near50` (from `mb_nd_focus600/last.pt`, near-mult 50) -> `fire_n50_long` (+ `--max-dist 1800
+  --passive-frac 0.25`) -> `fire_deadband` (+ `--teacher-pitch-deadband 0.4`); ~50 min of training in all.
+- **Results (greedy, 0 ms, same rounds as the baseline update 9025):**
+
+  | | Baseline 9025 | near50 @9650 | + long @9800 | + dead band @9875 (best) | Pass mark |
+  |---|---|---|---|---|---|
+  | vertical move share while firing | 100% | 99% | 100% | **28% / 20%** (2 runs) | <= 35% |
+  | mean vertical move while firing | 1.59 deg | 0.69 | 0.43 | **0.28 / 0.22** | <= 0.4 |
+  | off chest while firing, yaw / pitch | 1.3 / 2.0 deg | 0.86 / 0.76 | 0.67 / 0.65 | **0.70 / 0.56, 0.63 / 0.51** | <= 0.8 |
+  | firing steps per kill | 7.6 | 3.7 | 3.7 | **3.2 / 3.7** | <= 5.5 |
+  | aim_map 1050-1800 vs shooting bot, s777 / s4242 | 34.7 / 33.3% | 46.0 / 41.3 | 64.0 / 60.0 | **64.7 / 61.3%** | >= 60% |
+  | same band vs passive bot, s777 | 40.0% | 58.0 | 71.3 | **69.3%** | report |
+  | aim_map 0-1050, s777 / s4242 | 93.0 / 92.3% | 95.0 / 95.7 | - | **96.3 / 97.0%** | >= 90% |
+  | aim_map 0-1800, s777 | 92.7% | 94.3 | - | **95.0%** | - |
+  | median time to kill (0-1050) | 0.52 s | 0.40-0.44 | - | 0.44 s | as fast |
+
+  Dust2 was dropped from scope by the owner mid-task (not examined for the new model).
+- **Best model:** `checkpoints/fire_best/fire_best_update9875.pt` (= `fire_deadband/snapshots/update_009875.pt`, README
+  beside it). Videos: `scratch/aim_maps/fire_best_duels.mp4` (16 rounds to 1800 u) and `baseline_same_rounds_duels.mp4`
+  (same rounds), `fire_best_long_duels.mp4` / `baseline_long_duels.mp4` (16 rounds beyond 1050 u).
+- **Fire style:** ~96% of bursts are single steps with a median 2-step pause at every range (rapid taps); it does not
+  switch to longer bursts up close, nor slow its cadence at long range. Allowed by the brief, but not range-adaptive.
+- **Open problem at long range:** in a long-only firing table (40 duels beyond 1050 u) the vertical hold is good (15% of
+  firing steps move, 0.15 deg) but 38% of its firing steps are > 5 deg away from the enemy (median 1.1 deg; baseline:
+  3.1 deg median, 35% > 5 deg): it still shoots at something else at range, probably the dark rifle shapes on the
+  ground noted at 18:10. 23 kills / 7 deaths / 10 time-outs vs baseline 14 / 12 / 14. Not addressed here.
+- **Independent check (main session, fresh seed 9001, 300 rounds each, greedy default decoding):** aim_map 0-1050:
+  new 97.7% vs baseline 93.3%. aim_map 1050-1800: new **55.7%** vs baseline 28.0% (deaths 25% vs 43%, time to kill
+  0.92 s vs 1.94 s; beyond 1200 u 42% vs 15%). Firing table re-run: 25% of firing steps move vertically, 0.27 deg,
+  off chest 0.67 / 0.52 deg, 3.5 firing steps per kill, 40/40 kills. So the firing marks hold; the long-range mark is
+  "about 60%" (pooled over three seeds, 600 rounds: ~59%), not a clean pass.
+- Scope (owner, 19:15): the demo is aim_map only; Dust2 is no longer examined. Live task page: `dashboard/task_server.py`
+  (port 8051, reads `scratch/fire_fix_results.jsonl` and `scratch/fire_fix_log.md`).

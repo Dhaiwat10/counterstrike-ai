@@ -54,6 +54,8 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
     env.aim_shaping, env.bullet_cost, env.rw_dmg = rewards["aim_shaping"], rewards["bullet_cost"], rewards["damage"]
     env.shaping_gamma = rewards["gamma"]
     env.offtarget_cost, env.acquire_bonus = rewards.get("offtarget", 0.0), rewards.get("acquire", 0.0)
+    env.fire_rule = rewards.get("fire_rule", "tap")
+    env.hold_cost, env.hold_deg = rewards.get("hold_cost", 0.0), rewards.get("hold_deg", 1.5)
 
     def set_knobs(k):
         env.arena_max_offset, env.arena_max_dist = k["offset"], k["dist"]
@@ -78,6 +80,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
 
     def choose_round():  # before each reset: usually the current stage, sometimes an earlier one
         state["delayed"] = False
+        state["passive"] = False
         if state["pool"] and rng.random() < rewards.get("rehearsal", 0.0):
             set_knobs(rng.choice(state["pool"])); state["rehearsing"] = True
         else:
@@ -85,6 +88,11 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
             # 0 ms stages: some rounds get a random small delay so habits stay delay-robust (not counted for promotion)
             if state["cur"]["delay"] == 0.0 and rng.random() < rewards.get("rand_delay", 0.0):
                 env.set_reaction_delay(rng.choice((0.04, 0.08))); state["delayed"] = True
+            # --passive-frac: a strafing bot that never shoots back, so long shots can be practised (never counted)
+            if rewards.get("passive_frac", 0.0) > 0 and rng.random() < rewards["passive_frac"]:
+                delay = env.delay_steps
+                set_knobs(dict(state["cur"], bot=1)); state["passive"] = True
+                env.delay_steps = delay
 
     choose_round()
     obs, info = env.reset(seed=seed)
@@ -108,7 +116,8 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
                     ep = dict(ret=ep_ret, kills=info["kills"], deaths=info["deaths"], damage=info["damage"],
                               time=info["time"], timeout=bool(trunc), dist=info["spawn_dist"], offset=info["spawn_offset"],
                               acquire=info.get("acquire_time"), rehearsal=state["rehearsing"], delayed=state["delayed"],
-                              no_contest=info.get("no_contest", False), leashed=info.get("leashed", False))
+                              no_contest=info.get("no_contest", False), leashed=info.get("leashed", False),
+                              passive=state["passive"])
                     ep_ret = 0.0
                     if trunc:
                         final = views(obs)  # bootstrap V(final obs) on a time-limit cut
@@ -511,10 +520,17 @@ def soft_bins(table, x):
     return tgt
 
 
-def teacher_loss_soft(lg, lab, fire_head=True):
+def teacher_loss_soft(lg, lab, fire_head=True, near_mult=1.0, near_deg=0.0, fire_out=None, pitch_deadband=0.0):
     """Copy the delayed oracle in full (lab[..., 9:13] = yaw turn deg, view-pitch turn deg, fire, valid): soft two-bin
     cross-entropy on the yaw and pitch heads plus cross-entropy on the attack head, averaged over valid steps
-    (valid = both players alive, enemy on screen or not). Returns (loss, stats)."""
+    (valid = both players alive, enemy on screen or not). Returns (loss, stats).
+    near_mult/near_deg (--teacher-near-*): steps where the teacher's wanted turn is under near_deg degrees (the
+    crosshair is already on or next to the target) weigh near_mult times in the turn term, so "hold still on the
+    target" is not drowned out by the far more numerous flick steps. 1.0 = off (unchanged).
+    fire_out: a list; if given, the fire cross-entropy (averaged over valid steps) is appended to it as a separate
+    tensor instead of being added to the returned loss (the trainer weighs it with --teacher-fire-coef).
+    pitch_deadband (--teacher-pitch-deadband): a wanted vertical turn smaller than this many degrees becomes "no vertical
+    move" in the target (a player does not re-adjust vertically while the crosshair is on the body). 0 = off."""
     parts = Policy.split(lg)
     valid = lab[..., 12].reshape(-1)
     n = valid.sum()
@@ -525,11 +541,21 @@ def teacher_loss_soft(lg, lab, fire_head=True):
     lp = F.log_softmax(parts[ip].reshape(-1, NVEC[ip]), -1)
     la = parts[ia].reshape(-1, NVEC[ia])
     ty = soft_bins(YAW_TABLE, lab[..., 9].reshape(-1))
-    tp = soft_bins(PITCH_TABLE, -lab[..., 10].reshape(-1))  # the env turns the view pitch by -PITCH_TABLE[a1]
+    dp = lab[..., 10].reshape(-1)
+    if pitch_deadband > 0:
+        dp = torch.where(dp.abs() < pitch_deadband, torch.zeros_like(dp), dp)
+    tp = soft_bins(PITCH_TABLE, -dp)  # the env turns the view pitch by -PITCH_TABLE[a1]
     fire = lab[..., 11].reshape(-1).long()
     per = -(ty * ly).sum(-1) - (tp * lp).sum(-1)
-    if fire_head:  # (off with --teacher-aim-only: the oracle's tap rule needs aim within ~9 units of the chest, which a
-        per = per + F.cross_entropy(la, fire, reduction="none")  # sloppier aimer almost never meets -> "never fire")
+    near = None
+    if near_mult != 1.0 and near_deg > 0:
+        near = (torch.hypot(lab[..., 9].reshape(-1), lab[..., 10].reshape(-1)) < near_deg).float()
+        per = per * (1.0 + (near_mult - 1.0) * near)
+    fce = F.cross_entropy(la, fire, reduction="none")
+    if fire_out is not None:
+        fire_out.append((fce * valid).sum() / n)
+    elif fire_head:  # (off with --teacher-aim-only: the oracle's tap rule needs aim within ~9 units of the chest, which a
+        per = per + fce  # sloppier aimer almost never meets -> "never fire")
     loss = (per * valid).sum() / n
     with torch.no_grad():
         yt = torch.as_tensor(YAW_TABLE, device=lg.device)
@@ -538,6 +564,11 @@ def teacher_loss_soft(lg, lab, fire_head=True):
                      teacher_agree=(((ly.argmax(-1) == lab[..., 6].reshape(-1).long()).float() * valid).sum() / n).item(),
                      teacher_fire_agree=(((la.argmax(-1) == fire).float() * valid).sum() / n).item(),
                      teacher_fire_rate=((fire.float() * valid).sum() / n).item(), teacher_valid=(n / valid.numel()).item())
+        if near is not None:
+            stats["teacher_near_share"] = ((near * valid).sum() / n).item()
+        pt = torch.as_tensor(PITCH_TABLE, device=lg.device)
+        stats["pitch_p0"] = ((lp.exp()[:, len(PITCH_TABLE) // 2] * valid).sum() / n).item()  # P(no vertical move)
+        stats["pitch_greedy_abs"] = ((pt[lp.argmax(-1)].abs() * valid).sum() / n).item()
     return loss, stats
 
 
@@ -669,6 +700,9 @@ def main():
     ap.add_argument("--ent", type=float, default=0.01, help="coef on mean normalised entropy of learned heads")
     ap.add_argument("--ent-yaw-mult", type=float, default=1.0,
                     help="extra exploration on the turning (yaw) head: its entropy term is multiplied by this")
+    ap.add_argument("--ent-pitch-mult", type=float, default=1.0,
+                    help="the vertical-aim (pitch) head's entropy term is multiplied by this (<1 = a sharper pitch choice; "
+                         "1 = unchanged)")
     ap.add_argument("--kl-prior", default="", help="imitation checkpoint: penalise drifting from its turning habits (KL)")
     ap.add_argument("--kl-coef", type=float, default=0.05, help="initial weight of KL(prior || policy) on --kl-heads")
     ap.add_argument("--kl-min", type=float, default=0.01, help="weight after decay")
@@ -744,6 +778,30 @@ def main():
                          "term (--teacher-coef, 1 if not given) plus the value and auxiliary losses. The policy still plays "
                          "the rounds itself, so it is corrected on the situations it gets itself into (DAgger)")
     ap.add_argument("--teacher-decay-steps", type=float, default=4e6, help="linear decay of the teacher weight (env steps from launch)")
+    ap.add_argument("--teacher-near-mult", type=float, default=1.0,
+                    help="with --teacher-soft: steps where the teacher's wanted turn is under --teacher-near-deg (crosshair "
+                         "on/next to the target) weigh this many times in the turn term (1 = off, unchanged)")
+    ap.add_argument("--teacher-near-deg", type=float, default=2.0, help="see --teacher-near-mult (degrees)")
+    ap.add_argument("--teacher-pitch-deadband", type=float, default=0.0,
+                    help="with --teacher-soft: the teacher's wanted vertical turn counts as 0 when smaller than this (degrees); "
+                         "teaches holding still vertically on the body. 0 = off")
+    ap.add_argument("--teacher-fire-coef", type=float, default=0.0,
+                    help="with --teacher-soft: weight of a separate cross-entropy of the attack head toward the teacher's fire "
+                         "label (not decayed; use with --teacher-aim-only so it is not counted twice). 0 = off")
+    ap.add_argument("--teacher-fire-rule", choices=("tap", "reach"), default="tap",
+                    help="teacher's fire label: tap = the oracle's rule (within ~9 units of the chest, 3 steps since the last "
+                         "shot; unchanged default); reach = fire when the crosshair is on the body (a reachable tolerance) "
+                         "with a cadence by distance (bursts up close, 2-step bursts mid range, single taps at long range); "
+                         "see CS16Env._fire_label")
+    ap.add_argument("--max-dist", type=float, default=0.0,
+                    help="with --no-delay: maximum start distance of the final stage in units (0 = the stage's own, 1050)")
+    ap.add_argument("--passive-frac", type=float, default=0.0,
+                    help="share of rounds played against a strafing bot that never shoots back (bot level 1), so long shots can "
+                         "be practised; tracked separately, never counted for the curriculum. 0 = off")
+    ap.add_argument("--hold-cost", type=float, default=0.0,
+                    help="reward per degree of view movement (|yaw| + |pitch| turn) on steps that start with the crosshair "
+                         "within --hold-deg of the enemy's chest (teaches holding still on target). 0 = off")
+    ap.add_argument("--hold-deg", type=float, default=1.5, help="see --hold-cost (degrees)")
     ap.add_argument("--act-hist", type=int, default=0,
                     help="feed the last K actions to the policy (zero-initialised extra input; 0 = off, unchanged behaviour). "
                          "With delayed frames this lets the agent know where its crosshair is NOW")
@@ -764,6 +822,8 @@ def main():
     ap.add_argument("--peer-key-file", default="data/peer.key", help="shared secret for the weight link (same file on every machine)")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
+    assert (a.teacher_near_mult == 1.0 and a.teacher_fire_coef == 0) or (a.teacher_soft and a.teacher_coef > 0), \
+        "--teacher-near-mult / --teacher-fire-coef need --teacher-soft and --teacher-coef > 0"
     if a.teacher_only and a.teacher_coef <= 0:
         a.teacher_coef = a.teacher_min = 1.0
     assert a.teacher_beta == 0 or (a.teacher_only and a.collect in ("async", "remote")), \
@@ -786,7 +846,8 @@ def main():
     heads = [h.strip() for h in a.heads.split(",") if h.strip()]
     mask = [h in heads for h in HEADS]
     # per-head entropy weights (learned heads only): the turning head can get extra exploration
-    head_w = torch.tensor([a.ent_yaw_mult if h == "yaw" else 1.0 for h in HEADS if h in heads], device=dev)
+    head_w = torch.tensor([a.ent_yaw_mult if h == "yaw" else a.ent_pitch_mult if h == "pitch" else 1.0
+                           for h in HEADS if h in heads], device=dev)
     if a.init:
         ck = torch.load(a.init, map_location="cpu")
         ba = ck["args"]
@@ -847,8 +908,12 @@ def main():
     stages = curriculum_stages(delay_ramp=a.delay_ramp or None)
     if a.no_delay:  # the delay stages collapse into one: their knobs (all rounds count, no newest-band bias) at 0 ms
         stages = [s for s in stages if s["delay"] == 0.0] + [dict(stages[-1], delay=0.0)]
+        if a.max_dist > 0:  # final stage out to the map's full range
+            stages[-1]["dist"] = a.max_dist
         if a.focus_dist > 0:  # half the rounds of the final stage come from beyond this distance (all rounds still count)
             stages[-1]["dist_min"] = a.focus_dist
+    else:
+        assert a.max_dist == 0, "--max-dist goes with --no-delay"
     stage = max(0, a.stage0)
     if resume is not None:
         stage = a.stage0 if a.stage0 >= 0 else int(resume.get("stage", 0))
@@ -859,6 +924,13 @@ def main():
                    time_round=a.time_penalty_round, hurt=a.hurt_penalty, gamma=a.gamma, review=a.review_frac,
                    offtarget=a.offtarget_cost, acquire=a.acquire_bonus, rehearsal=a.rehearsal, no_contest=a.no_contest,
                    rand_delay=a.rand_delay, leash=a.leash, leash_frac=a.leash_frac, min_vis=a.min_vis)
+    # options added 2026-11-12 (fire fix); only present when switched on, so the workers' defaults stay unchanged
+    for key, val, off in (("fire_rule", a.teacher_fire_rule, "tap"), ("passive_frac", a.passive_frac, 0.0),
+                          ("hold_cost", a.hold_cost, 0.0)):
+        if val != off:
+            rewards[key] = val
+    if a.hold_cost:
+        rewards["hold_deg"] = a.hold_deg
     venv = None
     if a.collect != "remote":
         venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, rewards, seed=a.seed * 100, res=res,
@@ -889,6 +961,7 @@ def main():
     reh = collections.deque(maxlen=200)  # rehearsal rounds (earlier stages), tracked separately
     nc = collections.deque(maxlen=200)   # share of current-stage rounds ended as no-contest
     dly = collections.deque(maxlen=200)  # randomised-delay rounds (0 ms stages), tracked separately
+    psv = collections.deque(maxlen=200)  # --passive-frac rounds, tracked separately
     passes = 0    # consecutive windows that cleared the pass mark
     all_eps = 0
     t0 = time.time()
@@ -907,6 +980,9 @@ def main():
         nonlocal all_eps, stage_eps
         if e.get("rehearsal"):
             reh.append(e); all_eps += 1
+            return
+        if e.get("passive"):  # --passive-frac round (bot never shoots back): tracked, never counted
+            psv.append(e); all_eps += 1
             return
         if e.get("delayed"):  # randomised-delay round at a 0 ms stage: tracked, never counted
             if not e.get("no_contest"):
@@ -1087,9 +1163,15 @@ def main():
                             stats[key].append(val)
                     if teacher_coef > 0:  # kick-starting toward the delayed oracle (masked to rounds/steps where it is defined)
                         if a.teacher_soft:
-                            tl, tst = teacher_loss_soft(lg.float(), AUX[j], fire_head=not a.teacher_aim_only)
+                            fire_out = [] if a.teacher_fire_coef > 0 else None
+                            tl, tst = teacher_loss_soft(lg.float(), AUX[j], fire_head=not a.teacher_aim_only,
+                                                        near_mult=a.teacher_near_mult, near_deg=a.teacher_near_deg,
+                                                        fire_out=fire_out, pitch_deadband=a.teacher_pitch_deadband)
                             for key, val in tst.items():
                                 stats[key].append(val)
+                            if fire_out:
+                                loss = loss + a.teacher_fire_coef * fire_out[0]
+                                stats["teacher_fire"].append(fire_out[0].item())
                         else:
                             tl, tagree = teacher_loss(lg.float(), AUX[j])
                             stats["teacher_agree"].append(tagree)
@@ -1164,6 +1246,11 @@ def main():
                        kill_rehearsal=float(np.mean([e["kills"] > 0 for e in reh])) if reh else None,
                        no_contest_rate=float(np.mean(nc)) if nc else None, kl_coef=kl_coef, teacher_coef=teacher_coef,
                        kill_delayed=float(np.mean([e["kills"] > 0 for e in dly])) if dly else None,
+                       **({"kill_passive": float(np.mean([e["kills"] > 0 for e in psv])),
+                           "kill_passive_long": float(np.mean([e["kills"] > 0 for e in psv if e["dist"] >= 1050]))
+                           if any(e["dist"] >= 1050 for e in psv) else None} if psv else {}),
+                       **({"kill_long_1050": float(np.mean([e["kills"] > 0 for e in E if e["dist"] >= 1050]))}
+                          if any(e["dist"] >= 1050 for e in E) else {}),
                        **{f"kill_{b}": float(np.mean([e["kills"] > 0 for e in E if band_of(e["dist"]) == b]))
                           for b in ("close", "medium", "long") if any(band_of(e["dist"]) == b for e in E)},
                        **{f"kill_ang_{b}": float(np.mean([e["kills"] > 0 for e in E if angle_band(e.get("offset", 0)) == b]))

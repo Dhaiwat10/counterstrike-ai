@@ -141,6 +141,14 @@ class CS16Env(gym.Env):
         self._ep_offset = 0.0
         self._obs_queue: collections.deque = collections.deque()
         self._since_shot = 99  # agent steps since the agent last held fire (for the teacher's tap cadence)
+        self._burst = 0        # consecutive agent steps the agent has held fire (for the "reach" fire rule)
+        # teacher's fire label (training only, see _fire_label): "tap" = the oracle's rule (default, unchanged);
+        # "reach" = on the body with a cadence by distance
+        self.fire_rule = "tap"
+        # training only: reward per degree of view movement on steps that start with the crosshair within hold_deg of
+        # the enemy's chest (0 = off)
+        self.hold_cost = 0.0
+        self.hold_deg = 1.5
         self._blank = np.zeros((height, width, 3), np.uint8)
 
     # ------------------------------------------------------------------ engine lifecycle
@@ -189,6 +197,7 @@ class CS16Env(gym.Env):
         s = b.step(apply=True, capture=True)  # one neutral step to get a fresh frame
         self._ep_start = s.time
         self._since_shot = 99
+        self._burst = 0
         self._acquired_t = None
         self._hidden_steps = 0
         self._snap = self._snapshot(s)
@@ -228,6 +237,8 @@ class CS16Env(gym.Env):
         reward = 0.0
         terminated = False
         aim0 = self._snap["aim"]
+        if self.hold_cost and aim0[1] is not None and aim0[1] < self.hold_deg:
+            reward -= self.hold_cost * (abs(yaw) + abs(pitch))
         for i in range(self.repeat):
             cmds = [self._strafe_tick(), self._leash_tick(),
                     self._los_cmd() if i == self.repeat - 1 and self.no_contest_after else ""]
@@ -252,6 +263,7 @@ class CS16Env(gym.Env):
         if a[4] and self.bullet_cost:
             reward -= self.bullet_cost
         self._since_shot = 0 if a[4] else self._since_shot + 1
+        self._burst = self._burst + 1 if a[4] else 0
         reward -= self.time_penalty
         frame = b.frame()
         self._obs_queue.append(frame if frame is not None else self._obs_queue[-1])
@@ -314,10 +326,30 @@ class CS16Env(gym.Env):
             out[4] = int(np.argmin(np.abs(-PITCH_TABLE - dp)))  # the env turns the view pitch by -PITCH_TABLE[a1]
             out[5] = float(past[2] > 0)
             out[6], out[7] = dy, dp
-            on = math.hypot(dy, dp) < max(0.4, math.degrees(math.atan2(9.0, max(float(past[6]), 1.0))))
-            out[8] = float(on and self._since_shot >= 3)
+            out[8] = self._fire_label(dy, dp, float(past[6]))
             out[9] = 1.0
         return out
+
+    def _fire_label(self, dy, dp, dist):
+        """Teacher's fire decision for the next step, from the crosshair's offset (dy, dp degrees) to the enemy's chest
+        (by the real view angle, which ignores the recoil kick; see the recoil notes in PHASE3_NOTES.md 2026-11-12).
+        tap  : within ~9 units of the chest (>= 0.4 deg) and no shot in the last 3 steps (the oracle's single taps).
+        reach: on the body -- within 10 units sideways and 14 units up/down of the chest point, plus 0.15 deg -- with a
+               cadence by distance: under 500 units bursts of up to 5 steps (then 2 steps' pause), 500-1000 units
+               bursts of up to 2 steps then 3 steps' pause, beyond 1000 units single taps 3 steps apart (the kick has
+               decayed by then, so every shot leaves from where the crosshair is)."""
+        d = max(dist, 1.0)
+        if self.fire_rule == "reach":
+            on = (abs(dy) < math.degrees(math.atan2(10.0, d)) + 0.15) and (abs(dp) < math.degrees(math.atan2(14.0, d)) + 0.15)
+            if dist < 500.0:
+                ok = (0 < self._burst < 5) or self._since_shot >= 2
+            elif dist < 1000.0:
+                ok = (0 < self._burst < 2) or self._since_shot >= 3
+            else:
+                ok = self._since_shot >= 3
+            return float(on and ok)
+        on = math.hypot(dy, dp) < max(0.4, math.degrees(math.atan2(9.0, d)))
+        return float(on and self._since_shot >= 3)
 
     def _aux_label(self, s, with_dist=False):
         """(signed yaw error, signed pitch error, in-view flag) of the nearest live enemy's chest relative
@@ -562,7 +594,7 @@ class CS16Env(gym.Env):
 
     def _snapshot(self, s):
         me = s.playernum
-        tgt, err = self._aim_error(s) if (self.aim_shaping or self.offtarget_cost or self.acquire_bonus) else (None, None)
+        tgt, err = self._aim_error(s) if (self.aim_shaping or self.offtarget_cost or self.acquire_bonus or self.hold_cost) else (None, None)
         return {
             "aim": (tgt, err),
             "frags": self._me(s).frags,

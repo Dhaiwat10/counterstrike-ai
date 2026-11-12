@@ -26,7 +26,7 @@ from cs16env.vision import views_from_frame
 
 
 class TorchAgent:
-    def __init__(self, ckpt: str, temperature: float = 1.0, device: str = "mps"):
+    def __init__(self, ckpt: str, temperature: float = 1.0, device: str = "mps", decode: str = "argmax"):
         ck = torch.load(ckpt, map_location="cpu")
         a = ck["args"]
         self.hw = tuple(a["hw"])
@@ -40,6 +40,11 @@ class TorchAgent:
         active = a.get("active_heads")
         self.mask = [h in active for h in HEADS] if active else [True] * len(HEADS)
         self.temp = temperature
+        # greedy decoding of the turn heads: "argmax" (default) = most likely bin; "median" = the bin where the cumulative
+        # probability crosses 1/2 (the bins are ordered turns: a broad distribution whose small turns together are most
+        # likely, but each less likely than +-1 deg, then gives a small turn instead of alternating +-1 deg)
+        assert decode in ("argmax", "median")
+        self.decode = decode
         self.state = None
 
     def reset(self):
@@ -71,7 +76,10 @@ class TorchAgent:
             if not self.mask[k]:  # head not learned by this policy: "no input"
                 out.append(IDLE[k])
             elif self.temp <= 0:
-                out.append(int(p.argmax()))
+                if self.decode == "median" and k in (0, 1):
+                    out.append(int((torch.cumsum(torch.softmax(p.float(), -1), -1) < 0.5).sum().clamp(max=p.shape[-1] - 1)))
+                else:
+                    out.append(int(p.argmax()))
             else:
                 out.append(int(torch.multinomial(torch.softmax(p.float() / self.temp, -1), 1)))
         self.push_action(out)
