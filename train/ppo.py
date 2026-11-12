@@ -37,6 +37,9 @@ from cs16env.env import PITCH_TABLE, YAW_TABLE
 from cs16env.policy import HEADS, NVEC, Policy
 
 IDLE = (NVEC[0] // 2, NVEC[1] // 2, 0, 0, 0, 0, 0, 0, 0)  # "no input" for every head
+# training-only labels per step: aux (3) + aux now (3) + teacher yaw bin, pitch bin, valid (3)
+# + teacher yaw turn, pitch turn in degrees, fire, valid-even-off-screen (4); see CS16Env._aux_ext
+N_LABELS = 13
 LOGN = torch.tensor([math.log(n) for n in NVEC])
 
 
@@ -89,8 +92,8 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
     def views(o):
         return views_from_frame(o, hw, fovea, extra_scale=prior_scale)
 
-    def labels(inf):  # training-only labels: aux (3) + aux now (3) + teacher action (3); see CS16Env._aux_ext
-        return np.concatenate([inf["aux"], inf.get("aux_ext", np.zeros(6, np.float32))]).astype(np.float32)
+    def labels(inf):  # training-only labels (N_LABELS values); see CS16Env._aux_ext
+        return np.concatenate([inf["aux"], inf.get("aux_ext", np.zeros(N_LABELS - 3, np.float32))]).astype(np.float32)
 
     remote.send((views(obs), labels(info)))
     ep_ret = 0.0
@@ -196,7 +199,7 @@ class Collector:
         def buf(shape=(), dtype=np.float32):
             return np.zeros((N, T, *shape), dtype)
 
-        self.b = dict(P=buf(v0[0].shape, np.uint8), AUX=buf((9,)), A=buf((len(NVEC),), np.int64), LP=buf(), V=buf(),
+        self.b = dict(P=buf(v0[0].shape, np.uint8), AUX=buf((N_LABELS,)), A=buf((len(NVEC),), np.int64), LP=buf(), V=buf(),
                       Vn=buf(), R=buf(), TERM=buf(), S=buf())
         if self.fovea:
             self.b["F"] = buf(v0[1].shape, np.uint8)
@@ -213,6 +216,11 @@ class Collector:
         self.ready, self.pending, self.boot = list(range(N)), set(), {}
         self.finished = collections.deque()
         self.serves = self.served = 0
+        # copy-only training (--teacher-beta): share of steps on which the teacher's action is executed instead of the
+        # policy's own. Early on the policy cannot yet follow the teacher's one-step turns under delay (it repeats
+        # them and spins past the enemy), so the teacher drives most steps and hands over gradually.
+        self.beta = 0.0
+        self.rng = np.random.default_rng(0)
 
     def collect(self, n, on_episode):
         """Run until n segments are complete; on_episode(record) is called for every finished round."""
@@ -274,6 +282,11 @@ class Collector:
             act, lp, _ = dist_stats(lg[nb:, 0], self.mask)
         self.H[:, ii], self.C[:, ii] = h2[:, nb:], c2[:, nb:]
         v_np, act_np, lp_np = v[:, 0].float().cpu().numpy(), act.cpu().numpy(), lp.float().cpu().numpy()
+        if self.beta > 0:
+            for k, i in enumerate(idx):
+                lab = self.cur[i][1]
+                if lab[12] > 0 and self.rng.random() < self.beta:  # the teacher drives this step
+                    act_np[k, 0], act_np[k, 1], act_np[k, 4] = int(lab[6]), int(lab[7]), int(lab[11])
         if any(self.t[i] in (0, T) for i in idx):
             hp, cp = h_pre[0].cpu().numpy(), c_pre[0].cpu().numpy()
         for k, i in enumerate(boots):
@@ -426,7 +439,7 @@ def dist_stats(logits, mask, actions=None):
     return torch.stack(acts, -1), torch.stack(logps, -1).sum(-1), E
 
 
-def seq_forward(model, frames, fov, state, starts, hist=None):
+def seq_forward(model, frames, fov, state, starts, hist=None, want_loc=False):
     """Recompute over a [N, T] rollout; LSTM state zeroed where an episode starts (starts[n, t] = 1)."""
     N, T = frames.shape[:2]
     z = model.encode(frames, fov, hist)  # [N, T, H] in one batch
@@ -447,6 +460,8 @@ def seq_forward(model, frames, fov, state, starts, hist=None):
         ax = model.aux(o)
         if hasattr(model, "aux_now"):
             ax = torch.cat([ax, model.aux_now(o)], -1)
+        if want_loc:
+            return model.heads(o), model.value(o).squeeze(-1), ax, model.loc(o)
         return model.heads(o), model.value(o).squeeze(-1), ax
 
 
@@ -479,6 +494,88 @@ def teacher_loss(lg, lab):
     yaw = parts[HEADS.index("yaw")].reshape(-1, parts[HEADS.index("yaw")].shape[-1]).argmax(-1)
     agree = (((yaw == lab[..., 6].reshape(-1).long()).float() * valid).sum() / n).item()
     return loss, agree
+
+
+def soft_bins(table, x):
+    """Two-bin target for a turn of x degrees: probability on the bins either side of x, weighted so that the expected
+    turn equals x (a turn that falls between two bins is not a miss on either). table ascending; x [...] -> [..., n]."""
+    t = torch.as_tensor(np.asarray(table), dtype=torch.float32, device=x.device)
+    x = x.float().clamp(t[0], t[-1]).contiguous()
+    hi = torch.searchsorted(t, x).clamp(1, len(t) - 1)
+    lo = hi - 1
+    w = ((x - t[lo]) / (t[hi] - t[lo])).clamp(0.0, 1.0)
+    tgt = torch.zeros(*x.shape, len(t), device=x.device)
+    tgt.scatter_(-1, lo.unsqueeze(-1), (1.0 - w).unsqueeze(-1))
+    tgt.scatter_add_(-1, hi.unsqueeze(-1), w.unsqueeze(-1))
+    return tgt
+
+
+def teacher_loss_soft(lg, lab, fire_head=True):
+    """Copy the delayed oracle in full (lab[..., 9:13] = yaw turn deg, view-pitch turn deg, fire, valid): soft two-bin
+    cross-entropy on the yaw and pitch heads plus cross-entropy on the attack head, averaged over valid steps
+    (valid = both players alive, enemy on screen or not). Returns (loss, stats)."""
+    parts = Policy.split(lg)
+    valid = lab[..., 12].reshape(-1)
+    n = valid.sum()
+    if n < 1:
+        return lg.sum() * 0.0, {}
+    iy, ip, ia = HEADS.index("yaw"), HEADS.index("pitch"), HEADS.index("attack")
+    ly = F.log_softmax(parts[iy].reshape(-1, NVEC[iy]), -1)
+    lp = F.log_softmax(parts[ip].reshape(-1, NVEC[ip]), -1)
+    la = parts[ia].reshape(-1, NVEC[ia])
+    ty = soft_bins(YAW_TABLE, lab[..., 9].reshape(-1))
+    tp = soft_bins(PITCH_TABLE, -lab[..., 10].reshape(-1))  # the env turns the view pitch by -PITCH_TABLE[a1]
+    fire = lab[..., 11].reshape(-1).long()
+    per = -(ty * ly).sum(-1) - (tp * lp).sum(-1)
+    if fire_head:  # (off with --teacher-aim-only: the oracle's tap rule needs aim within ~9 units of the chest, which a
+        per = per + F.cross_entropy(la, fire, reduction="none")  # sloppier aimer almost never meets -> "never fire")
+    loss = (per * valid).sum() / n
+    with torch.no_grad():
+        yt = torch.as_tensor(YAW_TABLE, device=lg.device)
+        err = (yt[ly.argmax(-1)] - lab[..., 9].reshape(-1).clamp(yt[0], yt[-1])).abs()
+        stats = dict(teacher_yaw_err=((err * valid).sum() / n).item(),                       # deg, greedy turn vs teacher
+                     teacher_agree=(((ly.argmax(-1) == lab[..., 6].reshape(-1).long()).float() * valid).sum() / n).item(),
+                     teacher_fire_agree=(((la.argmax(-1) == fire).float() * valid).sum() / n).item(),
+                     teacher_fire_rate=((fire.float() * valid).sum() / n).item(), teacher_valid=(n / valid.numel()).item())
+    return loss, stats
+
+
+def loc_decode(logits):
+    """[..., n] logits over the YAW_TABLE bins -> offset in degrees: the mean of the top bin and its two neighbours
+    (the targets put their weight on two adjacent bins, so this recovers offsets between bins)."""
+    t = torch.as_tensor(np.asarray(YAW_TABLE), dtype=torch.float32, device=logits.device)
+    p = F.softmax(logits.float(), -1)
+    k = p.argmax(-1, keepdim=True)
+    idx = torch.cat([(k - 1).clamp(min=0), k, (k + 1).clamp(max=len(t) - 1)], -1)
+    w = p.gather(-1, idx)
+    w = torch.where(idx == k, w, w * (idx != k).float())  # a clamped neighbour at the table's edge counts once
+    w[..., 1] = p.gather(-1, k).squeeze(-1)
+    return (w * t[idx]).sum(-1) / w.sum(-1)
+
+
+def loc_loss(out, label):
+    """Precise 'where is the enemy in this picture' loss. out [..., 2n+1] = yaw-offset logits, pitch-offset logits
+    (both over the YAW_TABLE bins), in-view logit; label [..., 3] = (yaw offset deg, pitch offset deg, in view) of
+    the frame the agent sees. Soft two-bin cross-entropy where the enemy is in view + in-view cross-entropy.
+    Returns (loss, stats); stats are median absolute errors in degrees of the decoded offsets."""
+    n = NVEC[0]
+    out, label = out.reshape(-1, 2 * n + 1).float(), label.reshape(-1, 3)
+    vis = label[:, 2]
+    ce = (-(soft_bins(YAW_TABLE, label[:, 0]) * F.log_softmax(out[:, :n], -1)).sum(-1)
+          - (soft_bins(YAW_TABLE, label[:, 1]) * F.log_softmax(out[:, n:2 * n], -1)).sum(-1))
+    loss = (ce * vis).sum() / vis.sum().clamp(min=1.0) + F.binary_cross_entropy_with_logits(out[:, 2 * n], vis)
+    with torch.no_grad():
+        ey = (loc_decode(out[:, :n]) - label[:, 0]).abs().cpu()
+        ep = (loc_decode(out[:, n:2 * n]) - label[:, 1]).abs().cpu()
+        v = vis.cpu() > 0
+        near = v & (label[:, 0].abs().cpu() < 5) & (label[:, 1].abs().cpu() < 5)
+        stats = {}
+        if near.any():
+            stats.update(loc_yaw_near=ey[near].median().item(), loc_pitch_near=ep[near].median().item(),
+                         loc_yaw_near_p90=ey[near].quantile(0.9).item())
+        if v.any():
+            stats.update(loc_yaw_all=ey[v].median().item(), loc_near_share=(near.float().sum() / v.float().sum()).item())
+    return loss, stats
 
 
 def aux_loss(pred, label):
@@ -613,6 +710,13 @@ def main():
     ap.add_argument("--cur-passes", type=int, default=2,
                     help="consecutive non-overlapping windows that must clear the pass mark to advance")
     ap.add_argument("--no-curriculum", action="store_true")
+    ap.add_argument("--focus-dist", type=float, default=0.0,
+                    help="with --no-delay: half the rounds of the final stage start beyond this distance (units)")
+    ap.add_argument("--teacher-aim-only", action="store_true",
+                    help="with --teacher-soft: copy the teacher's turn (yaw, pitch) but not its fire decision")
+    ap.add_argument("--no-delay", action="store_true",
+                    help="the reaction-delay rule was dropped on 2026-11-12: no delay stages; the last stage is the "
+                         "final arena mix (all distances to the maximum, 15-45 deg) at 0 ms")
     ap.add_argument("--delay-ramp", default="",
                     help="reaction-delay stages in seconds, e.g. 0.04,0.06,0.08,0.12,0.16,0.2 (default: 40/80/120/160/200 ms); "
                          "inserting a step keeps the SAME stage index pointing at an easier delay, so pass --stage0 as needed")
@@ -623,6 +727,21 @@ def main():
                     help="kick-starting: weight of cross-entropy toward the delayed oracle's yaw/pitch action (privileged, "
                          "training-only label; the policy still sees only delayed pixels and its own actions). 0 = off")
     ap.add_argument("--teacher-min", type=float, default=0.0, help="teacher weight after decay")
+    ap.add_argument("--teacher-soft", action="store_true",
+                    help="copy the oracle in full: soft two-bin targets for the exact turn it wants, plus its fire decision "
+                         "(default: hard cross-entropy on its yaw/pitch bins only)")
+    ap.add_argument("--loc", type=float, default=0.0,
+                    help="coef of the precise enemy-location loss (adds the policy's `loc` head: distributions over fine "
+                         "bins for the enemy's yaw and pitch offset in the frame the agent sees). 0 = off")
+    ap.add_argument("--teacher-beta", type=float, default=0.0,
+                    help="copy-only training: share of steps on which the teacher's action is executed instead of the "
+                         "policy's own, decaying linearly to --teacher-beta-min over --teacher-beta-steps env steps")
+    ap.add_argument("--teacher-beta-min", type=float, default=0.0)
+    ap.add_argument("--teacher-beta-steps", type=float, default=150000.0)
+    ap.add_argument("--teacher-only", action="store_true",
+                    help="copy-only training: drop the policy-gradient, entropy and prior terms; the loss is the teacher "
+                         "term (--teacher-coef, 1 if not given) plus the value and auxiliary losses. The policy still plays "
+                         "the rounds itself, so it is corrected on the situations it gets itself into (DAgger)")
     ap.add_argument("--teacher-decay-steps", type=float, default=4e6, help="linear decay of the teacher weight (env steps from launch)")
     ap.add_argument("--act-hist", type=int, default=0,
                     help="feed the last K actions to the policy (zero-initialised extra input; 0 = off, unchanged behaviour). "
@@ -630,12 +749,25 @@ def main():
     ap.add_argument("--all-rounds", type=int, nargs="*", default=[],
                     help="0-based stage indices judged on ALL their rounds instead of the newest distance band only "
                          "(e.g. 11 = stage 12, 800-1050: the far band stalls near 37%% at 640x480)")
-    ap.add_argument("--collect", choices=("async", "sync"), default="async",
+    ap.add_argument("--collect", choices=("async", "sync", "remote"), default="async",
                     help="async: every game steps at its own pace and the trainer serves whichever have a fresh frame "
-                         "(a slow game or a round restart no longer stalls the others); sync: the old lockstep loop")
+                         "(a slow game or a round restart no longer stalls the others); sync: the old lockstep loop; "
+                         "remote: no games here -- actors on other machines (python -m train.actor --connect HOST:PORT) "
+                         "play and send their batches (train/remote.py); --envs is then the segments per batch")
+    ap.add_argument("--actor-listen", type=int, default=0, help="--collect remote: port the actors connect to")
     ap.add_argument("--snapshot-every", type=int, default=25, help="updates")
+    ap.add_argument("--peer-listen", type=int, default=0,
+                    help="weight link (train/peer.py): accept other trainers on this port and blend weights with them")
+    ap.add_argument("--peer-connect", default="", help="weight link: HOST:PORT of a trainer started with --peer-listen")
+    ap.add_argument("--peer-every", type=int, default=1, help="publish weights to peers every this many updates")
+    ap.add_argument("--peer-key-file", default="data/peer.key", help="shared secret for the weight link (same file on every machine)")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
+    if a.teacher_only and a.teacher_coef <= 0:
+        a.teacher_coef = a.teacher_min = 1.0
+    assert a.teacher_beta == 0 or (a.teacher_only and a.collect in ("async", "remote")), \
+        "--teacher-beta executes actions the policy did not choose: only for --teacher-only with --collect async"
+    assert (a.collect == "remote") == bool(a.actor_listen), "--collect remote and --actor-listen PORT go together"
 
     torch.manual_seed(a.seed)
     np.random.seed(a.seed)
@@ -672,11 +804,13 @@ def main():
         k_old = int(ra.get("act_hist", 0))
         assert a.act_hist == 0 or a.act_hist >= k_old, "--act-hist can grow on resume (zero-padded), never shrink"
         has_now = any(k.startswith("aux_now.") for k in resume["model"])
-        model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist or k_old, aux_now=bool(a.aux_now) or has_now)
+        has_loc = any(k.startswith("loc.") for k in resume["model"])
+        model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist or k_old, aux_now=bool(a.aux_now) or has_now,
+                       loc=bool(a.loc) or has_loc)
         missing, unexpected = model.load_state_dict(grow_state(resume["model"], model.state_dict()), strict=False)
-        assert not unexpected and all(k.startswith(("act_in.", "aux_now.")) for k in missing), (missing, unexpected)  # only new zero/aux inputs
-    elif a.act_hist or a.aux_now:
-        model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist, aux_now=bool(a.aux_now))
+        assert not unexpected and all(k.startswith(("act_in.", "aux_now.", "loc.")) for k in missing), (missing, unexpected)  # only new zero/aux inputs
+    elif a.act_hist or a.aux_now or a.loc:
+        model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist, aux_now=bool(a.aux_now), loc=bool(a.loc))
         if a.init:
             model.load_state_dict({k: v.float() if v.is_floating_point() else v for k, v in ck["model"].items()}, strict=False)
     K = model.act_hist
@@ -687,7 +821,8 @@ def main():
         res = tuple(resume["args"]["res"])
     else:
         res = (320, 240)
-    model_args = dict(hw=list(hw), chans=list(chans), fovea=fovea, active_heads=heads, res=list(res), act_hist=K)
+    model_args = dict(hw=list(hw), chans=list(chans), fovea=fovea, active_heads=heads, res=list(res), act_hist=K,
+                      loc=hasattr(model, "loc"))
     prior = None
     kl_idx = [HEADS.index(h.strip()) for h in a.kl_heads.split(",") if h.strip()]
     if a.kl_prior:
@@ -709,6 +844,10 @@ def main():
     wopt = torch.optim.Adam(warm_params, lr=1e-3)
 
     stages = curriculum_stages(delay_ramp=a.delay_ramp or None)
+    if a.no_delay:  # the delay stages collapse into one: their knobs (all rounds count, no newest-band bias) at 0 ms
+        stages = [s for s in stages if s["delay"] == 0.0] + [dict(stages[-1], delay=0.0)]
+        if a.focus_dist > 0:  # half the rounds of the final stage come from beyond this distance (all rounds still count)
+            stages[-1]["dist_min"] = a.focus_dist
     stage = max(0, a.stage0)
     if resume is not None:
         stage = a.stage0 if a.stage0 >= 0 else int(resume.get("stage", 0))
@@ -719,8 +858,10 @@ def main():
                    time_round=a.time_penalty_round, hurt=a.hurt_penalty, gamma=a.gamma, review=a.review_frac,
                    offtarget=a.offtarget_cost, acquire=a.acquire_bonus, rehearsal=a.rehearsal, no_contest=a.no_contest,
                    rand_delay=a.rand_delay, leash=a.leash, leash_frac=a.leash_frac, min_vis=a.min_vis)
-    venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, rewards, seed=a.seed * 100, res=res,
-                  prior_scale=prior_scale if prior_scale != 1.0 else 0.0)
+    venv = None
+    if a.collect != "remote":
+        venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, rewards, seed=a.seed * 100, res=res,
+                      prior_scale=prior_scale if prior_scale != 1.0 else 0.0)
     N, T = a.envs, a.rollout
 
     def to_dev(views_list):
@@ -733,9 +874,10 @@ def main():
             return None
         return torch.from_numpy(np.stack([v[2] for v in views_list])).to(dev)
 
-    cur_p, cur_f = to_dev([x[0] for x in venv.first])
-    cur_fp = to_dev_prior([x[0] for x in venv.first])
-    cur_aux = torch.from_numpy(np.stack([x[1] for x in venv.first])).to(dev)
+    if venv is not None:
+        cur_p, cur_f = to_dev([x[0] for x in venv.first])
+        cur_fp = to_dev_prior([x[0] for x in venv.first])
+        cur_aux = torch.from_numpy(np.stack([x[1] for x in venv.first])).to(dev)
     state = model.initial_state(N, dev)
     start_flag = torch.ones(N, device=dev)
     hist = torch.zeros(N, 3 * K, device=dev) if K else None  # last K actions per env (most recent first)
@@ -757,7 +899,7 @@ def main():
               prior_scale=prior_scale,
               knobs=pub(knobs), stage=stage, n_stages=len(stages), resume=a.resume, rewards=rewards,
               delay_ramp=[s["delay"] for s in stages if s["delay"] > 0], act_hist=K, lr=a.lr, ent=a.ent,
-              collect=a.collect, epochs=a.epochs,
+              collect=a.collect, actor_listen=a.actor_listen, epochs=a.epochs, teacher_only=a.teacher_only, teacher_soft=a.teacher_soft,
               ent_yaw_mult=a.ent_yaw_mult, params=sum(p.numel() for p in model.parameters())))
 
     def on_episode(e):  # one finished round: which statistics it counts for
@@ -785,13 +927,32 @@ def main():
             win.append(e)
 
     collector = Collector(venv, model, dev, T, mask, a.gamma, fovea, K) if a.collect == "async" else None
+    remote = None
+    if a.collect == "remote":  # everything an actor needs to build the same games and model; weights follow every update
+        from train.remote import RemoteCollector
+        remote_cfg = dict(run=a.run, scenario=a.scenario, hw=list(hw), fovea=fovea, res=list(res), prior_scale=prior_scale,
+                          view_scale=prior_scale if prior_scale != 1.0 else 0.0, knobs=knobs, rewards=rewards, mask=mask,
+                          heads=heads, gamma=a.gamma, T=T, K=K, N=N,
+                          model=dict(hw=list(hw), chans=list(chans), fovea=fovea, act_hist=K, hidden=model.hidden,
+                                     aux_now=hasattr(model, "aux_now"), loc=hasattr(model, "loc")),
+                          kl_prior=a.kl_prior if prior is not None else "", kl_idx=kl_idx if prior is not None else [])
+        collector = remote = RemoteCollector(a.actor_listen, Path(a.peer_key_file).read_bytes().strip(), remote_cfg, model,
+                                             update, dev)
+    peer = None
+    if a.peer_listen or a.peer_connect:
+        from train.peer import PeerSync
+        peer = PeerSync(Path(a.peer_key_file).read_bytes().strip(), listen=a.peer_listen,
+                        connect=[x for x in a.peer_connect.split(",") if x.strip()], name=a.run, every=a.peer_every)
     serve_batch = None
     try:
         while True:
             # ---------------- rollout
             model.eval()
             tr = time.time()
+            ro = None
             if collector is not None:
+                collector.beta = max(a.teacher_beta_min, a.teacher_beta - (a.teacher_beta - a.teacher_beta_min)
+                                     * (steps - steps0) / max(1.0, a.teacher_beta_steps))
                 ro = collector.collect(N, on_episode)
                 P, Fv, FvP, AUX, HIST = ro["P"], ro.get("F"), ro.get("FP"), ro["AUX"], ro.get("HIST")
                 A, LP, V, V_next, R, TERM, S = ro["A"], ro["LP"], ro["V"], ro["Vn"], ro["R"], ro["TERM"], ro["S"]
@@ -800,7 +961,7 @@ def main():
                 P = torch.zeros((N, T, *cur_p.shape[1:]), dtype=torch.uint8, device=dev)
                 Fv = torch.zeros((N, T, *cur_f.shape[1:]), dtype=torch.uint8, device=dev) if fovea else None
                 FvP = torch.zeros((N, T, *cur_fp.shape[1:]), dtype=torch.uint8, device=dev) if cur_fp is not None else None
-                AUX = torch.zeros((N, T, 9), device=dev)  # aux label (3) + aux now (3) + teacher yaw bin, pitch bin, valid
+                AUX = torch.zeros((N, T, N_LABELS), device=dev)  # training-only labels, see N_LABELS
                 HIST = torch.zeros((N, T, 3 * K), device=dev) if K else None
                 A = torch.zeros((N, T, len(NVEC)), dtype=torch.long, device=dev)
                 LP = torch.zeros((N, T), device=dev)
@@ -868,11 +1029,15 @@ def main():
                                / max(1.0, a.teacher_decay_steps)) if a.teacher_coef > 0 else 0.0
             if prior is not None:  # frozen imitation policy's turning distribution on this rollout (once, no grad)
                 kl_coef = max(a.kl_min, a.kl_coef - (a.kl_coef - a.kl_min) * (steps - steps0) / max(1.0, a.kl_decay_steps))
-                with torch.no_grad(), torch.autocast(dev.type, dtype=torch.bfloat16, enabled=dev.type != "cpu"):
-                    plg, _, _ = seq_forward(prior, P, FvP if FvP is not None else (Fv if fovea else None),
-                                            prior.initial_state(N, dev), S)
-                parts = Policy.split(plg.float())
-                prior_lp = [F.log_softmax(parts[h], -1) for h in kl_idx]
+                if ro is not None and "PLP" in ro:  # remote actors evaluate the prior themselves (saves sending FP)
+                    prior_lp = list(torch.split(ro["PLP"], [NVEC[h] for h in kl_idx], -1))
+                else:
+                    assert remote is None, "remote batches must carry the prior's log-probs (PLP)"
+                    with torch.no_grad(), torch.autocast(dev.type, dtype=torch.bfloat16, enabled=dev.type != "cpu"):
+                        plg, _, _ = seq_forward(prior, P, FvP if FvP is not None else (Fv if fovea else None),
+                                                prior.initial_state(N, dev), S)
+                    parts = Policy.split(plg.float())
+                    prior_lp = [F.log_softmax(parts[h], -1) for h in kl_idx]
 
             # ---------------- update
             model.train()
@@ -887,8 +1052,9 @@ def main():
                 for s0 in range(0, N, mb):
                     j = torch.as_tensor(idx[s0:s0 + mb], device=dev)
                     with torch.autocast(dev.type, dtype=torch.bfloat16, enabled=dev.type != "cpu"):
-                        lg, v, ax = seq_forward(model, P[j], Fv[j] if fovea else None, (h0[0][:, j], h0[1][:, j]), S[j],
-                                                HIST[j] if K else None)
+                        fw = seq_forward(model, P[j], Fv[j] if fovea else None, (h0[0][:, j], h0[1][:, j]), S[j],
+                                         HIST[j] if K else None, want_loc=a.loc > 0)
+                    lg, v, ax = fw[:3]
                     vloss = 0.5 * (v - ret[j]).pow(2).mean()
                     xloss = aux_loss(ax[..., :3].float(), AUX[j][..., :3]) if a.aux else torch.zeros((), device=dev)
                     if a.aux_now and ax.shape[-1] >= 6:
@@ -910,11 +1076,25 @@ def main():
                     ratio = (lp - LP[j]).exp()
                     pg = -torch.min(ratio * adv_j, ratio.clamp(1 - a.clip, 1 + a.clip) * adv_j).mean()
                     loss = pg + a.vf * vloss - a.ent * ent_w.mean() * head_w.mean() + a.aux * xloss
+                    if a.teacher_only:  # copy-only: no trial-and-error terms at all
+                        loss = a.vf * vloss + a.aux * xloss
+                    if a.loc > 0:
+                        ll, lst = loc_loss(fw[3], AUX[j][..., :3])
+                        loss = loss + a.loc * ll
+                        stats["loc"].append(ll.item())
+                        for key, val in lst.items():
+                            stats[key].append(val)
                     if teacher_coef > 0:  # kick-starting toward the delayed oracle (masked to rounds/steps where it is defined)
-                        tl, tagree = teacher_loss(lg.float(), AUX[j])
+                        if a.teacher_soft:
+                            tl, tst = teacher_loss_soft(lg.float(), AUX[j], fire_head=not a.teacher_aim_only)
+                            for key, val in tst.items():
+                                stats[key].append(val)
+                        else:
+                            tl, tagree = teacher_loss(lg.float(), AUX[j])
+                            stats["teacher_agree"].append(tagree)
                         loss = loss + teacher_coef * tl
-                        stats["teacher"].append(tl.item()); stats["teacher_agree"].append(tagree)
-                    if prior_lp is not None:  # KL(prior || policy): penalises near-zero probability where the pros had mass
+                        stats["teacher"].append(tl.item())
+                    if prior_lp is not None and not a.teacher_only:  # KL(prior || policy): penalises near-zero probability where the pros had mass
                         lparts = Policy.split(lg.float())
                         kl = sum((plp[j].exp() * (plp[j] - F.log_softmax(lparts[h], -1))).sum(-1).mean()
                                  for plp, h in zip(prior_lp, kl_idx))
@@ -934,6 +1114,11 @@ def main():
             if collector is None:
                 state = (state[0].detach(), state[1].detach())
             update += 1
+            if peer is not None:  # blend in the other machines' newest weights (never waits for the network)
+                for key, val in peer.step(model, update).items():
+                    stats[key].append(val)
+            if remote is not None:  # newest weights to the actors (CPU copy here; sent by background threads)
+                remote.publish(model, update)
             t_upd = time.time() - tu
             with torch.no_grad():  # explained variance of the value function on this batch
                 ev = 1.0 - ((ret - V).var() / (ret.var() + 1e-8)).item()
@@ -959,7 +1144,7 @@ def main():
                 if move:
                     stage += move
                     knobs = dict(stages[stage], pool=[dict(x) for x in stages[:stage]])
-                    venv.set_knobs(knobs)
+                    (venv if venv is not None else remote).set_knobs(knobs)
                     eps.clear(); far.clear(); stage_eps = 0; low_windows = 0; win = []; passes = 0
                     emit(dict(event="curriculum", update=update, steps=steps, stage=stage, move=move, knobs=pub(knobs)))
 
@@ -984,7 +1169,8 @@ def main():
                           for b in ("lt15", "15to30", "30plus") if any(angle_band(e.get("offset", 0)) == b for e in E)},
                        fire_frac=fire, expl_var=ev, knobs=pub(knobs), sps=(steps - steps0) / el,
                        roll_s=round(t_roll, 2), upd_s=round(t_upd, 2), serve_batch=serve_batch,
-                       **{k: float(np.mean(v)) for k, v in stats.items()})
+                       teacher_beta=collector.beta if collector is not None else 0.0,
+                       **{k: float(np.mean(v)) for k, v in stats.items()}, **(remote.stats() if remote is not None else {}))
             if update % 5 == 0 or update <= 3:
                 emit(rec)
             if update % a.snapshot_every == 0:
@@ -999,7 +1185,12 @@ def main():
         torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), args=model_args, steps=steps, update=update,
                         knobs=pub(knobs), stage=stage), out / "last.pt")
         emit(dict(event="done", steps=steps, updates=update, episodes=all_eps, knobs=pub(knobs)))
-        venv.close()
+        if peer is not None:
+            peer.close()
+        if remote is not None:
+            remote.close()
+        if venv is not None:
+            venv.close()
 
 
 if __name__ == "__main__":

@@ -140,6 +140,7 @@ class CS16Env(gym.Env):
         self.arena_review_frac = 0.0  # share of "review" rounds drawn from easier angles [0, min] (anti-forgetting)
         self._ep_offset = 0.0
         self._obs_queue: collections.deque = collections.deque()
+        self._since_shot = 99  # agent steps since the agent last held fire (for the teacher's tap cadence)
         self._blank = np.zeros((height, width, 3), np.uint8)
 
     # ------------------------------------------------------------------ engine lifecycle
@@ -187,6 +188,7 @@ class CS16Env(gym.Env):
             s = self._arena_place()
         s = b.step(apply=True, capture=True)  # one neutral step to get a fresh frame
         self._ep_start = s.time
+        self._since_shot = 99
         self._acquired_t = None
         self._hidden_steps = 0
         self._snap = self._snapshot(s)
@@ -249,6 +251,7 @@ class CS16Env(gym.Env):
                     reward += self.acquire_bonus * max(0.0, 1.0 - self._acquired_t / self.acquire_window)
         if a[4] and self.bullet_cost:
             reward -= self.bullet_cost
+        self._since_shot = 0 if a[4] else self._since_shot + 1
         reward -= self.time_penalty
         frame = b.frame()
         self._obs_queue.append(frame if frame is not None else self._obs_queue[-1])
@@ -283,36 +286,46 @@ class CS16Env(gym.Env):
         """[yaw err, pitch err, in-view, world yaw, world pitch, valid] of the nearest live enemy's chest (degrees).
         The first three are the auxiliary label; the world angles let the teacher label below aim at where the enemy
         was in the frame the agent sees, from where the crosshair points now."""
-        lab = self._aux_label(s)
+        lab = self._aux_label(s, with_dist=True)
         valid = float(self._me(s).alive and any(k != s.playernum and p.connected and p.alive for k, p in enumerate(s.players)))
-        return np.array([lab[0], lab[1], lab[2], lab[0] + s.viewangles[1], lab[1] + s.viewangles[0], valid], np.float32)
+        return np.array([lab[0], lab[1], lab[2], lab[0] + s.viewangles[1], lab[1] + s.viewangles[0], valid, lab[3]], np.float32)
 
     def _aux_ext(self, s):
-        """Training-only labels (never observed by the policy), 6 values:
+        """Training-only labels (never observed by the policy), 10 values:
         [0:3] the auxiliary label NOW (the agent sees it `delay_steps` steps late: predicting it = undoing the delay);
         [3:6] teacher action (yaw bin, pitch bin, valid): what the delayed oracle (scratch/ceiling_delay.py, 94-98% at
         every delay) does -- turn toward where the enemy was in the frame the agent sees, from the current view angles.
-        Valid only when that frame shows the enemy in view and the agent is alive."""
+        Valid only when that frame shows the enemy in view and the agent is alive.
+        [6:10] the same teacher in full: the exact turn it wants (yaw degrees, view-pitch degrees), whether it fires
+        now (crosshair within the target's angular size and no shot in the agent's last 3 steps: the oracle's tap), and
+        a second valid flag that does NOT need the enemy in view. Like the oracle, this teacher always answers while
+        both players are alive: with the enemy off screen it says "turn back toward where it was", which is the only
+        supervision for recovering after an overshoot. The bins [3:5] are filled whenever this flag is set."""
         q = getattr(self, "_aux_queue", None)
         if not q:
-            return np.zeros(6, np.float32)
+            return np.zeros(10, np.float32)
         past, now = q[0], q[-1]
-        out = np.zeros(6, np.float32)
+        out = np.zeros(10, np.float32)
         out[0:3] = now[0:3]
-        if past[5] > 0 and past[2] > 0 and self._me(s).alive:
+        if past[5] > 0 and self._me(s).alive:
             dy = (float(past[3]) - s.viewangles[1] + 180.0) % 360.0 - 180.0
             dp = float(past[4]) - s.viewangles[0]
             out[3] = int(np.argmin(np.abs(YAW_TABLE - dy)))
             out[4] = int(np.argmin(np.abs(-PITCH_TABLE - dp)))  # the env turns the view pitch by -PITCH_TABLE[a1]
-            out[5] = 1.0
+            out[5] = float(past[2] > 0)
+            out[6], out[7] = dy, dp
+            on = math.hypot(dy, dp) < max(0.4, math.degrees(math.atan2(9.0, max(float(past[6]), 1.0))))
+            out[8] = float(on and self._since_shot >= 3)
+            out[9] = 1.0
         return out
 
-    def _aux_label(self, s):
+    def _aux_label(self, s, with_dist=False):
         """(signed yaw error, signed pitch error, in-view flag) of the nearest live enemy's chest relative
-        to the crosshair, degrees. Training-only label for an auxiliary 'where is the enemy' loss."""
+        to the crosshair, degrees. Training-only label for an auxiliary 'where is the enemy' loss.
+        with_dist: also its distance in units, as a 4th value."""
         me = s.playernum
         m = self._me(s)
-        best = (0.0, 0.0, 0.0, 1e9)
+        best = (0.0, 0.0, 0.0, 1e9, 0.0)
         if m.alive:
             eye = np.array(m.origin) + (0.0, 0.0, 17.0)
             for k, p in enumerate(s.players):
@@ -325,8 +338,8 @@ class CS16Env(gym.Env):
                 dp = pitch - s.viewangles[0]
                 e = math.hypot(dy, dp)
                 if e < best[3]:
-                    best = (dy, dp, float(abs(dy) < 45.0 and abs(dp) < 37.0), e)
-        return np.array(best[:3], np.float32)
+                    best = (dy, dp, float(abs(dy) < 45.0 and abs(dp) < 37.0), e, float(np.linalg.norm(d)))
+        return np.array(best[:3] + ((best[4],) if with_dist else ()), np.float32)
 
     def _arena_place(self):
         b = self.bridge

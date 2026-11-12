@@ -16,7 +16,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from cs16env.env import PITCH_TABLE, YAW_TABLE  # noqa: E402
 from cs16env.policy import NVEC, Policy  # noqa: E402
-from train.ppo import Collector, seq_forward  # noqa: E402
+from train.ppo import N_LABELS, Collector, seq_forward, soft_bins, teacher_loss_soft  # noqa: E402
 
 GAMMA, T, K, N, HID = 0.9, 16, 3, 5, 4
 MASK = [True, True, False, False, True, False, False, False, False]
@@ -38,7 +38,7 @@ class FakeGame:
         self.k, self.pos = 0, 0
 
     def obs(self, final=False):
-        return (frame(self.env, self.g, final), frame(self.env, self.g, final)), np.full(9, self.g, np.float32)
+        return (frame(self.env, self.g, final), frame(self.env, self.g, final)), np.full(N_LABELS, self.g, np.float32)
 
     def step(self, action):
         g, r = self.g, 0.01 * self.g + self.env
@@ -184,3 +184,29 @@ with torch.no_grad():
     for a, b in zip(per_step(model, frames, fov, state, none, hist), seq_forward(model, frames, fov, state, none, hist)):
         assert torch.allclose(a, b, atol=1e-5)
 print("seq_forward: span-wise pass matches the per-step pass")
+
+# ---- 3. teacher targets: the two-bin target has the wanted turn as its mean; the copy loss only touches aim and fire
+x = torch.tensor([-60.0, -48.0, -30.0, -0.1, 0.0, 0.3, 1.0, 5.0, 47.0, 99.0])
+tgt = soft_bins(YAW_TABLE, x)
+yt = torch.as_tensor(YAW_TABLE)
+assert torch.allclose(tgt.sum(-1), torch.ones(len(x))) and (tgt > 0).sum(-1).max() <= 2
+assert torch.allclose((tgt * yt).sum(-1), x.clamp(-48, 48), atol=1e-4), (tgt * yt).sum(-1)
+assert tgt[4].argmax() == len(YAW_TABLE) // 2 and tgt[4].max() == 1.0  # exactly on a bin -> one-hot
+lab = torch.zeros(2, 5, N_LABELS)
+lab[..., 12] = 1; lab[0, 0, 12] = 0                     # one step without a teacher label
+lab[..., 9], lab[..., 10], lab[..., 11] = 6.0, -2.0, 1.0  # turn 6 deg right, view pitch -2 deg, fire
+lab[0, 0, 9] = 40.0                                        # (the unlabelled step's values must not matter)
+lg = torch.zeros(2, 5, sum(NVEC), requires_grad=True)
+loss, st = teacher_loss_soft(lg, lab)
+loss.backward()
+g = torch.split(lg.grad, NVEC, -1)
+assert all(float(g[k].abs().sum()) > 0 for k in (0, 1, 4)) and all(float(g[k].abs().sum()) == 0 for k in (2, 3, 5, 6, 7, 8))
+assert float(lg.grad[0, 0].abs().sum()) == 0, "a step without a label gets no gradient"
+good = torch.zeros(2, 5, sum(NVEC))
+parts = list(torch.split(good, NVEC, -1))
+parts[0] = soft_bins(YAW_TABLE, lab[..., 9]).clamp_min(1e-6).log()       # predicts the target distribution exactly
+parts[1] = soft_bins(PITCH_TABLE, -lab[..., 10]).clamp_min(1e-6).log()
+parts[4] = torch.tensor([-20.0, 20.0]).expand(2, 5, 2)
+best, st2 = teacher_loss_soft(torch.cat(parts, -1), lab)
+assert best < loss and st2["teacher_fire_agree"] == 1.0 and abs(st2["teacher_valid"] - 0.9) < 1e-6
+print(f"teacher targets: mean of the two-bin target equals the wanted turn; copy loss {loss.item():.2f} -> {best.item():.2f} at the target")

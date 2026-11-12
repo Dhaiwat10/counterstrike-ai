@@ -413,3 +413,141 @@ on the previous commit: `tests/test_act_hist.py` (optimizer-resume assert) and o
 - **Stop fix:** with asynchronous collection a worker could be blocked sending a step reply nobody had read and never
   saw "close", so a stop took 10 s per stuck worker. `VecEnv.close()` now keeps reading until the workers exit;
   SIGTERM in the middle of a collection: exit in 1 s with `last.pt` saved.
+
+## Teacher copy and the hybrid aimer (2026-11-12): no gain yet, but the bottleneck is now measured
+
+All at 120 ms unless noted, from the final checkpoint, 12 games on the Mini. Nothing here beats the final model's 56%.
+
+**Teacher labels (new, verified).** `CS16Env._aux_ext` now also gives the delayed oracle's exact turn (degrees), its
+fire decision (on target and no shot in the agent's last 3 steps) and a valid flag that does not need the enemy on
+screen. An agent that just plays these labels: 96% at 120 ms, 97% at 160 ms (100 rounds each).
+
+**Copying the teacher's actions fails** (`--teacher-only --teacher-soft`, soft two-bin targets, fire included):
+- Student drives from the start: kill rate 0.42 -> 0.00 in 20 updates; greedy turn error vs the teacher 7 -> 50 deg,
+  enemy on screen 100% -> 15% of steps.
+- Teacher drives 90% of steps, handing over linearly over 90 updates (`--teacher-beta`): fine while the teacher
+  drives (0.92 at beta 0.8), then the same collapse below beta 0.4 (0.22 at 0.3, 0.00 at 0.1 and after).
+- Cause: the teacher turns the whole error in one step, which is only stable if the policy subtracts what it has
+  turned since the frame it sees. The policy never learned that subtraction (turn error vs the teacher stayed 3-4 deg
+  even on teacher-driven data), so it repeats the big turn for 3-4 steps and spins past the enemy.
+
+**Hybrid aimer: the network only locates the enemy, code does the subtraction** (wanted turn = offset seen in the
+delayed frame - own turns since that frame; tap when within 1 deg; pixels and own actions only).
+- Fed the true offset plus Gaussian noise, at the full **200 ms** delay, 100 rounds each:
+
+  | Noise (deg) | 0 | 0.25 | 0.5 | 1.0 | 2.0 |
+  |---|---|---|---|---|---|
+  | Kill rate | 92% | 91% | 83% | 64% | 17% |
+
+  So with exact compensation the delay stops mattering, and the requirement becomes: locate the enemy in the frame
+  to ~0.5 deg.
+- With the existing auxiliary head as the locator: 8% at 120 ms, 11% at 200 ms (its error: median 2.3 deg yaw,
+  3.9 deg pitch; 1.8 deg yaw when the enemy is within 5 deg).
+- A new `loc` head (`--loc`, distributions over the fine yaw bins for both offsets) trained for 150 updates beside
+  the teacher loss: pitch error 0.15 deg in training but yaw 1.5-3.7 deg, loss barely moved (6.8 -> 5.2). Driving
+  itself it scored 3% (45% against the frozen passive bot), with pitch error back at 4-5 deg: it had learned the usual
+  pitch, not to see. Yaw error was the same against a frozen bot (1.7 deg) as a moving one (1.6 deg). Too little
+  training (900 clipped gradient steps, competing losses, data only from teacher-like play), not shown to be a limit.
+
+**Found on the way:** `ex_interp` is 0.1 in `game-dev/cstrike/config.cfg` (engine default), so other players are drawn
+~100 ms in the past, on top of the fairness delay; shots are judged on true positions. Competitive players set 0.01.
+Its effect on the agent is not measured, and changing it is a rules decision.
+
+**Next if continued:** train the locator on its own: frames recorded with deliberately varied aim errors (both
+axes), only the location loss, a higher learning rate, hours rather than minutes. Pass mark: <= 0.5 deg median error
+within 5 deg of the target, then the hybrid on the 300-round exam at 120 and 200 ms.
+
+## The reaction-delay rule is dropped (2026-11-12, human decision)
+- **Decision:** no more reaction delay ("we dont have beefy GPUs ... lets at least see how good a non-nerfed model
+  becomes on our hardware"). The 25 Hz decision rate and the 1200 deg/s turn cap stay. Background: no comparable
+  small-budget project used a delay (Pearce & Zhu's CS:GO agent: 16 Hz, none); the ones that did (Quake III CTF 267 ms,
+  OpenAI Five 200 ms) trained with it from step one at data-centre scale, or added an explicit predictor (Firoiu 2018).
+- **Where the models stand at 0 ms** (300 rounds, seed 777, greedy, final arena mix 0-1050 u / 15-45 deg):
+
+  | Player | Kills | Close | Medium |
+  |---|---|---|---|
+  | Scripted teacher (plays its own labels) | 99.3% | 99% | 100% |
+  | `aim_640/snapshots/update_008800.pt` (end of stage 12, never trained under delay) | 81.3% | 86% | 70% |
+  | `aim_640/snapshots/update_009075.pt` (after the parked 1300 u band, still 0 ms) | 79.7% | 88% | 61% |
+  | `phase3_final_120ms.pt` (the release) | 62.7% (sampled 52.3%) | 71% | 44% |
+
+  The delay ramp cost 18 points of plain aim. **No-delay work starts from update 8800**, not from the release.
+- **Trainer:** `--no-delay --stage0 12` (the delay stages collapse into one stage: the final arena mix at 0 ms).
+- **Copy-only training collapsed again, at 0 ms** (`--teacher-only --teacher-soft`, student driving, fresh Adam, lr 1e-4):
+  kills 67% -> 25% -> 0.5% in 15 updates, fire share 5% -> 0.5%, aux loss 0.08 -> 1.3. So the delay was not the (only)
+  cause of this morning's collapses, and "never learned to subtract its own turns" was at best part of the story.
+  What the first update shows: the teacher's fire label was on in **0.3%** of the student's steps. The teacher taps only
+  with the crosshair within ~9 units of the chest; the reward-trained student hits with much sloppier aim, so nearly every
+  one of its shots is labelled "do not fire" and the fire head is driven to "never". The copy loss also starts at ~15
+  (the student is confidently on other bins than the teacher) and, with a fresh optimiser, wrecks the shared features.
+  `--teacher-aim-only` copies the turn but not the fire decision.
+- **Trials started 14:27 / 14:36, both from update 8800 at 0 ms, 12 games:** MacBook `nodelay_ppo` = the final run's
+  reward recipe without delay stages; Mini `nodelay_ppo_aim` = the same plus the teacher's turn as a side term
+  (`--teacher-coef 0.02 --teacher-soft --teacher-aim-only`). Verdict by the 300-round exam at update 9025.
+
+## Weight link between machines (2026-11-12)
+- `train/peer.py`, `--peer-listen PORT` on one trainer, `--peer-connect HOST:PORT` on the others, shared secret in
+  `data/peer.key`. Each machine keeps its own games and learner and blends in the others' newest weights after every
+  update (equal shares; background threads, the trainer never waits). `tests/test_peer.py` passes on both Macs.
+- Why weights and not frames: the Mini <-> MacBook link is Wi-Fi on the MacBook side, 23 MB/s with 5-70 ms pings.
+  A central learner needs ~24 MB/s of raw frames at the learner's 310 frames/s; weights are ~28 MB per exchange.
+  A Thunderbolt cable between the two Macs would lift that limit if a central learner is wanted later.
+- Not yet run on real training; needs the "joined learns at least as well as single" check on the exam.
+- **Verdict at update 9025 (38 min, 300 rounds, seed 777, greedy, 0 ms):**
+
+  | Run | Kills | Close | Medium | Deaths | Time to kill |
+  |---|---|---|---|---|---|
+  | start (update 8800) | 81.3% | 86.4% | 70.2% | 18.0% | 0.92 s |
+  | MacBook `nodelay_ppo` (reward only) | 81.3% | 86.4% | 70.2% | 17.3% | 0.72 s |
+  | Mini `nodelay_ppo_aim` (reward + teacher's turn, coef 0.02) | **92.3%** | 97.5% | 81.6% | 7.3% | 0.52 s |
+
+  +11 points over the start on the same rounds (z ~ 4). First gain since the delay ramp. In training the sampled kill
+  rate of the same run reads only 0.64-0.81 (entropy rose 0.36 -> 0.56 under the soft targets), so sampled training
+  windows under-report it: judge this recipe by the greedy exam.
+- 15:22: MacBook switched to the winning recipe from the Mini's update-9025 snapshot with a stronger teacher term
+  (`nodelay_aim05`, coef 0.05; fresh optimiser, so expect a short dip). The Mini run continues untouched (coef 0.02).
+  Next exam at the Mini's update 9250.
+
+## Central-learner link (2026-11-12): built, smoke-tested live, not yet validated for learning
+- **What it is:** `train.ppo --collect remote --actor-listen PORT` on the learner (no games there), `python -m train.actor
+  --connect HOST:PORT --envs N` on the machine with the games (`train/remote.py`, `train/actor.py`, `tests/test_remote.py`;
+  built by an Opus 5.5 subagent, reviewed here). Frames travel lossless (frame-to-frame difference + zlib-1); the actor
+  evaluates the frozen prior itself and sends its log-probs (`PLP`) instead of the prior's fovea crop; weights go back
+  in half precision after every update. Shared key `data/peer.key`. The weight-averaging link (`train/peer.py`) stays in
+  the repo unused: it was the weaker design.
+- **Change after review:** a finished batch now waits for the sender (`offer(wait=True)`) instead of being dropped while
+  the previous one is in flight. Collecting a batch (~4.2 s) and sending one (~5 s) take about the same time on this
+  Wi-Fi, so "drop if busy" would have discarded every second batch. `--drop-when-busy` restores the old rule.
+- **Live smoke test (15:26, 7 min, 4 games on the Mini -> learner on the MacBook, alongside the two main runs):** 81
+  batches sent, 0 dropped, 0 lost; prior/teacher/curriculum terms all populated; kill rate 0.70-0.80 as in the single
+  runs; engines closed cleanly. Measured:
+  - **Real frames compress only 1.25x** (31.8 MB per 512-decision batch = 62 kB per decision), not the 1.64x of my
+    synthetic test. At ~19 MB/s effective that is **~290 decisions/s over Wi-Fi**, just under the learner's ~310.
+    So the expected speed-up is ~1.75x (290 vs 167), with Wi-Fi as the limit.
+  - **Policy lag is visible:** batches were played with weights 2 updates old; `clipfrac` 0.29-0.43 and `kl` 0.01-0.07,
+    against 0.125 and 0.010 in the single-machine run. More of the PPO term is clipped away; the teacher, value and aux
+    terms do not care. Whether the extra samples outweigh this has to be shown on the exam (linked vs single from the
+    same snapshot). A Thunderbolt cable would cut the lag to ~1 update; V-trace would correct for it in software.
+
+## Afternoon of 2026-11-12: the gain holds at ~90%, the link does not pay over Wi-Fi
+- **Recipe exams, two seeds (777 and 4242), 300 rounds each, greedy, 0 ms:**
+
+  | Model | Seed 777 | Seed 4242 | Pooled (600) | Close | Medium |
+  |---|---|---|---|---|---|
+  | start, update 8800 | 81.3% | 79.7% | 80.5% | 82-86% | 70-73% |
+  | `nodelay_ppo_aim` update 9025 (38 min) | 92.3% | 90.3% | **91.3%** | 96-98% | 77-82% |
+  | `nodelay_ppo_aim` update 9250 (76 min) | 88.0% | 88.0% | 88.0% | 93-97% | 69-75% |
+  | MacBook `nodelay_aim05` update 9250 (coef 0.05, from 9025, fresh optimiser) | 85.3% | - | - | 95% | 64% |
+
+  +10.8 points over the start on 600 rounds (z ~ 5.5): real. The second 38 minutes added nothing (z ~ -1.9 vs 9025).
+  Coef 0.05 is not better (confounded by its optimiser reset). **Best model: `nodelay_ppo_aim/snapshots/update_009025.pt`.**
+  The remaining gap to the teacher is medium range (600-1050 u): ~75% vs 100%.
+- **Linked run, real conditions** (`linked_aim`: learner on the MacBook, 12 games on the Mini, from update 8800, 16:06-16:14):
+  20 updates in 180 s = **171 decisions/s**, against 147-167 on one machine. Batches are 88 MB (real frames compress
+  1.34x), sends took 2.9-14 s on Wi-Fi with 28 MB of weights coming back per update, so the games waited on the network.
+  `clipfrac` 0.21-0.43, weights 2 updates old. No batch lost in 40. Verdict: over this Wi-Fi the link gives no useful
+  speed-up and wastes more samples; stopped after 8 minutes without an exam (a <=1.15x effect is far below what a
+  300-600 round exam can resolve). The link stays in the repo for a wired connection (expected: learner-bound ~310/s).
+- **16:16: two experiments side by side, both continuing `nodelay_ppo_aim/last.pt` (update 9309, optimiser state kept):**
+  Mini `nd_lr3e5` = learning rate 1e-4 -> 3e-5; MacBook `nd_focus600` = `--focus-dist 600` (half the rounds start
+  beyond 600 units). Exams at update 9525 on both seeds.
