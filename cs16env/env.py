@@ -149,7 +149,73 @@ class CS16Env(gym.Env):
         # the enemy's chest (0 = off)
         self.hold_cost = 0.0
         self.hold_deg = 1.5
+        # navigator teacher (cs16env/nav.py), off unless enable_nav() is called: then every step also traces line of
+        # sight to the enemy (aux slots 6/7) and info carries "nav_ext" (see _nav_ext); env.nav_action is its action
+        self.nav = None
+        self.nav_action = None
+        # real duel options (scenarios with reset_round; default off = the game's own spawns and a normal YaPB bot):
+        # duel_random_spawn: after the restart the agent is moved to a random spawn point of its own side (nav.MAP_SPAWNS)
+        #   with a random heading (0-360 deg).
+        # duel_bot_mode "camp" = the STAYS-PUT SHOOTER: the bot is moved to a random spawn point of its side, facing the
+        #   other side (+-camp_yaw_jitter deg), and frozen (yb_freeze_bots 1, which also stops its aim and fire) while the
+        #   agent is out of its line of sight; it is unfrozen (normal YaPB: turns, aims, shoots, may strafe) as soon as
+        #   there is line of sight either way (eye -> chest or eye -> head trace) or it is hurt, and frozen again after
+        #   camp_refreeze_s without line of sight; if it has moved more than camp_home_radius from its spot by then, it is
+        #   put back there facing its original direction. It never walks over to the agent.
+        # aim_terms_los_only: aim shaping / off-target cost / acquire bonus count only on steps with line of sight
+        #   (in a real duel the enemy is behind walls most of the time; these terms were built for the aim arena).
+        self.duel_random_spawn = False
+        # with duel_random_spawn: failure-weighted spawn choice (training only). Each own-side spawn point keeps a running
+        # time-out rate (rounds that ran out of time); a spawn is drawn with weight 1 + duel_spawn_adapt x that rate.
+        # 0 = uniform (default).
+        self.duel_spawn_adapt = 0.0
+        self._spawn_rate = None
+        self._spawn_last = None
+        self._last_trunc = False
+        self.duel_bot_mode = "normal"
+        self.camp_yaw_jitter = 25.0
+        self.camp_refreeze_s = 1.0
+        self.camp_home_radius = 64.0
+        # duel_bot_mode "side" = MOVES ON ITS OWN SIDE: a normal YaPB bot (walks, peeks, turns, aims, shoots) that is
+        #   kept behind its side's cover line (nav.MAP_SPAWNS[map][side]["line_y"]): when it gets within side_margin of
+        #   the line and the agent cannot see it, it is moved to a random navigation spot of its own area that the agent's
+        #   spot cannot see (never a snap in view); if it reaches that point while the agent CAN see it (mid-fight), it is
+        #   frozen where it stands (see side_hard / _side_hold_tick). Its spot at the round start: a random spawn point of its side, facing the other side.
+        #   In a fight (line of sight) it is free (normal YaPB) unless it gets within side_hard of the line: then its body
+        #   is held there (see _side_hold_tick) until the agent has not seen it for side_hide_s.
+        self.side_margin = 60.0
+        self.side_hard = 20.0
+        self.side_hold_err = 1.5
+        self.side_hide_s = 0.5
+        self.aim_terms_los_only = False
+        # training only, real duels (needs line-of-sight traces): costs on the SEARCH view while no enemy is in line of
+        # sight at the step's start (never while one is visible: flicks to a target stay free). search_flip_cost per
+        # step-to-step reversal of the turn direction (left then right or right then left). Turn size and sustained turning
+        # in one direction cost nothing (a fast 180-degree turn-around is free).
+        self.search_flip_cost = 0.0
+        self._search_sign = 0
+        # training only, real duels with enable_nav(): ROUTE PROGRESS reward per unit of walking distance (along the
+        # navigation graph) gained toward the enemy's spawn side, on steps with no enemy in line of sight. It telescopes:
+        # walking back costs what walking forward paid, so it cannot be farmed (sum over a round = route_shaping x net
+        # progress). still_cost: per step with no enemy in line of sight and horizontal speed < 20 u/s. Both 0 = off.
+        self.route_shaping = 0.0
+        self.still_cost = 0.0
+        self._route_d = None
+        self._camp = None
+        self._peeker = None
+        self._freeze_applied = None
         self._blank = np.zeros((height, width, 3), np.uint8)
+
+    def enable_nav(self, graph_path=None, sides=None, **kw):
+        """Turn on the scripted navigator teacher and its labels (default off: nothing changes without this call).
+        graph_path: data/arena/MAP_nav.npz (default from the scenario's map); sides: {"T": xyz, "CT": xyz} spawn-side
+        centres (default: nav.MAP_SIDES[map]); kw go to nav.Navigator (goal_mode, fire_speed, ...)."""
+        from . import nav as navmod
+        name = self.scn.map.replace("-", "_")
+        g = navmod.NavGraph.load(graph_path or f"data/arena/{name}_nav.npz")
+        self._nav_sides = sides or navmod.MAP_SIDES.get(self.scn.map)
+        self.nav = navmod.Navigator(g, step_s=self.tick * self.repeat, **kw)
+        self._nav_los = False
 
     # ------------------------------------------------------------------ engine lifecycle
     def _boot(self):
@@ -177,6 +243,39 @@ class CS16Env(gym.Env):
     def _others_alive(self, s):
         return all(p.alive for i, p in enumerate(s.players) if p.connected and i != s.playernum)
 
+    def _route_dist(self, pos):
+        """Walking distance from pos to the navigator's enemy-side point over the navigation graph (Dijkstra field per
+        destination, cached)."""
+        nav = self.nav
+        if nav is None or nav.enemy_side is None:
+            return None
+        g = nav.g
+        key = tuple(np.round(nav.enemy_side, 1))
+        cache = self.__dict__.setdefault("_route_fields", {})
+        if key not in cache:
+            import heapq
+            src = g.nearest(nav.enemy_side)
+            dist = np.full(g.n, np.inf)
+            dist[src] = float(np.linalg.norm(g.nodes[src][:2] - nav.enemy_side[:2]))
+            pq = [(dist[src], src)]
+            while pq:
+                dk, k = heapq.heappop(pq)
+                if dk > dist[k]:
+                    continue
+                for j, w in g.adj[k]:
+                    if dk + w < dist[j]:
+                        dist[j] = dk + w
+                        heapq.heappush(pq, (dist[j], j))
+            cache[key] = dist
+        dist = cache[key]
+        k = g.nearest(pos)
+        if not np.isfinite(dist[k]):
+            return None
+        return float(dist[k] + np.linalg.norm(g.nodes[k][:2] - pos[:2]))
+
+    def _others_dead(self, s):
+        return not any(p.alive for i, p in enumerate(s.players) if p.connected and i != s.playernum)
+
     def _bots_ready(self, s):
         n = sum(1 for i, p in enumerate(s.players) if p.connected and i != s.playernum)
         return n >= self.scn.bots
@@ -189,9 +288,22 @@ class CS16Env(gym.Env):
         elif self.scn.reset_round:
             # fresh round: both sides respawn at their spawn points
             t_restart = self.bridge.state.time
-            self.bridge.command("sv_restart 1")
-            self.bridge.wait_until(lambda s: s.time > t_restart + 1.2 and self._me(s).alive
-                                   and self._bots_ready(s) and self._others_alive(s), max_steps=5000)
+            if self.scn.restart_confirm:
+                # mark the agent with an impossible health (255, in place); the restart respawns it with exactly 100,
+                # so health == 100 confirms the round has really restarted (fallback: 3 s)
+                s0 = self.bridge.state
+                me_i, o = s0.playernum, self._me(s0).origin
+                if self._me(s0).alive:
+                    self.bridge.command(f"cs2ai_place {me_i} {o[0]:.1f} {o[1]:.1f} {o[2]:.1f} "
+                                        f"{s0.viewangles[0]:.2f} {s0.viewangles[1]:.2f} 255")
+                self.bridge.command("sv_restart 1")
+                self.bridge.wait_until(lambda s: s.time > t_restart + 0.9 and self._me(s).alive
+                                       and (self._me(s).health == 100 or s.time > t_restart + 3.0)
+                                       and self._bots_ready(s) and self._others_alive(s), max_steps=5000)
+            else:
+                self.bridge.command("sv_restart 1")
+                self.bridge.wait_until(lambda s: s.time > t_restart + 1.2 and self._me(s).alive
+                                       and self._bots_ready(s) and self._others_alive(s), max_steps=5000)
         b = self.bridge
         s = b.state
         # wait until we're alive (respawn is automatic in all scenarios)
@@ -200,12 +312,19 @@ class CS16Env(gym.Env):
         if self._arena is not None:
             self._apply_bot_level()
             s = self._arena_place()
+        self._camp = None
+        self._peeker = None
+        if self.scn.reset_round and (self.duel_random_spawn or self.duel_bot_mode in ("camp", "side", "peek") or self._freeze_applied):
+            s = self._duel_setup()
         s = b.step(apply=True, capture=True)  # one neutral step to get a fresh frame
         self._ep_start = s.time
         self._since_shot = 99
         self._burst = 0
         self._acquired_t = None
         self._hidden_steps = 0
+        self._step_los = False
+        self._search_sign = 0
+        self._route_d = None
         self._snap = self._snapshot(s)
         self._kills = self._deaths = 0
         self._damage = 0
@@ -215,6 +334,14 @@ class CS16Env(gym.Env):
         # privileged labels aligned with the (delayed) observation, for auxiliary training losses only
         lab = self._target(s)
         self._aux_queue = collections.deque([lab] * (self.delay_steps + 1), maxlen=self.delay_steps + 1)
+        if self.nav is not None:
+            self.nav.reset()
+            m = self._me(s)
+            if self._nav_sides is not None:  # the enemy side = the spawn side the agent did not start on
+                dT = np.linalg.norm(np.array(m.origin) - self._nav_sides["T"])
+                dC = np.linalg.norm(np.array(m.origin) - self._nav_sides["CT"])
+                self.nav.enemy_side = np.array(self._nav_sides["CT" if dT < dC else "T"], np.float64)
+            s = b.step(cmd=self._los_cmds(), apply=False, capture=False)
         return self._obs_queue[0], self._info(s)
 
     def step(self, action):
@@ -245,20 +372,48 @@ class CS16Env(gym.Env):
         aim0 = self._snap["aim"]
         if self.hold_cost and aim0[1] is not None and aim0[1] < self.hold_deg:
             reward -= self.hold_cost * (abs(yaw) + abs(pitch))
+        los_traces = self.nav is not None or self._camp is not None or self.aim_terms_los_only
+        los_prev = getattr(self, "_step_los", False)
+        if self.search_flip_cost and los_traces:
+            if not los_prev:
+                sg = int(np.sign(yaw))
+                if sg and self._search_sign and sg != self._search_sign:
+                    reward -= self.search_flip_cost
+                if sg:
+                    self._search_sign = sg
+            else:
+                self._search_sign = 0
         for i in range(self.repeat):
-            cmds = [self._strafe_tick(), self._leash_tick(),
-                    self._los_cmd() if i == self.repeat - 1 and self.no_contest_after else ""]
+            cmds = [self._strafe_tick(), self._leash_tick(), self._side_hold_tick(), self._peek_tick(),
+                    self._los_cmd() if i == self.repeat - 1 and self.no_contest_after and not los_traces else "",
+                    self._los_cmds() if i == self.repeat - 1 and los_traces else ""]
             s = b.step(dyaw=dyaw, dpitch=dpitch, forward=fwd, side=side, buttons=buttons,
                        capture=(i == self.repeat - 1), cmd=";".join(c for c in cmds if c))
             r, died, killed = self._account(s)
             reward += r
             if (died and self.scn.end_on_death) or (killed and self.scn.end_on_kill):
                 terminated = True
-        if self.aim_shaping:  # potential-based: Phi = -angular error, F = gamma * Phi(s') - Phi(s), per agent step
+        if (self.route_shaping or self.still_cost) and self.nav is not None and self._me(s).alive:
+            d = self._route_dist(np.array(self._me(s).origin))
+            if not los_prev and self._route_d is not None and d is not None:
+                reward += self.route_shaping * float(np.clip(self._route_d - d, -30.0, 30.0))
+            self._route_d = d
+            if not los_prev and math.hypot(*s.velocity[:2]) < 20.0:
+                reward -= self.still_cost
+        los_now = False
+        if los_traces:
+            los_now = bool(self._me(s).alive and not self._others_dead(s) and (s.aux[7] >= 0.999 or s.aux[6] >= 0.999))
+            self._step_los = los_now
+            if not terminated:
+                self._camp_tick(s, los_now)
+        aim_ok = (los_prev and los_now) if self.aim_terms_los_only else True
+        if self.aim_shaping and aim_ok:  # potential-based: Phi = -angular error, F = gamma * Phi(s') - Phi(s), per agent step
             (t0, e0), (t1, e1) = aim0, self._snap["aim"]
             if t0 is not None and t0 == t1 and abs(e0 - e1) < 90.0:
                 reward += self.aim_shaping * (e0 - self.shaping_gamma * e1)
         t1, e1 = self._snap["aim"]
+        if self.aim_terms_los_only and not los_now:
+            e1 = None
         if e1 is not None:
             if self.offtarget_cost:
                 reward -= self.offtarget_cost * min(e1, 45.0)
@@ -275,6 +430,7 @@ class CS16Env(gym.Env):
         self._obs_queue.append(frame if frame is not None else self._obs_queue[-1])
         self._aux_queue.append(self._target(s))
         truncated = (s.time - self._ep_start) >= self.episode_seconds and not terminated
+        self._last_trunc = bool(truncated)
         self._no_contest = False
         if self.no_contest_after and not terminated and self._me(s).alive and self._others_alive(s):
             self._hidden_steps = self._hidden_steps + 1 if s.aux[7] < 0.999 else 0  # aux[7] = this step's LoS trace
@@ -299,6 +455,251 @@ class CS16Env(gym.Env):
         freeze, ignore = {0: (1, 1), 1: (1, 1), 2: (1, 0)}.get(self.bot_level, (0, 0))
         self.bridge.command(f"yb_freeze_bots {freeze}; yb_ignore_enemies {ignore}")
         self._bot_level_applied = self.bot_level
+
+    # ------------------------------------------------------------------ real duel: spawns and the stays-put shooter
+    def _set_freeze(self, on: bool):
+        if self._freeze_applied != bool(on):
+            self.bridge.command(f"yb_freeze_bots {int(bool(on))}")
+            self._freeze_applied = bool(on)
+
+    def _duel_setup(self):
+        """After the round restart: optional random own-side spawn + heading for the agent; the camping bot's spot."""
+        from .nav import MAP_SPAWNS
+        b = self.bridge
+        s = b.state
+        sp = MAP_SPAWNS.get(self.scn.map)
+        me = s.playernum
+        bot = next((k for k, p in enumerate(s.players) if p.connected and k != me), None)
+        self._peeker = None
+        if self.duel_bot_mode == "peek" and bot is not None and sp is not None:
+            self._set_freeze(False)
+            return self._peek_setup(s, sp, bot, cmds_mine=self._random_spawn_cmd(sp, me))
+        camp = self.duel_bot_mode in ("camp", "side") and bot is not None and sp is not None
+        self._set_freeze(camp and self.duel_bot_mode == "camp")  # normal mode: make sure an earlier camping round left no frozen bot behind
+        if sp is None:
+            return s
+        mine = "T" if self.scn.human_team == "T" else "CT"
+        theirs = "CT" if mine == "T" else "T"
+        cmds = []
+        if self.duel_random_spawn:
+            p = self._pick_spawn(sp[mine]["pts"])
+            yaw = float(self.np_random.uniform(0.0, 360.0))
+            cmds.append(f"cs2ai_place {me} {p[0]:.1f} {p[1]:.1f} {p[2] + 1:.1f} 0 {yaw:.2f} 100")
+        if camp:
+            p = sp[theirs]["pts"][int(self.np_random.integers(len(sp[theirs]["pts"])))]
+            # facing the agent's side: the map's T spawns face away from CT (yaw 90), so CT faces the T side at 90 deg
+            yaw = (sp[theirs]["yaw"] + 180.0 + float(self.np_random.uniform(-self.camp_yaw_jitter, self.camp_yaw_jitter))) % 360.0
+            cmds.append(f"cs2ai_place {bot} {p[0]:.1f} {p[1]:.1f} {p[2] + 1:.1f} 0 {yaw:.2f} 100")
+            self._camp = dict(bot=bot, home=np.array(p, np.float64) + (0, 0, 1), yaw=yaw, frozen=self.duel_bot_mode == "camp",
+                              unseen=0.0, hp=100, homes=0, unfreezes=0, mode=self.duel_bot_mode, side=theirs, line_freezes=0,
+                              max_adv=-1e9, crossed=False, walked=0.0, last=np.array(p, np.float64))
+        for c in cmds:
+            b.step(cmd=c, capture=False)
+        for _ in range(3):
+            s = b.step(capture=False)
+        return s
+
+    def _pick_spawn(self, pts):
+        n = len(pts)
+        if self._spawn_rate is None or len(self._spawn_rate) != n:
+            self._spawn_rate = np.zeros(n)
+        if self._spawn_last is not None:  # the previous round's outcome updates its spawn's time-out rate
+            k = self._spawn_last
+            self._spawn_rate[k] = 0.9 * self._spawn_rate[k] + 0.1 * float(self._last_trunc)
+        if self.duel_spawn_adapt > 0:
+            w = 1.0 + self.duel_spawn_adapt * self._spawn_rate
+            k = int(self.np_random.choice(n, p=w / w.sum()))
+        else:
+            k = int(self.np_random.integers(n))
+        self._spawn_last = k
+        return pts[k]
+
+    def _random_spawn_cmd(self, sp, me):
+        if not self.duel_random_spawn:
+            return []
+        mine = "T" if self.scn.human_team == "T" else "CT"
+        p = self._pick_spawn(sp[mine]["pts"])
+        yaw = float(self.np_random.uniform(0.0, 360.0))
+        return [f"cs2ai_place {me} {p[0]:.1f} {p[1]:.1f} {p[2] + 1:.1f} 0 {yaw:.2f} 100"]
+
+    def _peek_setup(self, s, sp, bot, cmds_mine):
+        """duel_bot_mode "peek": the scripted peeker body (cs16env/peeker.py) on the bot's side; YaPB decides when to fire."""
+        from .nav import NavGraph
+        from .peeker import Peeker
+        b = self.bridge
+        for c in cmds_mine:
+            b.step(cmd=c, capture=False)
+        s = b.step(capture=False)
+        mine = "T" if self.scn.human_team == "T" else "CT"
+        theirs = "CT" if mine == "T" else "T"
+        if not hasattr(self, "_side_graph"):
+            self._side_graph = self.nav.g if self.nav is not None else NavGraph.load(
+                f"data/arena/{self.scn.map.replace('-', '_')}_nav.npz")
+            self._side_nodes = {}
+        L = sp[theirs]
+        from .nav import MAP_SIDES
+        pk = Peeker(self._side_graph, L["line_y"], L["toward"], self.np_random, difficulty=self.scn.bot_difficulty,
+                    look_point=MAP_SIDES[self.scn.map][mine])
+        p = pk.reset(np.array(self._me(s).origin))
+        self._peeker = pk
+        self._camp = dict(bot=bot, mode="peek", hp=100, unfreezes=0, homes=0, vis_steps=0, live_steps=0,
+                          vis_runs=0, idle_vis=0.0, idle_vis_max=0.0, was_vis=False)
+        b.step(cmd=f"cs2ai_place {bot} {p[0]:.1f} {p[1]:.1f} {p[2] + 1:.1f} {pk.pitch:.2f} {pk.yaw:.2f} 100", capture=False)
+        for _ in range(3):
+            s = b.step(capture=False)
+        return s
+
+    def _peek_tick(self):
+        pk = getattr(self, "_peeker", None)
+        if pk is None:
+            return ""
+        c = self._camp
+        s = self.bridge.state
+        bp, m = s.players[c["bot"]], self._me(s)
+        if not (bp.alive and m.alive):
+            return ""
+        chest = np.array(m.origin, np.float64) + (0.0, 0.0, 10.0)
+        extra = ""
+        if pk.phase == "jumpcheck":
+            if pk.jump_traced:  # the traces issued last tick: aux[2..5] (1 = clear = visible)
+                pk.jump_verdict = all(float(s.aux[k]) < 0.999 for k in (2, 3, 4, 5))
+            else:
+                eye = np.array(m.origin, np.float64) + (0.0, 0.0, 17.0)
+                cur, dst = np.array(bp.origin, np.float64), pk.g.nodes[pk.jump[0]]
+                segs = [(cur, 10.0), (cur, 28.0), (dst, 10.0), (dst, 28.0)]
+                extra = ";" + ";".join(f"cs2ai_trace {2 + q} {eye[0]:.0f} {eye[1]:.0f} {eye[2]:.0f} {pt[0]:.0f} {pt[1]:.0f} "
+                                       f"{pt[2] + dz:.0f}" for q, (pt, dz) in enumerate(segs))
+                pk.jump_traced = True
+        p, pitch, yaw, _ = pk.tick(self.tick, np.array(m.origin, np.float64), chest, bool(getattr(self, "_step_los", False)))
+        return f"cs2ai_place {c['bot']} {p[0]:.1f} {p[1]:.1f} {p[2] + 1:.1f} {pitch:.2f} {yaw:.2f}" + extra
+
+    def _peek_step_stats(self, los):
+        c = self._camp
+        if c is None or c.get("mode") != "peek":
+            return
+        c["live_steps"] += 1
+        c["vis_steps"] += int(los)
+        nj = self._peeker.stats["jumps"]
+        if nj > c.get("jumps_last", 0) and (los or c["was_vis"]):  # a jump during a step seen before or after it
+            c["jumps_seen"] = c.get("jumps_seen", 0) + 1
+        c["jumps_last"] = nj
+        if los and not c["was_vis"]:
+            c["vis_runs"] += 1
+        c["was_vis"] = los
+        dt = self.tick * self.repeat
+        moving = self._peeker.phase in ("out", "back", "walk")
+        c["idle_vis"] = c["idle_vis"] + dt if (los and not moving) else 0.0
+        c["idle_vis_max"] = max(c["idle_vis_max"], c["idle_vis"])
+
+    def _camp_tick(self, s, los):
+        """Once per agent step (after the line-of-sight traces): freeze / unfreeze / send home the camping bot."""
+        c = self._camp
+        if c is None:
+            return
+        bp = s.players[c["bot"]]
+        if not bp.alive or not self._me(s).alive:
+            return
+        if c["mode"] == "side":
+            return self._side_tick(s, los, c, bp)
+        if c["mode"] == "peek":
+            return self._peek_step_stats(los)
+        hurt = bp.health < c["hp"]
+        c["hp"] = bp.health
+        if los or hurt:
+            c["unseen"] = 0.0
+            if c["frozen"]:
+                self._set_freeze(False)
+                c["frozen"] = False
+                c["unfreezes"] += 1
+            return
+        if c["frozen"]:
+            return
+        c["unseen"] += self.tick * self.repeat
+        if c["unseen"] >= self.camp_refreeze_s:
+            self._set_freeze(True)
+            c["frozen"] = True
+            if np.linalg.norm((np.array(bp.origin) - c["home"])[:2]) > self.camp_home_radius:
+                h = c["home"]
+                self.bridge.command(f"cs2ai_place {c['bot']} {h[0]:.1f} {h[1]:.1f} {h[2]:.1f} 0 {c['yaw']:.2f}")
+                c["homes"] += 1
+
+    def _side_spot(self, s, c):
+        """A random navigation spot of the bot's own area (behind its line by >= 100 units) that the agent's nearest spot
+        cannot see (precomputed node-to-node visibility); None if there is none."""
+        from .nav import MAP_SPAWNS
+        L = MAP_SPAWNS[self.scn.map][c["side"]]
+        if not hasattr(self, "_side_nodes"):
+            from .nav import NavGraph
+            g = self.nav.g if self.nav is not None else NavGraph.load(f"data/arena/{self.scn.map.replace('-', '_')}_nav.npz")
+            self._side_graph = g
+            self._side_nodes = {}
+        g = self._side_graph
+        key = c["side"]
+        if key not in self._side_nodes:
+            adv = (g.nodes[:, 1] - L["line_y"]) * L["toward"]
+            self._side_nodes[key] = np.nonzero(adv <= -100.0)[0]
+        cand = self._side_nodes[key]
+        here = g.nearest(np.array(self._me(s).origin))
+        ok = [int(k) for k in cand if not g.vis[here, k]]
+        if not ok:
+            return None
+        return g.nodes[ok[int(self.np_random.integers(len(ok)))]]
+
+    def _side_tick(self, s, los, c, bp):
+        from .nav import MAP_SPAWNS
+        L = MAP_SPAWNS[self.scn.map][c["side"]]
+        o = np.array(bp.origin, np.float64)
+        adv = (o[1] - L["line_y"]) * L["toward"]  # > 0 = past the cover line
+        c["max_adv"] = max(c["max_adv"], adv)
+        c["crossed"] |= adv > 0
+        c["walked"] += float(np.linalg.norm(o[:2] - c["last"][:2]))
+        c["last"] = o
+        c["unseen"] = 0.0 if los else c["unseen"] + self.tick * self.repeat
+        near = adv > -self.side_margin
+        if c.get("hold") is not None:  # held at its limit mid-fight (see _side_hold_tick)
+            if c["unseen"] >= self.side_hide_s and self._side_hide(s, c):
+                c["hold"] = None
+            return
+        if near and not los:
+            self._side_hide(s, c)
+
+    def _side_hold_tick(self):
+        """Every engine tick, real duel vs the "side" bot: once the bot is within side_hard of its cover line while the
+        agent can see it, its body is held at that spot (put back every tick, velocity zero: it stops, no jump), facing
+        the agent's chest with a fixed random error (side_hold_err deg) chosen when the hold starts; between holds its
+        aim, fire and movement are YaPB's own. It is NOT frozen, so it keeps deciding to fire by itself."""
+        c = self._camp
+        if c is None or c.get("mode") != "side":
+            return ""
+        s = self.bridge.state
+        bp, m = s.players[c["bot"]], self._me(s)
+        if not (bp.alive and m.alive):
+            return ""
+        from .nav import MAP_SPAWNS
+        L = MAP_SPAWNS[self.scn.map][c["side"]]
+        o = np.array(bp.origin, np.float64)
+        if c.get("hold") is None:
+            adv = (o[1] - L["line_y"]) * L["toward"]
+            if not (getattr(self, "_step_los", False) and adv > -self.side_hard):
+                return ""
+            e = self.side_hold_err
+            c["hold"] = (o.copy(), float(self.np_random.uniform(-e, e)), float(self.np_random.uniform(-e, e) / 2))
+            c["line_freezes"] += 1
+        p, ey, ep = c["hold"]
+        d = np.array(m.origin) + (0.0, 0.0, 10.0) - (p + (0.0, 0.0, 17.0))
+        yaw = math.degrees(math.atan2(d[1], d[0])) + ey
+        pitch = -math.degrees(math.atan2(d[2], math.hypot(d[0], d[1]))) + ep
+        return f"cs2ai_place {c['bot']} {p[0]:.1f} {p[1]:.1f} {p[2]:.1f} {pitch:.2f} {yaw:.2f}"
+
+    def _side_hide(self, s, c):
+        """Move the bot to a hidden spot of its own area (only called while the agent cannot see it)."""
+        p = self._side_spot(s, c)
+        if p is None:
+            return False
+        self.bridge.command(f"cs2ai_place {c['bot']} {p[0]:.1f} {p[1]:.1f} {p[2] + 1:.1f} 0 {c['yaw']:.2f}")
+        c["last"] = np.array(p, np.float64)
+        c["homes"] += 1
+        return True
 
     def _target(self, s):
         """[yaw err, pitch err, in-view, world yaw, world pitch, valid] of the nearest live enemy's chest (degrees).
@@ -456,6 +857,53 @@ class CS16Env(gym.Env):
             return "cs2ai_trace 7 0 0 0 0 0 0"
         a, e = np.array(m.origin) + (0, 0, 17), np.array(best[1]) + (0, 0, 10)
         return f"cs2ai_trace 7 {a[0]:.0f} {a[1]:.0f} {a[2]:.0f} {e[0]:.0f} {e[1]:.0f} {e[2]:.0f}"
+
+    def _los_cmds(self):
+        """Navigator only: chest trace into aux[7] (as _los_cmd) plus eye -> head (+28) into aux[6]."""
+        c = self._los_cmd()
+        p = c.split()
+        if p[2:] == ["0"] * 6:
+            return c + ";cs2ai_trace 6 0 0 0 0 0 0"
+        return c + f";cs2ai_trace 6 {p[2]} {p[3]} {p[4]} {p[5]} {p[6]} {float(p[7]) + 18:.0f}"
+
+    def _nav_ext(self, s, ext):
+        """Navigator labels (training only, never observed; present in info only after enable_nav()), 14 values:
+        [0] forward key (0 none / 1 fwd / 2 back)  [1] side key (0 none / 1 left / 2 right)   -- the navigator's keys
+        [2] wanted yaw bin  [3] wanted yaw turn (deg)  [4] wanted pitch bin  -- its look while the enemy is NOT visible
+        [5] look valid (navigating: both alive, enemy not in line of sight)
+        [6] keys valid (both alive; while engaging the keys are "stop"/counter-strafe)
+        [7] own x, [8] own y scaled to [-1, 1] over the nav graph  [9] sin, [10] cos of the view yaw  ("where am I")
+        [11] where-am-I valid (agent alive)  [12] mode (-1 none, 0 navigate, 1 engage)  [13] enemy in line of sight
+        Computed from the state after this step = the decision for the NEXT action (with reaction_delay 0 the frame
+        the agent sees is this same state)."""
+        out = np.zeros(14, np.float32)
+        m = self._me(s)
+        foes = [p for k, p in enumerate(s.players) if k != s.playernum and p.connected and p.alive]
+        los = bool(m.alive and foes and (s.aux[7] >= 0.999 or s.aux[6] >= 0.999))
+        self._nav_los = los
+        enemy = None
+        if m.alive and foes:
+            enemy = min((np.array(p.origin) for p in foes), key=lambda o: float(np.linalg.norm(o - np.array(m.origin))))
+        aim = (ext[3], ext[4], ext[8], ext[9])
+        t = s.time - getattr(self, "_ep_start", s.time)
+        if m.alive:
+            a = self.nav.act(np.array(m.origin), (s.viewangles[0], s.viewangles[1]), tuple(s.velocity), t, los, enemy, aim)
+        else:
+            a = np.array([len(YAW_TABLE) // 2, len(PITCH_TABLE) // 2, 0, 0, 0, 0, 0, 0, 0])
+        self.nav_action = a
+        lab = self.nav.label
+        if m.alive and enemy is not None:
+            out[0], out[1] = lab["fwd"], lab["side"]
+            out[6] = 1.0
+            if lab["mode"] == 0:
+                out[2], out[3], out[4], out[5] = lab["yaw_bin"], lab["yaw_deg"], lab["pitch_bin"], 1.0
+        if m.alive:
+            out[7:9] = self.nav.g.norm_xy(m.origin)
+            yaw = math.radians(s.viewangles[1])
+            out[9], out[10], out[11] = math.sin(yaw), math.cos(yaw), 1.0
+        out[12] = lab.get("mode", -1) if (m.alive and enemy is not None) else -1
+        out[13] = float(los)
+        return out
 
     def _trace(self, segs):
         """World line traces (<= 3 per bridge step); returns fractions (1 = clear)."""
@@ -635,6 +1083,13 @@ class CS16Env(gym.Env):
 
     def _info(self, s):
         me = self._me(s)
+        ext = self._aux_ext(s)
+        d = self._info_base(s, me, ext)
+        if self.nav is not None:
+            d["nav_ext"] = self._nav_ext(s, ext)
+        return d
+
+    def _info_base(self, s, me, ext):
         return {
             "time": s.time - getattr(self, "_ep_start", s.time),
             "kills": getattr(self, "_kills", 0),
@@ -649,5 +1104,17 @@ class CS16Env(gym.Env):
             "pocket_vis": self._pocket_vis,
             "acquire_time": self._acquired_t,
             "aux": self._aux_queue[0][:3].copy() if getattr(self, "_aux_queue", None) else np.zeros(3, np.float32),
-            "aux_ext": self._aux_ext(s),
+            "aux_ext": ext,
+            "los": bool(getattr(self, "_step_los", False)),
+            "camp": None if self._camp is None else dict(
+                unfreezes=self._camp["unfreezes"], homes=self._camp["homes"],
+                **(dict({k: self._camp[k] for k in ("vis_steps", "live_steps", "vis_runs", "idle_vis_max")},
+                        peeks=self._peeker.stats["peeks"], jumps=self._peeker.stats["jumps"],
+                        jumps_refused=self._peeker.stats["jumps_refused"], jumps_seen=self._camp.get("jumps_seen", 0),
+                        still=round(self._peeker.stats["still_ticks"] / max(1, self._peeker.stats["ticks"]), 3),
+                        max_adv=round(float(self._peeker.stats["max_adv"]), 1))
+                   if self._camp["mode"] == "peek" and self._peeker is not None else {}),
+                **({} if self._camp["mode"] != "side" else dict(
+                    line_freezes=self._camp["line_freezes"], max_adv=round(float(self._camp["max_adv"]), 1),
+                    crossed=bool(self._camp["crossed"]), walked=round(float(self._camp["walked"]))))),
         }

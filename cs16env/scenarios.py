@@ -49,6 +49,10 @@ class Scenario:
     end_on_kill: bool = False
     human_team: str = "T"
     reset_round: bool = False      # restart the round (respawn everyone at spawn points) on every reset
+    # reset_round only: wait until the restart has really happened before the episode starts. ReGameDLL reads
+    # sv_restart on a 1 s periodic think, so the respawn lands 1.0-2.0 s after the command; the plain 1.2 s wait let
+    # rounds start with both players still where the previous round left them (measured 2026-11-12, see PHASE3_NOTES).
+    restart_confirm: bool = False
     arena: str = ""                # aim arena: npz of line-of-sight spawn pairs (scripts/make_arena_pairs.py)
     arena_max_dist: float = 2000.0 # curriculum: max spawn distance (units)
     arena_max_offset: float = 30.0 # curriculum: max initial aim error (degrees, yaw; pitch gets 1/4)
@@ -129,7 +133,7 @@ for _name, _map, _pairs in (("aim_aimmap", "aim_map", "aim_map_pairs.npz"), ("ai
 # first kill ends the round. No arena placement: the agent has to find the enemy.
 SCENARIOS["duel_aimmap"] = Scenario(
     name="duel_aimmap", map="aim_map", bots=1, bot_difficulty=0, episode_seconds=45.0,
-    end_on_death=True, end_on_kill=True, reset_round=True,
+    end_on_death=True, end_on_kill=True, reset_round=True, restart_confirm=True,
     server_cmds=_DM_BASE + [
         "mp_freeforall 1",
         "mp_t_default_weapons_primary ak47", "mp_ct_default_weapons_primary ak47",

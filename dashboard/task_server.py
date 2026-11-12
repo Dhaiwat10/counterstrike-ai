@@ -21,6 +21,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 RESULTS = REPO / "scratch" / "fire_fix_results.jsonl"
 LOG = REPO / "scratch" / "fire_fix_log.md"
+NAV_RESULTS = REPO / "scratch" / "nav_results.jsonl"
+NAV_LOG = REPO / "scratch" / "nav_log.md"
+MOVE_RESULTS = REPO / "scratch" / "move_results.jsonl"
+MOVE_LOG = REPO / "scratch" / "move_log.md"
 
 
 def read_jsonl(p: Path, tail_bytes=None):
@@ -64,6 +68,12 @@ def processes():
             kind = "firing analysis"
         elif "record.py" in cmd or "duel_trial.py" in cmd:
             kind = "recording"
+        elif "nav_duel.py" in cmd or "move_duel.py" in cmd:
+            kind = "duels"
+        elif "make_nav_graph.py" in cmd:
+            kind = "map building"
+        elif "test_nav.py" in cmd:
+            kind = "tests"
         if not kind:
             continue
         args = cmd.split(" -m train.ppo ")[-1] if kind == "training" else cmd.split(".py", 1)[-1].strip()
@@ -92,7 +102,8 @@ def current_run():
             if r.get("event") == "update":
                 first_up = r["update"]
         ups = [u for u in ups if first_up is None or u["update"] >= first_up]
-    keys = ("update", "kill_rate", "death_rate", "kill_close", "kill_medium", "kill_long", "fire_frac", "teacher", "teacher_yaw_err", "ent", "sps")
+    keys = ("update", "kill_rate", "death_rate", "kill_close", "kill_medium", "kill_long", "fire_frac", "teacher", "teacher_yaw_err", "ent", "sps",
+            "camp_win", "camp_len_s", "duel_stage", "nav_keys_agree")
     pts = [{k: u.get(k) for k in keys} for u in ups]
     last = ups[-1]
     extra = {k: v for k, v in last.items() if isinstance(v, (int, float)) and k not in keys and not k.startswith(("remote", "actor", "peer"))}
@@ -104,7 +115,15 @@ def current_run():
 
 def state():
     procs, engines = processes()
-    return dict(now=time.time(), processes=procs, engines=engines, results=read_jsonl(RESULTS),
+    nav = dict(results=read_jsonl(NAV_RESULTS), log=NAV_LOG.read_text(errors="replace")[-40000:] if NAV_LOG.exists() else "",
+               log_age_s=(time.time() - NAV_LOG.stat().st_mtime) if NAV_LOG.exists() else None)
+    try:
+        status = json.loads((REPO / "scratch" / "move_status.json").read_text())
+    except Exception:
+        status = None
+    move = dict(status=status, results=read_jsonl(MOVE_RESULTS), log=MOVE_LOG.read_text(errors="replace")[-40000:] if MOVE_LOG.exists() else "",
+                log_age_s=(time.time() - MOVE_LOG.stat().st_mtime) if MOVE_LOG.exists() else None)
+    return dict(now=time.time(), processes=procs, engines=engines, nav=nav, move=move, results=read_jsonl(RESULTS),
                 log=LOG.read_text(errors="replace")[-40000:] if LOG.exists() else "",
                 log_age_s=(time.time() - LOG.stat().st_mtime) if LOG.exists() else None, run=current_run())
 
@@ -127,6 +146,10 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(body)
             return
         if self.path in ("/", "/index.html"):
+            self.path = "/move.html"
+        elif self.path.rstrip("/") == "/nav":
+            self.path = "/nav.html"
+        elif self.path.rstrip("/") == "/fire":
             self.path = "/task.html"
         return super().do_GET()
 

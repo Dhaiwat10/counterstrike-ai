@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Navigator</title>
+<style>
+  :root { --bg:#0c0d0f; --panel:#131418; --line:#23252b; --line2:#2d3037; --ink:#ededef; --mute:#8b8f98; --faint:#5c606a;
+          --good:#4cc38a; --bad:#e5604c; --blue:#5aa2f5; --amber:#e2a336; --track:#1d1f24; --zone:rgba(76,195,138,.16); }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#fbfbfa; --panel:#ffffff; --line:#e9e9e7; --line2:#dcdcd9; --ink:#1b1c1e; --mute:#6c7079; --faint:#a3a6ad;
+            --good:#1f9d63; --bad:#cf4a35; --blue:#2f7fe0; --amber:#b97f10; --track:#efefed; --zone:rgba(31,157,99,.14); }
+  }
+  * { box-sizing:border-box; } [hidden] { display:none !important; }
+  html { -webkit-font-smoothing:antialiased; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.45 -apple-system, "SF Pro Text", "Inter", "Segoe UI", sans-serif; letter-spacing:-.005em; font-variant-numeric:tabular-nums; }
+  main { max-width:1100px; margin:0 auto; padding:22px 20px 60px; }
+  header { display:flex; align-items:center; gap:12px; margin-bottom:18px; flex-wrap:wrap; }
+  h1 { font-size:19px; font-weight:600; margin:0; letter-spacing:-.01em; }
+  .spacer { flex:1; }
+  .chip { display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 11px; border:1px solid var(--line); border-radius:6px; color:var(--mute); white-space:nowrap; }
+  .chip b { color:var(--ink); font-weight:500; }
+  .dot { width:7px; height:7px; border-radius:50%; background:var(--faint); flex:none; }
+  .dot.live { background:var(--good); box-shadow:0 0 0 3px rgba(76,195,138,.18); animation:p 1.8s ease-in-out infinite; }
+  @keyframes p { 50% { box-shadow:0 0 0 6px rgba(76,195,138,0); } }
+  .score { display:flex; align-items:center; gap:10px; }
+  .score .n { font-size:19px; font-weight:600; } .score .n span { color:var(--mute); font-weight:400; }
+  .segs { display:flex; gap:3px; } .segs i { width:14px; height:6px; border-radius:2px; background:var(--track); } .segs i.ok { background:var(--good); } .segs i.no { background:var(--bad); opacity:.75; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:8px; margin-bottom:12px; }
+  .head { display:flex; align-items:center; gap:10px; padding:10px 14px; border-bottom:1px solid var(--line); color:var(--mute); font-size:15px; }
+  .head .t { color:var(--ink); font-weight:500; }
+  .key { display:inline-flex; align-items:center; gap:5px; margin-left:12px; color:var(--faint); font-size:14.5px; }
+  .key i { display:inline-block; }
+  /* targets */
+  .row { display:grid; grid-template-columns:210px 1fr 170px 16px; align-items:center; gap:14px; padding:9px 14px; border-bottom:1px solid var(--line); }
+  .row:last-child { border-bottom:0; }
+  .row .l { color:var(--ink); } .row .l small { display:block; color:var(--faint); font-size:14px; margin-top:1px; }
+  .track { position:relative; height:8px; border-radius:4px; background:var(--track); }
+  .zone { position:absolute; top:0; bottom:0; background:var(--zone); border-radius:4px; }
+  .fill { position:absolute; top:0; bottom:0; left:0; border-radius:4px; background:var(--mute); transition:width .5s ease; }
+  .fill.ok { background:var(--good); } .fill.no { background:var(--ink); opacity:.8; } .fill.ghost { background:var(--faint); opacity:.55; }
+  .tick { position:absolute; top:-4px; bottom:-4px; width:2px; margin-left:-1px; background:var(--amber); border-radius:1px; }
+  .tick.t { background:transparent; border-left:2px dotted var(--blue); width:0; }
+  .goal { position:absolute; top:-4px; bottom:-4px; width:1px; background:var(--good); }
+  .v { text-align:right; white-space:nowrap; } .v b { font-size:17.5px; font-weight:600; } .v span { color:var(--faint); margin-left:6px; font-size:14.5px; }
+  .st { width:8px; height:8px; border-radius:50%; background:var(--line2); } .st.ok { background:var(--good); } .st.no { background:var(--bad); }
+  /* chart */
+  .chart { padding:10px 14px 6px; } svg { width:100%; height:170px; display:block; }
+  /* table */
+  table { width:100%; border-collapse:collapse; }
+  th, td { padding:10px 14px; text-align:right; border-bottom:1px solid var(--line); white-space:nowrap; }
+  tr:last-child td { border-bottom:0; }
+  th { color:var(--faint); font-weight:400; font-size:14.5px; } th:first-child, td:first-child { text-align:left; }
+  td.ok { color:var(--good); } td.no { color:var(--bad); } td.na { color:var(--faint); }
+  td.name { color:var(--ink); max-width:260px; overflow:hidden; text-overflow:ellipsis; } tr.ref td { color:var(--mute); }
+  .tag { display:inline-block; font-size:13px; color:var(--faint); border:1px solid var(--line2); border-radius:4px; padding:0 5px; margin-left:6px; }
+  pre { margin:0; padding:12px 14px; white-space:pre-wrap; word-break:break-word; font:14.5px/1.6 ui-monospace, "SF Mono", Menlo, monospace; color:var(--mute); max-height:300px; overflow:auto; }
+  .empty { padding:18px 14px; color:var(--faint); }
+  .wrap { overflow-x:auto; }
+  @media (max-width:640px) { .row { grid-template-columns:110px 1fr 96px 10px; gap:10px; } .v span { display:none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="dot" id="live"></span><h1>Navigator teacher</h1>
+    <span class="chip" id="c-meas" hidden></span><span class="chip" id="c-games" hidden></span>
+    <span class="spacer"></span>
+    <a class="chip" href="/fire" style="text-decoration:none">Firing fix ›</a>
+    <div class="score"><div class="segs" id="segs"></div><div class="n" id="met"></div></div>
+  </header>
+  <section>
+    <div class="head"><span class="t">Targets</span><span id="who"></span><span class="spacer"></span>
+      <span class="key"><i style="width:2px;height:10px;background:var(--amber)"></i>standing still</span>
+      <span class="key"><i style="width:14px;height:6px;border-radius:2px;background:var(--zone)"></i>goal</span></div>
+    <div id="rows"></div>
+  </section>
+  <section>
+    <div class="head"><span class="t">Real duels</span><span id="nd"></span></div>
+    <div class="wrap"><table id="duels"></table></div>
+  </section>
+  <section>
+    <div class="head"><span class="t">Turning the right way</span><span id="no"></span></div>
+    <div class="wrap"><table id="orient"></table></div>
+  </section>
+  <section>
+    <div class="head" id="noteshead" style="cursor:pointer;border-bottom:0"><span class="t">Notes</span><span id="lastnote" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0"></span><span class="spacer"></span><span id="logage" style="white-space:nowrap"></span><span id="chev">▸</span></div>
+    <pre id="log" hidden style="border-top:1px solid var(--line)"></pre>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ago = s => s == null ? '' : s < 90 ? Math.round(s) + 's ago' : s < 5400 ? Math.round(s / 60) + 'm ago' : (s / 3600).toFixed(1) + 'h ago';
+const P0 = v => Math.round(100 * v) + '%', S1 = v => v.toFixed(2) + ' s';
+const num = (d, ...ks) => { for (const k of ks) if (d[k] != null) return +d[k]; return null; };
+const frac = (d, k) => { const n = num(d, 'rounds', 'duels'), v = num(d, k); return n && v != null ? v / n : null; };
+const still = l => /still|stand|no.?nav|spawn only/i.test(l);
+const diff = d => num(d, 'bot_difficulty', 'difficulty') ?? 0;
+const M = [
+  ['Wins', 'real duels, easiest bot', d => frac(d, 'wins'), false, .80, P0, 'duel'],
+  ['Reaches a fight', 'rounds where it sees the enemy', d => frac(d, 'fights'), false, .95, P0, 'duel'],
+  ['Gets stuck', 'rounds with no progress', d => frac(d, 'stuck'), true, .02, P0, 'duel'],
+  ['Turns the right way', 'time to face the route', d => num(d, 'median_face_s'), true, 1.0, S1, 'orient'],
+];
+let notesOpen = false, lastState = null;
+function render(s) {
+  const R = s.nav.results, ms = s.processes;
+  $('live').className = 'dot' + (ms.length ? ' live' : '');
+  $('c-meas').hidden = !ms.length; if (ms.length) { $('c-meas').innerHTML = `<b>${esc(ms[0].kind)}</b>${esc(ms[0].elapsed)}${ms.length > 1 ? ' +' + (ms.length - 1) : ''}`; $('c-meas').title = ms.map(p => p.kind + ' ' + p.args).join('\n'); }
+  $('c-games').hidden = !s.engines; $('c-games').innerHTML = `<b>${s.engines}</b>game${s.engines === 1 ? '' : 's'}`;
+  document.title = (ms.length ? '● ' : '') + 'Navigator';
+  const duels = R.filter(r => r.kind === 'duel'), orient = R.filter(r => r.kind === 'orient');
+  const mine = duels.filter(r => !still(r.label) && diff(r.data) === 0), ref = duels.filter(r => still(r.label) && diff(r.data) === 0);
+  const cur = { duel: mine.length ? mine[mine.length - 1] : null, orient: orient.length ? orient[orient.length - 1] : null };
+  const refd = ref.length ? ref[ref.length - 1].data : null;
+  let html = '', met = 0, segs = '', any = false;
+  for (const [name, hint, get, lower, goal, fmt, kind] of M) {
+    const c = cur[kind], v = c ? get(c.data) : null, b = kind === 'duel' && refd ? get(refd) : null;
+    const max = lower ? Math.max(goal, v ?? 0, b ?? 0) * 1.6 || 1 : 1, x = q => Math.max(0, Math.min(100, 100 * q / max));
+    const ok = v == null ? null : lower ? v <= goal : v >= goal; if (ok) met++; if (v != null) any = true;
+    segs += `<i class="${ok == null ? '' : ok ? 'ok' : 'no'}" title="${esc(name)}"></i>`;
+    const zone = lower ? `left:0;width:${x(goal)}%` : `left:${x(goal)}%;right:0`;
+    html += `<div class="row" title="${esc(name + ': ' + hint + (c ? '\n' + c.label : ''))}"><div class="l">${name}<small>${hint}</small></div>
+      <div class="track"><div class="zone" style="${zone}"></div>${v != null ? `<div class="fill ${ok ? 'ok' : 'no'}" style="width:${x(v)}%"></div>` : ''}
+      <div class="goal" style="left:${x(goal)}%"></div>${b != null ? `<div class="tick" style="left:${x(b)}%"></div>` : ''}</div>
+      <div class="v"><b>${v != null ? fmt(v) : '–'}</b><span>${lower ? '≤' : '≥'} ${fmt(goal)}</span></div><div class="st ${ok == null ? '' : ok ? 'ok' : 'no'}"></div></div>`;
+  }
+  $('rows').innerHTML = html; $('segs').innerHTML = segs; $('met').innerHTML = any ? `${met}<span> / ${M.length}</span>` : `<span>0 / ${M.length}</span>`;
+  $('who').textContent = cur.duel ? cur.duel.label : 'no duels measured yet';
+  const cls = (v, ok) => v == null ? 'na' : ok ? 'ok' : 'no', cell = (v, f, ok) => `<td class="${ok == null ? (v == null ? 'na' : '') : cls(v, ok)}">${v == null ? '·' : f(v)}</td>`;
+  let t = '<tr><th>Version</th><th>Bot level</th><th>Duels</th><th>Wins</th><th>Fights</th><th>Stuck</th><th>Deaths</th><th>Time up</th><th>Median</th></tr>';
+  for (const r of duels.slice().reverse()) { const d = r.data, w = frac(d, 'wins'), f = frac(d, 'fights'), st = frac(d, 'stuck'), ref = still(r.label), e = diff(d) === 0 && !ref;
+    t += `<tr class="${ref ? 'ref' : ''}"><td class="name">${esc(r.label)}</td><td>${diff(d)}</td><td>${num(d, 'rounds', 'duels') ?? '·'}</td>${cell(w, P0, e ? w >= .8 : null)}${cell(f, P0, e ? f >= .95 : null)}${cell(st, P0, e ? st <= .02 : null)}${cell(frac(d, 'deaths'), P0, null)}${cell(frac(d, 'timeouts'), P0, null)}${cell(num(d, 'median_seconds'), v => v.toFixed(1) + ' s', null)}</tr>`; }
+  $('duels').innerHTML = duels.length ? t : '<tr><td class="na" style="text-align:left">None yet</td></tr>'; $('nd').textContent = duels.length || '';
+  let o = '<tr><th>Version</th><th>Starts</th><th>Faces the route</th><th>First sight of enemy</th></tr>';
+  for (const r of orient.slice().reverse()) { const d = r.data, f = num(d, 'median_face_s');
+    o += `<tr><td class="name">${esc(r.label)}</td><td>${num(d, 'starts') ?? '·'}</td>${cell(f, S1, f == null ? null : f <= 1)}${cell(num(d, 'median_sight_s'), S1, null)}</tr>`; }
+  $('orient').innerHTML = orient.length ? o : '<tr><td class="na" style="text-align:left">None yet</td></tr>'; $('no').textContent = orient.length || '';
+  const text = s.nav.log.trim(), log = $('log'), heads = text.split('\n').filter(l => /^#+\s/.test(l));
+  $('lastnote').textContent = text ? (heads.length ? heads[heads.length - 1].replace(/^#+\s*/, '') : '') : 'none yet';
+  $('logage').textContent = text ? ago(s.nav.log_age_s) : ''; log.hidden = !notesOpen || !text; $('chev').textContent = notesOpen ? '▾' : '▸';
+  if (text && log.textContent !== text) { log.textContent = text; log.scrollTop = log.scrollHeight; }
+}
+$('noteshead').onclick = () => { notesOpen = !notesOpen; if (lastState) render(lastState); const l = $('log'); l.scrollTop = l.scrollHeight; };
+async function tick() { try { lastState = await (await fetch('/api/state', { cache: 'no-store' })).json(); render(lastState); } catch (e) { $('live').className = 'dot'; } }
+tick(); setInterval(tick, 5000);
+</script>
+</body>
+</html>

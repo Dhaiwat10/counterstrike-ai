@@ -39,7 +39,7 @@ class _Stage(nn.Module):
 
 class Policy(nn.Module):
     def __init__(self, in_hw=(120, 160), chans=(32, 64, 64), hidden=512, fovea=0, fovea_chans=(16, 32, 32), act_hist=0, aux_now=False,
-                 loc=False):
+                 loc=False, selfloc=False):
         super().__init__()
         self.in_hw = tuple(in_hw)
         self.fovea = int(fovea)
@@ -73,6 +73,11 @@ class Policy(nn.Module):
             # yaw-turn bins (0.25 deg steps near zero) for the yaw offset, the same for the pitch offset, and an
             # in-view logit. Registered last, so the parameter order of older checkpoints is unchanged.
             self.loc = nn.Linear(hidden, 2 * NVEC[0] + 1)
+        if selfloc:
+            # optional training-only "where am I" head (--selfloc): own x, y on the map scaled to [-1, 1] and sin/cos of
+            # the own view yaw, predicted from the picture + memory (labels from CS16Env._nav_ext [7:11]); never used to
+            # act. Registered after everything else, so older checkpoints load unchanged (and load into it with strict=False).
+            self.selfloc = nn.Linear(hidden, 4)
 
     @staticmethod
     def _tower(chans):

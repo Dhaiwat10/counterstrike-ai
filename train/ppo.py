@@ -40,7 +40,18 @@ IDLE = (NVEC[0] // 2, NVEC[1] // 2, 0, 0, 0, 0, 0, 0, 0)  # "no input" for every
 # training-only labels per step: aux (3) + aux now (3) + teacher yaw bin, pitch bin, valid (3)
 # + teacher yaw turn, pitch turn in degrees, fire, valid-even-off-screen (4); see CS16Env._aux_ext
 N_LABELS = 13
+# --nav-coef / --selfloc (movement work, 2026-11-12): the navigator's 14 labels (CS16Env._nav_ext) follow the 13 above
+N_NAV = 14
+NAV0 = N_LABELS
 LOGN = torch.tensor([math.log(n) for n in NVEC])
+# real-duel opponent stages (--duel-stage0, promotion by --duel-gates): every opponent shoots back
+# 2026-11-12 (owner): the opponent must never leave its own side, so stages 2-4 use the confined mover
+# (first CS16Env.duel_bot_mode "side"; since move_v4 the scripted peeker "peek", which really goes out and back);
+# the free-roaming bot is an exam only
+DUEL_STAGES = {1: dict(bot="camp", diff=0),    # stays at its spawn, turns/aims/shoots once it has line of sight
+               2: dict(bot="peek", diff=0),    # peeks from behind its own boxes (cs16env/peeker.py), difficulty 0
+               3: dict(bot="peek", diff=1),
+               4: dict(bot="peek", diff=2)}
 
 
 # ---------------------------------------------------------------------------------- workers
@@ -51,6 +62,18 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
     from cs16env.vision import views_from_frame
 
     env = CS16Env(scenario, width=res[0], height=res[1], reaction_delay=knobs["delay"])
+    duel = bool(env.scn.reset_round)  # a real duel (duel_aimmap): own spawns, no arena placement
+    nav = bool(rewards.get("nav", False))
+    if nav:  # navigator labels (+ line-of-sight traces) in every game on a map with a navigation graph
+        env.enable_nav(goal_mode="side", look_cap=rewards.get("nav_look_cap", 0.0), look_deadband=rewards.get("nav_look_deadband", 0.0),
+                       look_follow=rewards.get("nav_look_follow", 0.0))
+    if duel:
+        env.duel_random_spawn = bool(rewards.get("duel_random_spawn", False))
+        env.aim_terms_los_only = True
+        env.search_flip_cost = rewards.get("search_flip_cost", 0.0)
+        env.route_shaping = rewards.get("route_shaping", 0.0)
+        env.duel_spawn_adapt = rewards.get("duel_spawn_adapt", 0.0)
+        env.still_cost = rewards.get("still_cost", 0.0)
     env.aim_shaping, env.bullet_cost, env.rw_dmg = rewards["aim_shaping"], rewards["bullet_cost"], rewards["damage"]
     env.shaping_gamma = rewards["gamma"]
     env.offtarget_cost, env.acquire_bonus = rewards.get("offtarget", 0.0), rewards.get("acquire", 0.0)
@@ -58,6 +81,12 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
     env.hold_cost, env.hold_deg = rewards.get("hold_cost", 0.0), rewards.get("hold_deg", 1.5)
 
     def set_knobs(k):
+        if duel:  # real duel: one life each, the opponent always shoots back; 45 s rounds; arena knobs do not apply
+            env.set_reaction_delay(k["delay"])
+            env.episode_seconds = rewards.get("duel_seconds", env.scn.episode_seconds)
+            env.time_penalty = rewards["time_round"] / (env.episode_seconds / (env.tick * env.repeat))
+            env.rw_death, env.hurt_penalty, env.no_contest_after = rewards["death"], rewards["hurt"], 0.0
+            return
         env.arena_max_offset, env.arena_max_dist = k["offset"], k["dist"]
         env.arena_min_offset = k.get("offset_min", 0.0)
         env.arena_min_dist, env.arena_band_frac = k.get("dist_min", 0.0), (0.5 if k.get("dist_min", 0.0) > 0 else 0.0)
@@ -81,6 +110,23 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
     def choose_round():  # before each reset: usually the current stage, sometimes an earlier one
         state["delayed"] = False
         state["passive"] = False
+        if duel:  # opponent stage (DUEL_STAGES): stage 1 = the stays-put shooter; later stages keep a share of it
+            set_knobs(state["cur"])
+            st = DUEL_STAGES[int(state["cur"].get("duel_stage", 1))]
+            camp = st["bot"] == "camp" or rng.random() < rewards.get("duel_camp_frac", 0.0)
+            env.duel_bot_mode = "camp" if camp else st["bot"]
+            state["camp"] = camp
+            if env.bridge is None:  # not booted yet: the bot is created at this difficulty
+                import dataclasses
+                env.scn = dataclasses.replace(env.scn, bot_difficulty=st["diff"])
+            elif st["diff"] != state.get("diff", env.scn.bot_difficulty):
+                # a harder bot: YaPB applies yb_difficulty to bots it creates, so the bot is kicked and re-added; the
+                # scenario copy is updated too (the peeker reads its aim settings from it)
+                import dataclasses
+                env.bridge.command(f"yb_difficulty {st['diff']}; yb_kickall")
+                env.scn = dataclasses.replace(env.scn, bot_difficulty=st["diff"])
+            state["diff"] = st["diff"]
+            return
         if state["pool"] and rng.random() < rewards.get("rehearsal", 0.0):
             set_knobs(rng.choice(state["pool"])); state["rehearsing"] = True
         else:
@@ -100,11 +146,23 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
     def views(o):
         return views_from_frame(o, hw, fovea, extra_scale=prior_scale)
 
-    def labels(inf):  # training-only labels (N_LABELS values); see CS16Env._aux_ext
-        return np.concatenate([inf["aux"], inf.get("aux_ext", np.zeros(N_LABELS - 3, np.float32))]).astype(np.float32)
+    def labels(inf):  # training-only labels (N_LABELS values, + N_NAV with nav); see CS16Env._aux_ext / _nav_ext
+        lab = np.concatenate([inf["aux"], inf.get("aux_ext", np.zeros(N_LABELS - 3, np.float32))]).astype(np.float32)
+        if not nav:
+            return lab
+        ne = np.array(inf.get("nav_ext", np.zeros(N_NAV, np.float32)), np.float32)
+        if duel:
+            if ne[13] <= 0:  # the aim teacher only while the enemy is in line of sight (it would look through walls)
+                lab[5] = lab[12] = 0.0
+        else:  # aim arena: the navigator's route labels mean nothing here; keep its "stop while engaging" keys only
+            ne[2:6] = 0.0
+            if ne[12] != 1:
+                ne[6] = 0.0
+        return np.concatenate([lab, ne])
 
     remote.send((views(obs), labels(info)))
     ep_ret = 0.0
+    dstat = dict(los=False, fight=False, hp=100)  # real duel: did this round reach a fight
     try:
         while True:
             cmd, data = remote.recv()
@@ -112,12 +170,23 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
                 obs, r, term, trunc, info = env.step(data)
                 ep_ret += r
                 ep, final = None, None
+                if duel:
+                    los = bool(info.get("los"))
+                    hurt = info["health"] < dstat["hp"]
+                    dstat["hp"] = info["health"]
+                    dstat["los"] |= los
+                    if (los and data[4]) or (los and hurt) or info["kills"] or info["deaths"]:
+                        dstat["fight"] = True
                 if term or trunc:
                     ep = dict(ret=ep_ret, kills=info["kills"], deaths=info["deaths"], damage=info["damage"],
                               time=info["time"], timeout=bool(trunc), dist=info["spawn_dist"], offset=info["spawn_offset"],
                               acquire=info.get("acquire_time"), rehearsal=state["rehearsing"], delayed=state["delayed"],
                               no_contest=info.get("no_contest", False), leashed=info.get("leashed", False),
                               passive=state["passive"])
+                    if duel:
+                        ep.update(duel=True, camp=state.get("camp", False), diff=state.get("diff", 0), fight=dstat["fight"],
+                                  saw=dstat["los"])
+                    dstat = dict(los=False, fight=False, hp=100)
                     ep_ret = 0.0
                     if trunc:
                         final = views(obs)  # bootstrap V(final obs) on a time-limit cut
@@ -199,7 +268,7 @@ class Collector:
     log-probabilities (the importance ratio is taken against the policy that actually acted).
     """
 
-    def __init__(self, venv, model, dev, T, mask, gamma, fovea, K):
+    def __init__(self, venv, model, dev, T, mask, gamma, fovea, K, n_labels=N_LABELS):
         self.venv, self.model, self.dev, self.T, self.mask = venv, model, dev, T, mask
         self.gamma, self.fovea, self.K = gamma, bool(fovea), K
         N = self.N = len(venv.remotes)
@@ -209,7 +278,7 @@ class Collector:
         def buf(shape=(), dtype=np.float32):
             return np.zeros((N, T, *shape), dtype)
 
-        self.b = dict(P=buf(v0[0].shape, np.uint8), AUX=buf((N_LABELS,)), A=buf((len(NVEC),), np.int64), LP=buf(), V=buf(),
+        self.b = dict(P=buf(v0[0].shape, np.uint8), AUX=buf((n_labels,)), A=buf((len(NVEC),), np.int64), LP=buf(), V=buf(),
                       Vn=buf(), R=buf(), TERM=buf(), S=buf())
         if self.fovea:
             self.b["F"] = buf(v0[1].shape, np.uint8)
@@ -449,7 +518,7 @@ def dist_stats(logits, mask, actions=None):
     return torch.stack(acts, -1), torch.stack(logps, -1).sum(-1), E
 
 
-def seq_forward(model, frames, fov, state, starts, hist=None, want_loc=False):
+def seq_forward(model, frames, fov, state, starts, hist=None, want_loc=False, want_selfloc=False):
     """Recompute over a [N, T] rollout; LSTM state zeroed where an episode starts (starts[n, t] = 1)."""
     N, T = frames.shape[:2]
     z = model.encode(frames, fov, hist)  # [N, T, H] in one batch
@@ -472,6 +541,8 @@ def seq_forward(model, frames, fov, state, starts, hist=None, want_loc=False):
             ax = torch.cat([ax, model.aux_now(o)], -1)
         if want_loc:
             return model.heads(o), model.value(o).squeeze(-1), ax, model.loc(o)
+        if want_selfloc:
+            return model.heads(o), model.value(o).squeeze(-1), ax, model.selfloc(o)
         return model.heads(o), model.value(o).squeeze(-1), ax
 
 
@@ -570,6 +641,70 @@ def teacher_loss_soft(lg, lab, fire_head=True, near_mult=1.0, near_deg=0.0, fire
         stats["pitch_p0"] = ((lp.exp()[:, len(PITCH_TABLE) // 2] * valid).sum() / n).item()  # P(no vertical move)
         stats["pitch_greedy_abs"] = ((pt[lp.argmax(-1)].abs() * valid).sum() / n).item()
     return loss, stats
+
+
+def nav_loss(lg, lab, look_mult=1.0):
+    """Copy the scripted navigator (lab[..., NAV0:NAV0+14] = CS16Env._nav_ext): cross-entropy of the forward and side
+    heads toward its keys where valid ([6]: both alive; while engaging the keys are "stop"/counter-strafe), plus its look
+    while the enemy is NOT visible ([5]): soft two-bin cross-entropy of the yaw head toward its wanted turn ([3] degrees)
+    and cross-entropy of the pitch head toward its pitch bin ([4]), weighted look_mult. Returns (loss, stats)."""
+    parts = Policy.split(lg)
+    ne = lab[..., NAV0:NAV0 + N_NAV].reshape(-1, N_NAV)
+    kv, lv = ne[:, 6], ne[:, 5]
+    nk, nl = kv.sum(), lv.sum()
+    iy, ip, i_f, i_s = HEADS.index("yaw"), HEADS.index("pitch"), HEADS.index("fwd"), HEADS.index("side")
+    lf, ls = parts[i_f].reshape(-1, NVEC[i_f]), parts[i_s].reshape(-1, NVEC[i_s])
+    tf, ts = ne[:, 0].long(), ne[:, 1].long()
+    ck = F.cross_entropy(lf, tf, reduction="none") + F.cross_entropy(ls, ts, reduction="none")
+    loss = (ck * kv).sum() / nk.clamp(min=1.0)
+    ly = F.log_softmax(parts[iy].reshape(-1, NVEC[iy]), -1)
+    lp = parts[ip].reshape(-1, NVEC[ip])
+    cl = -(soft_bins(YAW_TABLE, ne[:, 3]) * ly).sum(-1) + F.cross_entropy(lp, ne[:, 4].long(), reduction="none")
+    loss = loss + look_mult * (cl * lv).sum() / nl.clamp(min=1.0)
+    stats = {}
+    with torch.no_grad():
+        if nk > 0:
+            stats["nav_keys_agree"] = ((((lf.argmax(-1) == tf) & (ls.argmax(-1) == ts)).float() * kv).sum() / nk).item()
+            stats["nav_keys_valid"] = (nk / kv.numel()).item()
+            stats["p_fwd"] = ((F.softmax(lf.float(), -1)[:, 1] * kv).sum() / nk).item()
+        if nl > 0:
+            yt = torch.as_tensor(YAW_TABLE, device=lg.device)
+            err = (yt[ly.argmax(-1)] - ne[:, 3].clamp(yt[0], yt[-1])).abs()
+            stats["nav_look_err"] = ((err * lv).sum() / nl).item()
+            stats["nav_look_valid"] = (nl / lv.numel()).item()
+    return loss, stats
+
+
+def selfloc_loss(pred, lab):
+    """'Where am I': pred [..., 4] vs lab[..., NAV0+7:NAV0+11] (own x, y in [-1, 1], sin/cos of the view yaw), valid
+    lab[..., NAV0+11]. Mean squared error over valid steps. Returns (loss, stats: mean position error in units ~ /2 of
+    the map extent, heading error in degrees)."""
+    pred = pred.reshape(-1, 4).float()
+    ne = lab[..., NAV0:NAV0 + N_NAV].reshape(-1, N_NAV)
+    tgt, v = ne[:, 7:11], ne[:, 11]
+    n = v.sum().clamp(min=1.0)
+    loss = (((pred - tgt) ** 2).sum(-1) * v).sum() / n
+    with torch.no_grad():
+        pos = ((pred[:, :2] - tgt[:, :2]).norm(dim=-1) * v).sum() / n
+        dh = torch.rad2deg(torch.atan2(pred[:, 2], pred[:, 3]) - torch.atan2(tgt[:, 2], tgt[:, 3]))
+        dh = ((dh + 180.0) % 360.0 - 180.0).abs()
+        stats = dict(selfloc_pos=pos.item(), selfloc_head_deg=((dh * v).sum() / n).item())
+    return loss, stats
+
+
+def init_move_heads(model, heads=("fwd", "side"), p_none=0.8):
+    """Switch on movement heads that were never trained by RL: their output rows start at zero weight (no dependence on
+    the picture) and a bias giving P(no key) = p_none, the rest split evenly over the other options. Other heads untouched."""
+    off = np.cumsum((0,) + NVEC)
+    with torch.no_grad():
+        for h in heads:
+            k = HEADS.index(h)
+            lo, hi = int(off[k]), int(off[k + 1])
+            n = hi - lo
+            model.heads.weight[lo:hi].zero_()
+            other = (1.0 - p_none) / (n - 1)
+            model.heads.bias[lo:hi] = torch.log(torch.full((n,), other))
+            model.heads.bias[lo] = math.log(p_none)  # option 0 = no key
 
 
 def loc_decode(logits):
@@ -821,6 +956,47 @@ def main():
     ap.add_argument("--peer-every", type=int, default=1, help="publish weights to peers every this many updates")
     ap.add_argument("--peer-key-file", default="data/peer.key", help="shared secret for the weight link (same file on every machine)")
     ap.add_argument("--seed", type=int, default=0)
+    # movement work (2026-11-12): real duels + navigator lessons; all off by default
+    ap.add_argument("--nav-coef", type=float, default=0.0,
+                    help="weight of copying the scripted navigator (movement keys always; look direction while the enemy is not "
+                         "visible); enables the navigator's labels in every aim_map game. 0 = off")
+    ap.add_argument("--nav-coef-min", type=float, default=-1.0, help="nav weight after decay (default: no decay)")
+    ap.add_argument("--nav-decay-steps", type=float, default=2e6, help="linear decay of --nav-coef (env steps from launch)")
+    ap.add_argument("--nav-look-mult", type=float, default=1.0, help="weight of the navigator's look term relative to its keys")
+    ap.add_argument("--selfloc", type=float, default=0.0,
+                    help="weight of the 'where am I' side task (adds the policy's training-only selfloc head). 0 = off")
+    ap.add_argument("--move-init", default="",
+                    help="comma list of movement heads switched on now (e.g. fwd,side): their outputs restart near 'no key'")
+    ap.add_argument("--move-init-p0", type=float, default=0.8, help="initial P(no key) of --move-init heads")
+    ap.add_argument("--duel-stage0", type=int, default=0, help="real-duel opponent stage to start at (1..4; default: resumed, else 1)")
+    ap.add_argument("--duel-gates", default="0.45,0.65,0.6",
+                    help="win rate over --duel-window training rounds to leave duel stage 1, 2, 3 (stage-1 rounds for stage 1, "
+                         "normal-bot rounds after)")
+    ap.add_argument("--duel-window", type=int, default=150)
+    ap.add_argument("--duel-max-len", type=float, default=0.0,
+                    help="stage 1 also needs the mean round length over the window at or below this (seconds; a model that "
+                         "searches on purpose, not by wandering). 0 = off")
+    ap.add_argument("--duel-camp-frac", type=float, default=0.25, help="share of stays-put-shooter rounds after stage 1")
+    ap.add_argument("--duel-random-spawn", action="store_true",
+                    help="real duels: random own-side spawn point and random heading every round")
+    ap.add_argument("--duel-seconds", type=float, default=45.0)
+    ap.add_argument("--nav-look-cap", type=float, default=0.0,
+                    help="navigator look label: max turn per step while navigating (deg). 0 = off. NOT to be used: it slows "
+                         "the turn-around after spawning facing the wrong way (owner, 2026-11-12)")
+    ap.add_argument("--route-shaping", type=float, default=0.0,
+                    help="real duels: reward per unit of walking distance gained toward the enemy side while no enemy is in "
+                         "line of sight (telescoping, cannot be farmed). 0 = off")
+    ap.add_argument("--duel-spawn-adapt", type=float, default=0.0,
+                    help="real duels: failure-weighted spawn choice, weight 1 + this x the spawn's running time-out rate. 0 = off")
+    ap.add_argument("--still-cost", type=float, default=0.0,
+                    help="real duels: reward per step standing still (< 20 u/s) while no enemy is in line of sight. 0 = off")
+    ap.add_argument("--nav-look-deadband", type=float, default=0.0, help="navigator look label: turns under this are 0 (deg)")
+    ap.add_argument("--nav-look-follow", type=float, default=0.0,
+                    help="navigator: look where it walks when the look point is more than this many degrees off the walking "
+                         "direction (no walking backwards past an obstacle). 0 = off")
+    ap.add_argument("--search-flip-cost", type=float, default=0.0,
+                    help="real duels: reward per step-to-step reversal of the turn direction (left then right or right then "
+                         "left) while no enemy is in line of sight; turn size and one-way turning are free. 0 = off")
     a = ap.parse_args()
     assert (a.teacher_near_mult == 1.0 and a.teacher_fire_coef == 0) or (a.teacher_soft and a.teacher_coef > 0), \
         "--teacher-near-mult / --teacher-fire-coef need --teacher-soft and --teacher-coef > 0"
@@ -867,15 +1043,25 @@ def main():
         assert a.act_hist == 0 or a.act_hist >= k_old, "--act-hist can grow on resume (zero-padded), never shrink"
         has_now = any(k.startswith("aux_now.") for k in resume["model"])
         has_loc = any(k.startswith("loc.") for k in resume["model"])
+        has_self = any(k.startswith("selfloc.") for k in resume["model"])
         model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist or k_old, aux_now=bool(a.aux_now) or has_now,
-                       loc=bool(a.loc) or has_loc)
+                       loc=bool(a.loc) or has_loc, selfloc=bool(a.selfloc) or has_self)
         missing, unexpected = model.load_state_dict(grow_state(resume["model"], model.state_dict()), strict=False)
-        assert not unexpected and all(k.startswith(("act_in.", "aux_now.", "loc.")) for k in missing), (missing, unexpected)  # only new zero/aux inputs
-    elif a.act_hist or a.aux_now or a.loc:
-        model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist, aux_now=bool(a.aux_now), loc=bool(a.loc))
+        assert not unexpected and all(k.startswith(("act_in.", "aux_now.", "loc.", "selfloc.")) for k in missing), (missing, unexpected)  # only new zero/aux inputs
+    elif a.act_hist or a.aux_now or a.loc or a.selfloc:
+        model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist, aux_now=bool(a.aux_now), loc=bool(a.loc),
+                       selfloc=bool(a.selfloc))
         if a.init:
             model.load_state_dict({k: v.float() if v.is_floating_point() else v for k, v in ck["model"].items()}, strict=False)
     K = model.act_hist
+    if a.move_init:
+        mh = [h.strip() for h in a.move_init.split(",") if h.strip()]
+        old_heads = (resume or {}).get("args", {}).get("active_heads", [])
+        assert not any(h in old_heads for h in mh), f"--move-init: {mh} were already trained in the resumed run"
+        init_move_heads(model, mh, a.move_init_p0)
+    nav_on = a.nav_coef > 0 or a.selfloc > 0
+    assert not (nav_on and a.collect == "remote"), "--nav-coef/--selfloc need local games"
+    n_labels = N_LABELS + (N_NAV if nav_on else 0)
     model.to(dev)
     if a.res:
         res = tuple(int(x) for x in a.res.lower().split("x"))
@@ -884,7 +1070,7 @@ def main():
     else:
         res = (320, 240)
     model_args = dict(hw=list(hw), chans=list(chans), fovea=fovea, active_heads=heads, res=list(res), act_hist=K,
-                      loc=hasattr(model, "loc"))
+                      loc=hasattr(model, "loc"), selfloc=hasattr(model, "selfloc"))
     prior = None
     kl_idx = [HEADS.index(h.strip()) for h in a.kl_heads.split(",") if h.strip()]
     if a.kl_prior:
@@ -902,7 +1088,8 @@ def main():
         prior_scale = 0.0
     opt = build_optimizer(model, a.lr, resume)
     warm_params = list(model.value.parameters()) + list(model.aux.parameters()) + \
-        (list(model.aux_now.parameters()) if hasattr(model, "aux_now") else [])
+        (list(model.aux_now.parameters()) if hasattr(model, "aux_now") else []) + \
+        (list(model.selfloc.parameters()) if hasattr(model, "selfloc") else [])
     wopt = torch.optim.Adam(warm_params, lr=1e-3)
 
     stages = curriculum_stages(delay_ramp=a.delay_ramp or None)
@@ -931,6 +1118,14 @@ def main():
             rewards[key] = val
     if a.hold_cost:
         rewards["hold_deg"] = a.hold_deg
+    if nav_on:
+        rewards.update(nav=True, duel_random_spawn=a.duel_random_spawn, duel_camp_frac=a.duel_camp_frac,
+                       duel_seconds=a.duel_seconds, nav_look_cap=a.nav_look_cap, nav_look_deadband=a.nav_look_deadband, nav_look_follow=a.nav_look_follow,
+                       search_flip_cost=a.search_flip_cost, route_shaping=a.route_shaping, still_cost=a.still_cost,
+                       duel_spawn_adapt=a.duel_spawn_adapt)
+    duel_stage = a.duel_stage0 or (int(resume.get("duel_stage", 1)) if resume is not None else 1)
+    duel_gates = [float(x) for x in a.duel_gates.split(",")]
+    knobs["duel_stage"] = duel_stage
     venv = None
     if a.collect != "remote":
         venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, rewards, seed=a.seed * 100, res=res,
@@ -976,8 +1171,21 @@ def main():
               collect=a.collect, actor_listen=a.actor_listen, epochs=a.epochs, teacher_only=a.teacher_only, teacher_soft=a.teacher_soft,
               ent_yaw_mult=a.ent_yaw_mult, params=sum(p.numel() for p in model.parameters())))
 
+    duel_camp = collections.deque(maxlen=a.duel_window)   # real duels vs the stays-put shooter
+    duel_norm = collections.deque(maxlen=a.duel_window)   # real duels vs a normal bot at the current stage's difficulty
+    duel_new = [0]  # duel rounds of the gating kind since the last stage change
+
     def on_episode(e):  # one finished round: which statistics it counts for
         nonlocal all_eps, stage_eps
+        if e.get("duel"):  # real duels never count for the aim-arena curriculum
+            all_eps += 1
+            if e["camp"]:
+                duel_camp.append(e)
+            elif e["diff"] == DUEL_STAGES[duel_stage]["diff"]:
+                duel_norm.append(e)
+            if (DUEL_STAGES[duel_stage]["bot"] == "camp") == bool(e["camp"]):
+                duel_new[0] += 1
+            return
         if e.get("rehearsal"):
             reh.append(e); all_eps += 1
             return
@@ -1003,7 +1211,8 @@ def main():
         if (stage in a.all_rounds or knobs["dist"] <= prev_max or e["dist"] > prev_max) and in_band:
             win.append(e)
 
-    collector = Collector(venv, model, dev, T, mask, a.gamma, fovea, K) if a.collect == "async" else None
+    assert not nav_on or a.collect == "async", "--nav-coef/--selfloc need --collect async"
+    collector = Collector(venv, model, dev, T, mask, a.gamma, fovea, K, n_labels) if a.collect == "async" else None
     remote = None
     if a.collect == "remote":  # everything an actor needs to build the same games and model; weights follow every update
         from train.remote import RemoteCollector
@@ -1100,6 +1309,8 @@ def main():
             steps += N * T
 
             adv, ret = gae(R, V, V_next, TERM, a.gamma, a.lam)
+            nav_min = a.nav_coef if a.nav_coef_min < 0 else a.nav_coef_min
+            nav_coef = max(nav_min, a.nav_coef - (a.nav_coef - nav_min) * (steps - steps0) / max(1.0, a.nav_decay_steps))
             prior_lp = None
             kl_coef = 0.0
             teacher_coef = max(a.teacher_min, a.teacher_coef - (a.teacher_coef - a.teacher_min) * (steps - steps0)
@@ -1130,8 +1341,14 @@ def main():
                     j = torch.as_tensor(idx[s0:s0 + mb], device=dev)
                     with torch.autocast(dev.type, dtype=torch.bfloat16, enabled=dev.type != "cpu"):
                         fw = seq_forward(model, P[j], Fv[j] if fovea else None, (h0[0][:, j], h0[1][:, j]), S[j],
-                                         HIST[j] if K else None, want_loc=a.loc > 0)
+                                         HIST[j] if K else None, want_loc=a.loc > 0, want_selfloc=a.selfloc > 0)
                     lg, v, ax = fw[:3]
+                    sl_loss = None
+                    if a.selfloc > 0:
+                        sl_loss, slst = selfloc_loss(fw[3], AUX[j])
+                        for key, val in slst.items():
+                            stats[key].append(val)
+                        stats["selfloc"].append(sl_loss.item())
                     vloss = 0.5 * (v - ret[j]).pow(2).mean()
                     xloss = aux_loss(ax[..., :3].float(), AUX[j][..., :3]) if a.aux else torch.zeros((), device=dev)
                     if a.aux_now and ax.shape[-1] >= 6:
@@ -1140,7 +1357,7 @@ def main():
                         stats["aux_now"].append(nloss.item())
                     if warm:
                         wopt.zero_grad(set_to_none=True)
-                        (vloss + a.aux * xloss).backward()
+                        (vloss + a.aux * xloss + (a.selfloc * sl_loss if sl_loss is not None else 0.0)).backward()
                         wopt.step()
                         stats["vloss"].append(vloss.item())
                         stats["aux"].append(xloss.item())
@@ -1155,6 +1372,14 @@ def main():
                     loss = pg + a.vf * vloss - a.ent * ent_w.mean() * head_w.mean() + a.aux * xloss
                     if a.teacher_only:  # copy-only: no trial-and-error terms at all
                         loss = a.vf * vloss + a.aux * xloss
+                    if sl_loss is not None:
+                        loss = loss + a.selfloc * sl_loss
+                    if nav_coef > 0:
+                        nl, nst = nav_loss(lg.float(), AUX[j], a.nav_look_mult)
+                        loss = loss + nav_coef * nl
+                        stats["nav"].append(nl.item())
+                        for key, val in nst.items():
+                            stats[key].append(val)
                     if a.loc > 0:
                         ll, lst = loc_loss(fw[3], AUX[j][..., :3])
                         loss = loss + a.loc * ll
@@ -1228,9 +1453,37 @@ def main():
                     stage += move
                     knobs = dict(stages[stage], pool=[dict(x) for x in stages[:stage]])
                     (venv if venv is not None else remote).set_knobs(knobs)
+                    knobs["duel_stage"] = duel_stage
                     eps.clear(); far.clear(); stage_eps = 0; low_windows = 0; win = []; passes = 0
                     emit(dict(event="curriculum", update=update, steps=steps, stage=stage, move=move, knobs=pub(knobs)))
 
+            if nav_on and duel_stage < max(DUEL_STAGES) and duel_new[0] >= a.duel_window:
+                gq = duel_camp if DUEL_STAGES[duel_stage]["bot"] == "camp" else duel_norm
+                if len(gq) >= a.duel_window:
+                    wr = float(np.mean([e["kills"] > 0 for e in gq]))
+                    mlen = float(np.mean([e["time"] for e in gq]))
+                    len_ok = DUEL_STAGES[duel_stage]["bot"] != "camp" or a.duel_max_len <= 0 or mlen <= a.duel_max_len
+                    emit(dict(event="duel_window", update=update, steps=steps, duel_stage=duel_stage, win_rate=wr,
+                              gate=duel_gates[duel_stage - 1], mean_len_s=mlen, len_ok=len_ok))
+                    duel_new[0] = 0
+                    if wr >= duel_gates[duel_stage - 1] and len_ok:
+                        duel_stage += 1
+                        knobs["duel_stage"] = duel_stage
+                        venv.set_knobs(knobs)
+                        duel_norm.clear()
+                        emit(dict(event="duel_curriculum", update=update, steps=steps, duel_stage=duel_stage,
+                                  stage=DUEL_STAGES[duel_stage]))
+
+            def dsum(q, pre):
+                if not q:
+                    return {}
+                q = list(q)
+                return {f"{pre}_win": float(np.mean([e["kills"] > 0 for e in q])),
+                        f"{pre}_death": float(np.mean([e["deaths"] > 0 for e in q])),
+                        f"{pre}_fight": float(np.mean([e["fight"] for e in q])),
+                        f"{pre}_len_s": float(np.mean([e["time"] for e in q])), f"{pre}_n": len(q)}
+            duel_rec = dict(duel_stage=duel_stage, nav_coef=nav_coef, **dsum(duel_camp, "camp"), **dsum(duel_norm, "duel")) \
+                if nav_on else {}
             el = time.time() - t0
             E = list(eps)
             rec = dict(event="update", update=update, steps=steps, episodes=all_eps, warmup=warm,
@@ -1258,20 +1511,21 @@ def main():
                        fire_frac=fire, expl_var=ev, knobs=pub(knobs), sps=(steps - steps0) / el,
                        roll_s=round(t_roll, 2), upd_s=round(t_upd, 2), serve_batch=serve_batch,
                        teacher_beta=collector.beta if collector is not None else 0.0,
-                       **{k: float(np.mean(v)) for k, v in stats.items()}, **(remote.stats() if remote is not None else {}))
+                       **{k: float(np.mean(v)) for k, v in stats.items()}, **(remote.stats() if remote is not None else {}),
+                       **duel_rec)
             if update % 5 == 0 or update <= 3:
                 emit(rec)
             if update % a.snapshot_every == 0:
                 torch.save(dict(model={k: v.half() if v.is_floating_point() else v for k, v in model.state_dict().items()},
-                                args=model_args, steps=steps, update=update, knobs=pub(knobs), stage=stage),
-                           out / "snapshots" / f"update_{update:06d}.pt")
+                                args=model_args, steps=steps, update=update, knobs=pub(knobs), stage=stage,
+                                duel_stage=duel_stage), out / "snapshots" / f"update_{update:06d}.pt")
                 torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), args=model_args, steps=steps,
-                                update=update, knobs=pub(knobs), stage=stage), out / "last.pt")
+                                update=update, knobs=pub(knobs), stage=stage, duel_stage=duel_stage), out / "last.pt")
             if (a.max_steps and steps >= a.max_steps) or el > a.hours * 3600:
                 break
     finally:
         torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), args=model_args, steps=steps, update=update,
-                        knobs=pub(knobs), stage=stage), out / "last.pt")
+                        knobs=pub(knobs), stage=stage, duel_stage=duel_stage), out / "last.pt")
         emit(dict(event="done", steps=steps, updates=update, episodes=all_eps, knobs=pub(knobs)))
         if peer is not None:
             peer.close()

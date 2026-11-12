@@ -687,3 +687,51 @@ within 5 deg of the target, then the hybrid on the 300-round exam at 120 and 200
   In the real duels the model also ignored an enemy at 87 units (it never trained closer than 250) and at ~1200 units.
   Decision (owner): no more real duels until it can move; next work is navigation + movement on aim_map, starting with
   orientation (a navigator teacher that knows which way to turn, plus a "where am I" side-task; no coordinates as input).
+
+## Navigator teacher for aim_map (2026-11-12, 20:50-21:25)
+- **Spawn bug (fixed):** the sides were always right (agent T, bot CT; 25/25 resets), but the round restart happened
+  0.1-0.6 s AFTER `reset()` returned: ReGameDLL reads `sv_restart` on a 1 s periodic think, so the respawn lands 1-2 s after
+  the command and the env waited a fixed 1.2 s. Rounds began with both players where the previous round ended (the old
+  log's "bot on the agent's side" was the bot standing where it had just won). New scenario flag `restart_confirm`
+  (only `duel_aimmap`): the agent is marked with 255 health before the restart and the episode starts once it is back at
+  exactly 100 (fallback 3 s). Other scenarios unchanged.
+- **Graph** (`scripts/make_nav_graph.py aim_map` -> `data/arena/aim_map_nav.npz`, ~2 min): 703 bot spots thinned to 211
+  (>= 72 u), links < 190 u kept if body-height traces and floor checks pass (834), then walked both ways in the engine with
+  an AK (762 pass); largest component 191 nodes (crate tops drop out). Plus a 32-unit grid "nearest node reachable in a
+  straight line" and node-to-node visibility, so the planner (`cs16env/nav.py`: A*, key choice, Navigator) needs no engine.
+  `tests/test_nav.py` (14 checks, no engine).
+- **Navigator:** enemy in line of sight (eye -> chest or head trace) -> counter-strafe to a stop, yaw/pitch/fire from the
+  existing aim teacher (`_aux_ext[3,4,8]`), fire only below 100 u/s. Otherwise walk the A* route (8-way keys chosen for the
+  view after this step's turn), look at the furthest route node visible from both the current waypoint and the player's
+  own node, pitch level, up to 48 deg per step. No progress 0.6 s -> side-step 0.4 s and re-plan. No peeking, crouching or
+  jumping. Destination: `goal_mode="side"` (default) = enemy spawn side, then the last seen spot for 4 s; nothing hidden
+  is used. `goal_mode="enemy"` = the enemy's true position (privileged, destination only).
+- **Labels:** `env.enable_nav()` (default off; without it nothing changes) adds `info["nav_ext"]` (14 values: keys,
+  wanted yaw bin/degrees and pitch bin while navigating, valid flags, own x/y in [-1, 1], sin/cos of view yaw, mode, line of
+  sight) and `env.nav_action` (the full 9-part action). See `CS16Env._nav_ext`.
+- **Results** (100 real duels each, `scratch/eval/nav_duel.py`, 0 ms delay, seed 1000 unless noted; `scratch/nav_results.jsonl`):
+
+  | Player | Bot 0 | Bot 1 | Bot 2 | Fights | Stuck | Median round |
+  |---|---|---|---|---|---|---|
+  | nav v2, goal = enemy side / last seen (default) | **99** (92 on seed 5000) | 88 | 91 | 100% | 0 | 1.5-1.7 s |
+  | nav v2, goal = enemy's true position | 93 | 93 | 88 | 100% | 0 | 1.7 s |
+  | nav v1 (re-plan bug) | 95 | 94 | - | 100% | 1 | 1.6-1.8 s |
+  | aim teacher standing still (fires through walls) | 80 | - | - | 76% | - | 8.1 s |
+  | aim teacher standing still, fires only on line of sight | 93 | 85 | 81 | 99-100% | - | 4.3-4.7 s |
+
+  Orientation (100 random spots and headings, enemy frozen out of sight): faces the route (direction to the point 250 u
+  along it) in a median **0.08 s** (p90 0.12-0.16 s); first line of sight median 2.1 s with goal = enemy (all 100), 2.0 s
+  with goal = side (20 never: it walks to the spawn side, not to a frozen enemy elsewhere).
+- **Reading:** the pass marks are met (>= 80% wins, >= 95% fights, <= 2% stuck, orientation < 1 s). But against YaPB the
+  measured value of moving is small: the bot walks to a standing player and loses the fight. Walking makes rounds
+  ~3x shorter and adds +3 to +10 points at difficulty 1-2 (at the edge of 100-round resolution). Shooting only with line
+  of sight was worth +13 points on its own. Film: `scratch/aim_maps/nav_scripted_duels.mp4` (10 duels, 10 wins).
+
+## Movement: the trained model walks, finds and fights in real duels on aim_map (2026-11-12 23:00 - 2026-11-13 02:15)
+- Full log: `scratch/move_log.md`; results: `scratch/move_results.jsonl`. Final model `checkpoints/move_best/move_best_update11200.pt`.
+- New (all default off): `CS16Env.duel_random_spawn` (+ `duel_spawn_adapt`), `duel_bot_mode` "camp" (stays put, shoots) /
+  "side" (superseded) / "peek" (`cs16env/peeker.py`, scripted body + view, YaPB fires; never past y -1790), search costs
+  (`search_flip_cost`, `route_shaping`, `still_cost`); `Navigator(look_deadband, look_follow, look_cap)`; `Policy(selfloc=True)`;
+  trainer `--nav-coef/--selfloc/--move-init/--duel-*/--route-shaping/--still-cost/--search-flip-cost/--nav-look-*`.
+- Final (greedy, 300 rounds): vs stays-put 81% wins (90% fights, 10% stuck at one T-side box); vs peeker difficulty 0
+  86% wins, 100% fights; aim arena 98.7%. Peeker difficulty 1 / 2: 76 / 68% (100 rounds).
