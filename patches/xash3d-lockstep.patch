@@ -865,8 +865,33 @@ index e42f0d8..ff9713e 100644
  } ref_interface_t;
  
  typedef int (*REFAPI)( int version, ref_interface_t *pFunctionTable, ref_api_t* engfuncs, ref_globals_t *pGlobals );
+diff --git a/engine/server/server.h b/engine/server/server.h
+index d61e51b..eeb74b1 100644
+--- a/engine/server/server.h
++++ b/engine/server/server.h
+@@ -742,4 +742,7 @@ static inline qboolean SV_CheckGroupTrace( const edict_t *e1, const edict_t *e2
+ 	return true;
+ }
+ 
++// cs2-ai: scripted trigger for bots (sv_main.c, cs2ai_fire)
++void SV_CS2AI_FireOverride( int slot, usercmd_t *cmd );
++
+ #endif//SERVER_H
+diff --git a/engine/server/sv_game.c b/engine/server/sv_game.c
+index 37e79df..25343d9 100644
+--- a/engine/server/sv_game.c
++++ b/engine/server/sv_game.c
+@@ -3826,6 +3826,8 @@ static void GAME_EXPORT pfnRunPlayerMove( edict_t *pClient, const float *viewang
+ 		.msec = msec,
+ 	};
+ 
++	SV_CS2AI_FireOverride( cl - svs.clients, &cmd ); // cs2-ai: scripted trigger (cs2ai_fire)
++
+ 	seed = COM_RandomLong( 0, 0x7fffffff ); // full range
+ 
+ 	SV_RunCmd( cl, &cmd, seed );
 diff --git a/engine/server/sv_main.c b/engine/server/sv_main.c
-index 985e438..d4e50f3 100644
+index 985e438..46b0ec2 100644
 --- a/engine/server/sv_main.c
 +++ b/engine/server/sv_main.c
 @@ -17,6 +17,7 @@ GNU General Public License for more details.
@@ -877,7 +902,7 @@ index 985e438..d4e50f3 100644
  
  // server cvars
  CVAR_DEFINE_AUTO( sv_lan, "0", 0, "server is a lan server ( no heartbeat, no authentication, no non-class C addresses, 9999.0 rate, etc." );
-@@ -672,6 +673,116 @@ static void SV_UpdateStatusLine( void )
+@@ -672,6 +673,151 @@ static void SV_UpdateStatusLine( void )
  #endif // XASH_PLATFORM_HAVE_STATUS
  }
  
@@ -985,6 +1010,41 @@ index 985e438..d4e50f3 100644
 +}
 +
 +
++// cs2ai_fire <slot> <n> [pitch yaw]: the next <n> movement commands of that bot (fake client) also press attack, and with
++// pitch/yaw they are aimed there (so the shot goes where the scripted aim points, not where the bot's own AI looks)
++static int    sv_cs2ai_fire[MAX_CLIENTS];
++static int    sv_cs2ai_fire_aim[MAX_CLIENTS];
++static vec3_t sv_cs2ai_fire_ang[MAX_CLIENTS];
++
++static void SV_CS2AI_Fire_f( void )
++{
++	int slot;
++
++	if( Cmd_Argc() < 3 || !SV_Active( ))
++		return;
++	slot = Q_atoi( Cmd_Argv( 1 ));
++	if( slot < 0 || slot >= MAX_CLIENTS )
++		return;
++	sv_cs2ai_fire[slot] = Q_atoi( Cmd_Argv( 2 ));
++	sv_cs2ai_fire_aim[slot] = Cmd_Argc() >= 5;
++	if( sv_cs2ai_fire_aim[slot] )
++	{
++		sv_cs2ai_fire_ang[slot][0] = Q_atof( Cmd_Argv( 3 ));
++		sv_cs2ai_fire_ang[slot][1] = Q_atof( Cmd_Argv( 4 ));
++		sv_cs2ai_fire_ang[slot][2] = 0.0f;
++	}
++}
++
++void SV_CS2AI_FireOverride( int slot, usercmd_t *cmd )
++{
++	if( slot < 0 || slot >= MAX_CLIENTS || sv_cs2ai_fire[slot] <= 0 )
++		return;
++	sv_cs2ai_fire[slot]--;
++	cmd->buttons |= IN_ATTACK;
++	if( sv_cs2ai_fire_aim[slot] )
++		VectorCopy( sv_cs2ai_fire_ang[slot], cmd->viewangles );
++}
++
 +// cs2-ai: for host_lockstep_report
 +double SV_LockstepTime( void )
 +{
@@ -994,12 +1054,13 @@ index 985e438..d4e50f3 100644
  /*
  ==================
  Host_ServerFrame
-@@ -866,6 +977,8 @@ void SV_Init( void )
+@@ -866,6 +1012,9 @@ void SV_Init( void )
  	string	versionString;
  
  	SV_InitHostCommands();
 +	Cmd_AddCommand( "cs2ai_place", SV_CS2AI_Place_f, "cs2-ai: teleport a player (slot x y z pitch yaw [health])" );
 +	Cmd_AddCommand( "cs2ai_trace", SV_CS2AI_Trace_f, "cs2-ai: world line trace into bridge aux[k]" );
++	Cmd_AddCommand( "cs2ai_fire", SV_CS2AI_Fire_f, "cs2-ai: bot presses attack for its next n moves (slot n [pitch yaw])" );
  
  	Cvar_Getf( "protocol", FCVAR_READ_ONLY, "displays server protocol version", "%i", PROTOCOL_VERSION );
  	Cvar_Get( "suitvolume", "0.25", FCVAR_ARCHIVE, "HEV suit volume" );

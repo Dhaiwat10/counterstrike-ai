@@ -160,7 +160,7 @@ class CS16Env(gym.Env):
         self.nav_action = None
         # real duel options (scenarios with reset_round; default off = the game's own spawns and a normal YaPB bot):
         # duel_random_spawn: after the restart the agent is moved to a random spawn point of its own side (nav.MAP_SPAWNS)
-        #   with a random heading (0-360 deg).
+        #   (heading: see duel_start_facing below).
         # duel_bot_mode "camp" = the STAYS-PUT SHOOTER: the bot is moved to a random spawn point of its side, facing the
         #   other side (+-camp_yaw_jitter deg), and frozen (yb_freeze_bots 1, which also stops its aim and fire) while the
         #   agent is out of its line of sight; it is unfrozen (normal YaPB: turns, aims, shoots, may strafe) as soon as
@@ -170,6 +170,12 @@ class CS16Env(gym.Env):
         # aim_terms_los_only: aim shaping / off-target cost / acquire bonus count only on steps with line of sight
         #   (in a real duel the enemy is behind walls most of the time; these terms were built for the aim arena).
         self.duel_random_spawn = False
+        # heading of both players at the start of a real-duel round. "toward" (default since 2026-11-13, the owner's rule:
+        # "you are always facing in the general direction of your opponent"): straight across to the other side
+        # +-duel_start_jitter deg, also when the game's own spawn point is used (the map's own spawn headings face AWAY
+        # from the other side). "any" = the old behaviour: 0-360 deg with duel_random_spawn, the map's heading otherwise.
+        self.duel_start_facing = "toward"
+        self.duel_start_jitter = 30.0
         # with duel_random_spawn: failure-weighted spawn choice (training only). Each own-side spawn point keeps a running
         # time-out rate (rounds that ran out of time); a spawn is drawn with weight 1 + duel_spawn_adapt x that rate.
         # 0 = uniform (default).
@@ -193,6 +199,61 @@ class CS16Env(gym.Env):
         self.side_hold_err = 1.5
         self.side_hide_s = 0.5
         self.aim_terms_los_only = False
+        # duel_bot_mode "hold" = the HOLD-SPOT opponent (cs16env/peeker.py HoldBot, added 2026-11-13): stands at a spot of
+        #   the hold table (cs16env/MAP_hold_spots.json: where the owner stood while in line of sight, mirrored to both
+        #   ends, raised spots included) on its own side, faces the agent's side, scripted aim as the peeker, YaPB fires;
+        #   changes spot only while unseen (live traces confirm). hold_move_after = (min, max) seconds unseen before a move.
+        self.hold_spots_path = None    # None = cs16env/<map>_hold_spots.json (committed; built by scripts/make_hold_spots.py)
+        self.hold_move_after = (2.0, 6.0)
+        # share of "hold" rounds whose holder NEVER changes spot (training, added 2026-11-13 peek_v6: the exam's holder fixed
+        # on the stone steps found the model holding where it could not see it -> 48/100 time-outs; the agent must learn
+        # to reposition until it finds the holder). 0 = off.
+        self.hold_fixed_frac = 0.0
+        # training only (peek_v7): weight multiplier for RAISED hold spots (z > -420: the stone steps) in the hold opponent's
+        # and the arena's spot choice; the model still loses to the steps holder (dark outfits) from the CT end. 1 = the
+        # owner's own weights (exams).
+        self.hold_raised_mult = 1.0
+        # training only (peek_v11, diagnosis (a)): share of "hold" rounds whose holder is FIXED on its side's stone steps
+        # (the raised table spot with the most weight) -- exactly the exam case the model at T loses. 0 = off.
+        self.hold_steps_frac = 0.0
+        # training only (peek_v12, go looking): share of "hold" rounds whose holder is FIXED at a spot that sees none of the
+        # other side's hold spots (table "sees" lists) -- a holder that never shows up, so the round goes 15 s without
+        # contact and the teacher goes looking. 0 = off.
+        self.hold_hidden_frac = 0.0
+        # THE SWITCH (owner design, 2026-11-13; default OFF). Real duels vs the scripted opponents ("peek", "hold"): while the
+        #   agent's origin is more than open_switch_margin units past its OWN cover line (nav.MAP_SPAWNS line_y / toward)
+        #   the opponent gets the deadly settings -- peeker.DEADLY_AIM (or open_switch_aim) + pre-aim through walls, the
+        #   peeker leaves cover at once and keeps holding while it sees the agent, and the console commands
+        #   open_switch_on_cmd (YaPB's own reaction / noticing); back behind the line it returns to its normal stage
+        #   settings (open_switch_off_cmd; None = this stage's yb_difficulty and YaPB's defaults). The roaming YaPB bot
+        #   ("normal") and the stays-put shooter ("camp") are NOT switched. info["camp"]["switch_s"] = seconds on this round.
+        self.duel_open_switch = False
+        self.open_switch_margin = 32.0
+        self.open_switch_aim = None    # None = peeker.DEADLY_AIM; or ((react lo, hi), turn deg/s, error deg)
+        self.open_switch_preaim = True
+        # with the switch on, the opponent also fires by script (peeker.trigger -> engine command `cs2ai_fire slot n pitch
+        # yaw`, patches/xash3d-lockstep.patch 2026-11-13): the bot presses attack aimed exactly along the scripted view.
+        # Needs the rebuilt engine; an older engine ignores the command (YaPB's own trigger only).
+        self.open_switch_fire = True
+        # height above the spot's standing origin at which the scripted body (peek / hold) is put every tick. 1.0 = the old
+        # value, kept for the normal stage settings: it leaves the bot 1 unit in the AIR every tick, so its rifle has the
+        # in-air spread (found 2026-11-13: scripted taps did ~7 HP per shot this way, ~37 standing). With the switch on the
+        # body is put exactly on its standing origin (0), so the deadly opponent shoots from the ground.
+        self.peek_place_dz = 1.0
+        self.deadly_place_dz = 0.0
+        self.open_switch_on_cmd = "yb_difficulty 4;yb_notice_model 0;yb_whose_your_daddy 1"
+        self.open_switch_off_cmd = None
+        self._switch_on = False
+        self._switch_steps = 0
+        self._switch_n = 0
+        self._pending_cmd = ""
+        # aim arena (scenario with an arena file), default 0 = off: this share of rounds puts the enemy at a hold-table spot
+        # (raised ones included) and the agent at an arena position that sees it (live traces, within arena_max_dist)
+        self.arena_hold_frac = 0.0
+        # ... and of those rounds this share puts the AGENT at a hold spot of the other side (the real-duel distances,
+        # 1100-1600 units, that peek_v1 lost at), the rest at any arena position that sees the spot
+        self.arena_hold_home = 0.5
+        self._arena_hold = False
         # training only, real duels (needs line-of-sight traces): costs on the SEARCH view while no enemy is in line of
         # sight at the step's start (never while one is visible: flicks to a target stay free). search_flip_cost per
         # step-to-step reversal of the turn direction (left then right or right then left). Turn size and sustained turning
@@ -205,6 +266,24 @@ class CS16Env(gym.Env):
         # progress). still_cost: per step with no enemy in line of sight and horizontal speed < 20 u/s. Both 0 = off.
         self.route_shaping = 0.0
         self.still_cost = 0.0
+        # training only, real duels (added 2026-11-13, peek_v3): timeout_penalty = reward added once when a round runs out
+        # of time (the per-step time penalty alone made a 45 s time-out cheaper than dying mid-round); los_move_cost = per
+        # step x (horizontal speed / 250) on steps that start with the enemy in line of sight (stop to fight: the owner
+        # moves ~30 u/s in sight, the model ran 130-140 u/s and wandered in view without shooting). Both 0 = off.
+        self.timeout_penalty = 0.0
+        self.los_move_cost = 0.0
+        # training labels (peek_v9): while the navigator ENGAGES (enemy in line of sight) its look label = the aim teacher's
+        # turn toward the enemy, weighted like the other navigator labels (otherwise there is no look label at all in
+        # line of sight and the greedy model froze its view ~20 deg off a far enemy: time-outs). Default off.
+        self.nav_engage_look = False
+        # GO LOOKING (owner, 2026-11-13 late): a real duel has no clock -- hold at home first, and after go_look_after s of a
+        # round with no line of sight at all, go looking. Then, for the rest of the round: THE SWITCH is turned off and the
+        # navigator teacher's goal becomes "side" (walk toward the enemy side; it stops and fights when it sees the enemy).
+        # Before that, or once there has been contact, nothing changes. 0 = off (default). info["go_look"] says it happened.
+        self.go_look_after = 0.0
+        self._go_look = False
+        self._contact = False
+        self._nav_goal0 = None
         self._route_d = None
         self._camp = None
         self._peeker = None
@@ -389,7 +468,16 @@ class CS16Env(gym.Env):
             s = self._arena_place()
         self._camp = None
         self._peeker = None
-        if self.scn.reset_round and (self.duel_random_spawn or self.duel_bot_mode in ("camp", "side", "peek") or self._freeze_applied):
+        self._switch_steps = self._switch_n = 0
+        self._go_look, self._contact = False, False
+        if self.nav is not None and self._nav_goal0 is not None:
+            self.nav.goal_mode = self._nav_goal0  # back to the round's own goal (home) after a go-looking round
+        if self._switch_on:  # the previous round ended with the switch on: back to the normal settings first
+            self._switch_on = False
+            self._pending_cmd = ""
+            b.command(self._switch_off_cmd())
+        if self.scn.reset_round and (self.duel_random_spawn or self.duel_bot_mode in ("camp", "side", "peek", "hold") or self._freeze_applied
+                                     or self.duel_start_facing == "toward"):
             s = self._duel_setup()
         s = b.step(apply=True, capture=True)  # one neutral step to get a fresh frame
         self._ep_start = s.time
@@ -416,6 +504,20 @@ class CS16Env(gym.Env):
                 dT = np.linalg.norm(np.array(m.origin) - self._nav_sides["T"])
                 dC = np.linalg.norm(np.array(m.origin) - self._nav_sides["CT"])
                 self.nav.enemy_side = np.array(self._nav_sides["CT" if dT < dC else "T"], np.float64)
+            if self.nav.goal_mode == "home":  # home teacher: a hold spot on the agent's OWN side (nav.Navigator.set_home)
+                from .nav import MAP_SPAWNS
+                from .peeker import side_spots
+                L = MAP_SPAWNS[self.scn.map][self.scn.human_team]
+                tab = self._hold_table()
+                mine = [sp for sp in tab if sp["side"] == self.scn.human_team
+                        and (sp["y"] - L["line_y"]) * L["toward"] <= 0]
+                P = np.array([(sp["x"], sp["y"], sp["z"]) for sp in mine], np.float64)
+                W = np.array([sp["w"] for sp in mine], np.float64)
+                lists = None
+                if all("sees" in sp for sp in mine):  # real visibility between hold spots (scripts/hold_spot_vis.py)
+                    lists = [(np.array([(tab[j]["x"], tab[j]["y"], tab[j]["z"]) for j in sp["sees"]], np.float64).reshape(-1, 3),
+                              np.array([tab[j]["w"] for j in sp["sees"]], np.float64)) for sp in mine]
+                self.nav.set_home(P, W, self.nav.enemy_side, self.np_random, watch_lists=lists)
             s = b.step(cmd=self._los_cmds(), apply=False, capture=False)
         return self._obs_queue[0], self._info(s)
 
@@ -462,8 +564,12 @@ class CS16Env(gym.Env):
             cmds = [self._strafe_tick(), self._leash_tick(), self._side_hold_tick(), self._peek_tick(),
                     self._los_cmd() if i == self.repeat - 1 and self.no_contest_after and not los_traces else "",
                     self._los_cmds() if i == self.repeat - 1 and los_traces else ""]
+            cmd = ";".join(c for c in cmds if c)
+            if self._pending_cmd and len(cmd) + len(self._pending_cmd) + 1 <= 255:  # the switch's console commands
+                cmd = self._pending_cmd + (";" + cmd if cmd else "")
+                self._pending_cmd = ""
             s = b.step(dyaw=dyaw, dpitch=dpitch, forward=fwd, side=side, buttons=buttons,
-                       capture=(i == self.repeat - 1), cmd=";".join(c for c in cmds if c))
+                       capture=(i == self.repeat - 1), cmd=cmd)
             r, died, killed = self._account(s)
             reward += r
             if (died and self.scn.end_on_death) or (killed and self.scn.end_on_kill):
@@ -481,6 +587,8 @@ class CS16Env(gym.Env):
             self._step_los = los_now
             if not terminated:
                 self._camp_tick(s, los_now)
+                self._go_look_tick(s, los_now)
+                self._switch_tick(s)
         aim_ok = (los_prev and los_now) if self.aim_terms_los_only else True
         if self.aim_shaping and aim_ok:  # potential-based: Phi = -angular error, F = gamma * Phi(s') - Phi(s), per agent step
             (t0, e0), (t1, e1) = aim0, self._snap["aim"]
@@ -505,6 +613,10 @@ class CS16Env(gym.Env):
         self._obs_queue.append(frame if frame is not None else self._obs_queue[-1])
         self._aux_queue.append(self._target(s))
         truncated = (s.time - self._ep_start) >= self.episode_seconds and not terminated
+        if truncated and self.timeout_penalty and self.scn.reset_round:
+            reward -= self.timeout_penalty
+        if self.los_move_cost and los_prev and self._me(s).alive:
+            reward -= self.los_move_cost * min(1.0, math.hypot(*s.velocity[:2]) / 250.0)
         self._last_trunc = bool(truncated)
         self._no_contest = False
         if self.no_contest_after and not terminated and self._me(s).alive and self._others_alive(s):
@@ -546,7 +658,7 @@ class CS16Env(gym.Env):
         me = s.playernum
         bot = next((k for k, p in enumerate(s.players) if p.connected and k != me), None)
         self._peeker = None
-        if self.duel_bot_mode == "peek" and bot is not None and sp is not None:
+        if self.duel_bot_mode in ("peek", "hold") and bot is not None and sp is not None:
             self._set_freeze(False)
             return self._peek_setup(s, sp, bot, cmds_mine=self._random_spawn_cmd(sp, me))
         camp = self.duel_bot_mode in ("camp", "side") and bot is not None and sp is not None
@@ -556,10 +668,11 @@ class CS16Env(gym.Env):
         mine = "T" if self.scn.human_team == "T" else "CT"
         theirs = "CT" if mine == "T" else "T"
         cmds = []
-        if self.duel_random_spawn:
-            p = self._pick_spawn(sp[mine]["pts"])
-            yaw = float(self.np_random.uniform(0.0, 360.0))
-            cmds.append(f"cs2ai_place {me} {p[0]:.1f} {p[1]:.1f} {p[2] + 1:.1f} 0 {yaw:.2f} 100")
+        cmds += self._random_spawn_cmd(sp, me)
+        if not camp and bot is not None and self.duel_start_facing == "toward":
+            # the roaming bot (or the human opponent of train.duel) keeps the game's spawn point, turned to face our side
+            o = s.players[bot].origin
+            cmds.append(f"cs2ai_place {bot} {o[0]:.1f} {o[1]:.1f} {o[2]:.1f} 0 {self._start_yaw(sp, theirs):.2f}")
         if camp:
             p = sp[theirs]["pts"][int(self.np_random.integers(len(sp[theirs]["pts"])))]
             # facing the agent's side: the map's T spawns face away from CT (yaw 90), so CT faces the T side at 90 deg
@@ -589,13 +702,23 @@ class CS16Env(gym.Env):
         self._spawn_last = k
         return pts[k]
 
+    def _start_yaw(self, sp, side):
+        """Heading of a player of `side` at the round start (see duel_start_facing)."""
+        if self.duel_start_facing != "toward":
+            return float(self.np_random.uniform(0.0, 360.0))
+        j = float(self.duel_start_jitter)
+        # the map's own spawn heading faces away from the other side (nav.MAP_SPAWNS), so +180 = straight across
+        return (sp[side]["yaw"] + 180.0 + float(self.np_random.uniform(-j, j))) % 360.0
+
     def _random_spawn_cmd(self, sp, me):
-        if not self.duel_random_spawn:
-            return []
         mine = "T" if self.scn.human_team == "T" else "CT"
+        if not self.duel_random_spawn:
+            if self.duel_start_facing != "toward":
+                return []
+            o = self.bridge.state.players[me].origin  # the game's own spawn point, turned to face the other side
+            return [f"cs2ai_place {me} {o[0]:.1f} {o[1]:.1f} {o[2]:.1f} 0 {self._start_yaw(sp, mine):.2f}"]
         p = self._pick_spawn(sp[mine]["pts"])
-        yaw = float(self.np_random.uniform(0.0, 360.0))
-        return [f"cs2ai_place {me} {p[0]:.1f} {p[1]:.1f} {p[2] + 1:.1f} 0 {yaw:.2f} 100"]
+        return [f"cs2ai_place {me} {p[0]:.1f} {p[1]:.1f} {p[2] + 1:.1f} 0 {self._start_yaw(sp, mine):.2f} 100"]
 
     def _peek_setup(self, s, sp, bot, cmds_mine):
         """duel_bot_mode "peek": the scripted peeker body (cs16env/peeker.py) on the bot's side; YaPB decides when to fire."""
@@ -613,11 +736,29 @@ class CS16Env(gym.Env):
             self._side_nodes = {}
         L = sp[theirs]
         from .nav import MAP_SIDES
-        pk = Peeker(self._side_graph, L["line_y"], L["toward"], self.np_random, difficulty=self.scn.bot_difficulty,
-                    look_point=MAP_SIDES[self.scn.map][mine])
+        if self.duel_bot_mode == "hold":
+            from .peeker import HoldBot, load_hold_spots, side_spots
+            P, W = side_spots(self._hold_table(), theirs, L["line_y"], L["toward"])
+            W = W * np.where(P[:, 2] > -420.0, self.hold_raised_mult, 1.0)
+            fixed = self.hold_fixed_frac > 0 and self.np_random.random() < self.hold_fixed_frac
+            if self.hold_hidden_frac > 0 and self.np_random.random() < self.hold_hidden_frac:
+                tab = [sp for sp in self._hold_table() if sp["side"] == theirs and "sees" in sp
+                       and (sp["y"] - L["line_y"]) * L["toward"] <= 0]
+                if tab:
+                    sp = min(tab, key=lambda q: (len(q["sees"]), -q["w"]))
+                    P, W, fixed = np.array([[sp["x"], sp["y"], sp["z"]]], np.float64), np.array([1.0]), True
+            elif self.hold_steps_frac > 0 and self.np_random.random() < self.hold_steps_frac:
+                raised = np.nonzero(P[:, 2] > -420.0)[0]
+                k = int(raised[np.argmax(W[raised])])
+                P, W, fixed = P[k:k + 1], W[k:k + 1], True
+            pk = HoldBot(P, W, L["line_y"], L["toward"], self.np_random, difficulty=self.scn.bot_difficulty,
+                         look_point=MAP_SIDES[self.scn.map][mine], move_after=(1e9, 1e9) if fixed else self.hold_move_after)
+        else:
+            pk = Peeker(self._side_graph, L["line_y"], L["toward"], self.np_random, difficulty=self.scn.bot_difficulty,
+                        look_point=MAP_SIDES[self.scn.map][mine])
         p = pk.reset(np.array(self._me(s).origin))
         self._peeker = pk
-        self._camp = dict(bot=bot, mode="peek", hp=100, unfreezes=0, homes=0, vis_steps=0, live_steps=0,
+        self._camp = dict(bot=bot, mode="peek", kind=self.duel_bot_mode, hp=100, unfreezes=0, homes=0, vis_steps=0, live_steps=0,
                           vis_runs=0, idle_vis=0.0, idle_vis_max=0.0, was_vis=False)
         b.step(cmd=f"cs2ai_place {bot} {p[0]:.1f} {p[1]:.1f} {p[2] + 1:.1f} {pk.pitch:.2f} {pk.yaw:.2f} 100", capture=False)
         for _ in range(3):
@@ -640,13 +781,78 @@ class CS16Env(gym.Env):
                 pk.jump_verdict = all(float(s.aux[k]) < 0.999 for k in (2, 3, 4, 5))
             else:
                 eye = np.array(m.origin, np.float64) + (0.0, 0.0, 17.0)
-                cur, dst = np.array(bp.origin, np.float64), pk.g.nodes[pk.jump[0]]
+                cur, dst = np.array(bp.origin, np.float64), pk.jump_target()
                 segs = [(cur, 10.0), (cur, 28.0), (dst, 10.0), (dst, 28.0)]
                 extra = ";" + ";".join(f"cs2ai_trace {2 + q} {eye[0]:.0f} {eye[1]:.0f} {eye[2]:.0f} {pt[0]:.0f} {pt[1]:.0f} "
                                        f"{pt[2] + dz:.0f}" for q, (pt, dz) in enumerate(segs))
                 pk.jump_traced = True
-        p, pitch, yaw, _ = pk.tick(self.tick, np.array(m.origin, np.float64), chest, bool(getattr(self, "_step_los", False)))
-        return f"cs2ai_place {c['bot']} {p[0]:.1f} {p[1]:.1f} {p[2] + 1:.1f} {pitch:.2f} {yaw:.2f}" + extra
+        los = bool(getattr(self, "_step_los", False))
+        p, pitch, yaw, _ = pk.tick(self.tick, np.array(m.origin, np.float64), chest, los)
+        fire = ""
+        if self.open_switch_fire and pk.deadly:
+            # the shot's own line (bot eye -> its aim point) must be clear of walls/boxes: traced every tick into aux[1]
+            # (read on the next tick); the agent's line-of-sight traces alone let it fire into a box edge (found 2026-11-13)
+            clear = c.get("aim_traced", False) and float(s.aux[1]) >= 0.999
+            if pk.trigger(self.tick, los and clear):
+                fire = f";cs2ai_fire {c['bot']} 2 {pitch:.2f} {yaw:.2f}"
+                c["fire_ticks"] = c.get("fire_ticks", 0) + 1
+            if extra:  # a jump check's 4 traces go out this tick: skip the aim trace (255-character command limit)
+                c["aim_traced"] = False
+            else:
+                e0 = p + (0.0, 0.0, 17.0)
+                e1 = chest + (0.0, 0.0, pk.head_dz)
+                fire += f";cs2ai_trace 1 {e0[0]:.0f} {e0[1]:.0f} {e0[2]:.0f} {e1[0]:.0f} {e1[1]:.0f} {e1[2]:.0f}"
+                c["aim_traced"] = True
+        else:
+            c["aim_traced"] = False
+        return f"cs2ai_place {c['bot']} {p[0]:.1f} {p[1]:.1f} {p[2] + (self.deadly_place_dz if pk.deadly else self.peek_place_dz):.1f} {pitch:.2f} {yaw:.2f}" + fire + extra
+
+    def _hold_table(self):
+        if getattr(self, "_hold_cache", None) is None:
+            from .peeker import load_hold_spots
+            self._hold_cache = load_hold_spots(self.hold_spots_path or str(Path(__file__).parent / f"{self.scn.map.replace('-', '_')}_hold_spots.json"))
+        return self._hold_cache
+
+    def _switch_off_cmd(self):
+        if self.open_switch_off_cmd is not None:
+            return self.open_switch_off_cmd
+        return f"yb_difficulty {self.scn.bot_difficulty};yb_notice_model 1;yb_whose_your_daddy 0"
+
+    def _go_look_tick(self, s, los):
+        """GO LOOKING (see go_look_after): once per agent step."""
+        self._contact |= bool(los)
+        if not self.go_look_after or self._go_look or self._contact or not self.scn.reset_round:
+            return
+        if s.time - self._ep_start < self.go_look_after:
+            return
+        self._go_look = True
+        pk = getattr(self, "_peeker", None)
+        if self._switch_on and pk is not None:  # the switch goes OFF for the rest of the round
+            self._switch_on = False
+            pk.set_deadly(False)
+            self._pending_cmd = self._switch_off_cmd()
+        if self.nav is not None:
+            if self._nav_goal0 is None:
+                self._nav_goal0 = self.nav.goal_mode
+            self.nav.goal_mode = "side"
+            self.nav.t_plan = -1e9  # re-plan toward the enemy side now
+
+    def _switch_tick(self, s):
+        """Once per agent step, real duel with duel_open_switch: switch the scripted opponent's deadly settings on while the
+        agent is more than open_switch_margin past its own cover line, off when it is back."""
+        pk = getattr(self, "_peeker", None)
+        if not self.duel_open_switch or pk is None or not self._me(s).alive or self._go_look:
+            return
+        from .nav import MAP_SPAWNS
+        L = MAP_SPAWNS[self.scn.map][self.scn.human_team]
+        adv = (float(self._me(s).origin[1]) - L["line_y"]) * L["toward"]
+        on = adv > self.open_switch_margin
+        if on != self._switch_on:
+            self._switch_on = on
+            self._switch_n += int(on)
+            pk.set_deadly(on, aim=self.open_switch_aim, preaim=self.open_switch_preaim)
+            self._pending_cmd = self.open_switch_on_cmd if on else self._switch_off_cmd()
+        self._switch_steps += int(on)
 
     def _peek_step_stats(self, los):
         c = self._camp
@@ -871,7 +1077,13 @@ class CS16Env(gym.Env):
         self._pocket_vis = None
         leash = self.bot_level == 3 and self.arena_leash > 0 and self.np_random.random() < self.arena_leash_frac
         wall_round = self.arena_wall_frac > 0 and self.np_random.random() < self.arena_wall_frac
-        for attempt in range(12):
+        self._arena_hold = False
+        if self.arena_hold_frac > 0 and self.np_random.random() < self.arena_hold_frac:
+            ae = self._arena_hold_pair(P)
+            if ae is not None:
+                a, e = ae
+                self._arena_hold = True
+        for attempt in range(0 if self._arena_hold else 12):
             q = self.np_random.choice(ok)
             i, j = pairs[q]
             swap = self.np_random.random() < 0.5
@@ -924,6 +1136,27 @@ class CS16Env(gym.Env):
         for _ in range(3):
             s = b.step(capture=False)
         return s
+
+    def _arena_hold_pair(self, P, tries=12):
+        """Aim arena, arena_hold_frac rounds: (agent position, enemy position) with the enemy at a hold-table spot (weighted
+        by how long the owner stood there; raised spots included) and the agent at an arena position within
+        [max(200, arena_min_dist), arena_max_dist] that sees the enemy's chest AND head (live traces). None if not found."""
+        spots = self._hold_table()
+        w = np.array([sp["w"] * (self.hold_raised_mult if sp["z"] > -420.0 else 1.0) for sp in spots], np.float64)
+        home = self.arena_hold_home > 0 and self.np_random.random() < self.arena_hold_home
+        for _ in range(2):
+            k = int(self.np_random.choice(len(spots), p=w / w.sum()))
+            e = np.array([spots[k]["x"], spots[k]["y"], spots[k]["z"]], np.float64)
+            if home:  # real-duel geometry: the agent at a hold spot of the OTHER side (1100-1600 units across)
+                P = np.array([(sp["x"], sp["y"], sp["z"]) for sp in spots if sp["side"] != spots[k]["side"]], np.float64)
+            d = np.linalg.norm(P - e, axis=1)
+            cand = np.nonzero((d >= max(200.0, self.arena_min_dist)) & (d <= self.arena_max_dist))[0]
+            for i in self.np_random.permutation(cand)[:tries]:
+                a = np.asarray(P[i], np.float64)
+                eye = a + (0.0, 0.0, 17.0)
+                if min(self._trace([(eye, e + (0.0, 0.0, 10.0)), (eye, e + (0.0, 0.0, 28.0))])) >= 0.999:
+                    return a, e
+        return None
 
     def _los_cmd(self):
         """World trace from the agent's eye to the nearest live enemy's chest into aux[7] (1 = visible)."""
@@ -981,6 +1214,10 @@ class CS16Env(gym.Env):
             out[6] = 1.0
             if lab["mode"] == 0:
                 out[2], out[3], out[4], out[5] = lab["yaw_bin"], lab["yaw_deg"], lab["pitch_bin"], 1.0
+            elif lab["mode"] == 1 and self.nav_engage_look and ext[9] > 0:
+                # nav_engage_look (peek_v9): while engaging, the look label is the aim teacher's turn toward the enemy
+                # (privileged, like the aim teacher itself) at the navigator's weight
+                out[2], out[3], out[4], out[5] = ext[3], ext[6], ext[4], 1.0
         if m.alive:
             out[7:9] = self.nav.g.norm_xy(m.origin)
             yaw = math.radians(s.viewangles[1])
@@ -1189,6 +1426,8 @@ class CS16Env(gym.Env):
             "spawn_offset": self._ep_offset,
             "no_contest": bool(getattr(self, "_no_contest", False)),
             "leashed": bool(self._leash is not None),
+            "arena_hold": bool(getattr(self, "_arena_hold", False)),
+            "go_look": bool(getattr(self, "_go_look", False)),
             "pocket_vis": self._pocket_vis,
             "acquire_time": self._acquired_t,
             "aux": self._aux_queue[0][:3].copy() if getattr(self, "_aux_queue", None) else np.zeros(3, np.float32),
@@ -1200,7 +1439,9 @@ class CS16Env(gym.Env):
                         peeks=self._peeker.stats["peeks"], jumps=self._peeker.stats["jumps"],
                         jumps_refused=self._peeker.stats["jumps_refused"], jumps_seen=self._camp.get("jumps_seen", 0),
                         still=round(self._peeker.stats["still_ticks"] / max(1, self._peeker.stats["ticks"]), 3),
-                        max_adv=round(float(self._peeker.stats["max_adv"]), 1))
+                        max_adv=round(float(self._peeker.stats["max_adv"]), 1), kind=self._camp.get("kind", "peek"),
+                        spot=self._peeker.stats.get("spot"), switch_s=round(self._switch_steps * self.tick * self.repeat, 2),
+                        switch_n=self._switch_n)
                    if self._camp["mode"] == "peek" and self._peeker is not None else {}),
                 **({} if self._camp["mode"] != "side" else dict(
                     line_freezes=self._camp["line_freezes"], max_adv=round(float(self._camp["max_adv"]), 1),

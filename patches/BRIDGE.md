@@ -42,3 +42,13 @@ The per-capture cost is a synchronous `glReadPixels`; PBO double-buffering or th
 - `+voice_enable 0` is required on macOS (mic permission prompt blocks connect).
 - If the controller disconnects, the engine quits.
 - Only POSIX (unix sockets + mmap) is implemented; Windows stubs compile to no-ops.
+
+## Scenario commands (server side, `sv_main.c`)
+
+- `cs2ai_place <slot> <x> <y> <z> <pitch> <yaw> [health]` -- teleport a player, set its view (and health).
+- `cs2ai_trace <k> <x1> <y1> <z1> <x2> <y2> <z2>` -- world line trace, fraction into `aux[k]` (1 = clear).
+- `cs2ai_fire <slot> <n> [pitch yaw]` (added 2026-11-13) -- the next `n` movement commands of that bot (fake client,
+  in `pfnRunPlayerMove`) also press attack, aimed at `pitch yaw` if given. Used by the scripted opponent's trigger when
+  CS16Env.duel_open_switch is on (YaPB's own trigger hesitates for seconds even with perfect scripted aim). Old engines
+  ignore the command. Installed into `game-dev/libxash.dylib` on 2026-11-13 (previous library kept as
+  `game-dev/libxash.dylib.pre-cs2ai_fire-20261113`).

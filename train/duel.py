@@ -17,6 +17,7 @@ import argparse
 import dataclasses
 import math
 import subprocess
+import json
 import time
 
 import numpy as np
@@ -31,9 +32,12 @@ from train.ppo import round_seconds
 
 # aim_map's spawn points per team (nav.MAP_SPAWNS, read from the map file); the human gets the team the AI is not on
 
-def client(width, height, sound):
-    args = ["./xash3d", "-game", "cstrike", "-windowed", "-nohighdpi", "-width", str(width), "-height", str(height),
-            *([] if sound else ["-nosound"]), "+name", "you", "+cl_crosshair_size", "small", "+connect", "127.0.0.1:27015"]
+def client(width, height, sound, fullscreen=False, sens=3.0, rawinput=True, extra=()):
+    # -fullscreen switches the display to width x height (a 4:3 mode on a 16:9 screen is stretched by the monitor)
+    args = ["./xash3d", "-game", "cstrike", "-fullscreen" if fullscreen else "-windowed", "-nohighdpi",
+            "-width", str(width), "-height", str(height), *([] if sound else ["-nosound"]), "+name", "you",
+            "+cl_crosshair_size", "small", "+sensitivity", f"{sens:g}", "+m_rawinput", str(int(rawinput)), "+m_ignore", "0", *extra,
+            "+connect", "127.0.0.1:27015"]
     return subprocess.Popen(args, cwd=DEFAULT_GAME_DIR, stdin=subprocess.DEVNULL,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
@@ -44,6 +48,13 @@ def main():
     ap.add_argument("--width", type=int, default=1280)
     ap.add_argument("--height", type=int, default=960)
     ap.add_argument("--mute", action="store_true")
+    ap.add_argument("--fullscreen", action="store_true", help="--client: full screen at --width x --height")
+    ap.add_argument("--sens", type=float, default=3.0, help="--client: mouse sensitivity")
+    ap.add_argument("--no-rawinput", action="store_true", help="--client: m_rawinput 0")
+    ap.add_argument("--client-cmd", default="", help="--client: extra console commands, e.g. '+m_ignore 1'")
+    ap.add_argument("--log", default="", help="server: record every step of every round to this .jsonl (positions of both "
+                                              "players, line of sight, health, the model's shots)")
+    ap.add_argument("--minutes", type=float, default=0.0, help="server: stop after the round in which this much time has passed")
     ap.add_argument("--snapshot", default="checkpoints/fire_best/fire_best_update9875.pt")
     ap.add_argument("--real", action="store_true", help="real duel from the map's own spawns instead of the aim arena")
     ap.add_argument("--temp", type=float, default=0.0, help="0 = the model's most likely move, as in the exams")
@@ -56,7 +67,8 @@ def main():
                     help="the AI's team and end of the map (you get the other team and spawn at the other end)")
     a = ap.parse_args()
     if a.client:
-        client(a.width, a.height, not a.mute)
+        client(a.width, a.height, not a.mute, fullscreen=a.fullscreen, sens=a.sens, rawinput=not a.no_rawinput,
+               extra=tuple(a.client_cmd.split()))
         return
 
     snap = a.snapshot
@@ -72,6 +84,9 @@ def main():
     if not a.real:
         env.episode_seconds = round_seconds(a.dist)
     dt = env.tick * env.repeat
+    log = open(a.log, "a") if a.log else None
+    if log:  # the navigator is only switched on for its line-of-sight traces (info["nav_ext"][13]); the model acts alone
+        env.enable_nav(goal_mode="side")
 
     def others(s):
         return [i for i, p in enumerate(s.players) if p.connected and i != s.playernum]
@@ -96,6 +111,7 @@ def main():
     realtime(300)
     score = dict(ai=0, you=0, draw=0)
     rng = np.random.default_rng()
+    t_session = time.perf_counter()
     try:
         for rnd in range(1, a.rounds + 1):
             while not env._others_alive(env.bridge.state) or not others(env.bridge.state):
@@ -107,7 +123,7 @@ def main():
                 gap = float(np.linalg.norm(np.array(env._me(s).origin) - np.array(s.players[i].origin)))
                 if gap < 700:  # safety net: still on the agent's side, so move you to one of the far side's spawn points
                     x, y, z = you_spawns["pts"][rng.integers(len(you_spawns["pts"]))]
-                    env.bridge.step(cmd=f"cs2ai_place {i} {x:.1f} {y:.1f} {z + 1:.1f} 0 {you_spawns['yaw']:.0f} 100", capture=False)
+                    env.bridge.step(cmd=f"cs2ai_place {i} {x:.1f} {y:.1f} {z + 1:.1f} 0 {(you_spawns['yaw'] + 180) % 360:.0f} 100", capture=False)
                 print(f"  round {rnd} start: {gap:.0f} units apart{' -> moved you to the far side' if gap < 700 else ''}", flush=True)
             else:
                 # same handicap for you: start offset..offset_min deg off the AI, not dead on
@@ -121,17 +137,36 @@ def main():
             done = False
             t0 = time.perf_counter()
             k = 0
+            rows = []
             while not done:
-                obs, r, term, trunc, info = env.step(agent.act(obs))
+                act = agent.act(obs)
+                obs, r, term, trunc, info = env.step(act)
                 done = term or trunc
                 k += 1
+                if log:
+                    s = env.bridge.state
+                    me, o = env._me(s), others(s)
+                    you = s.players[o[0]] if o else None
+                    ne = info.get("nav_ext")
+                    rows.append(dict(t=round(k * dt, 2), m=[round(float(x), 1) for x in me.origin],
+                                     h=[round(float(x), 1) for x in you.origin] if you else None,
+                                     los=bool(ne[13] > 0) if ne is not None else None, mhp=int(me.health),
+                                     hhp=int(you.health) if you else None, myaw=round(float(s.viewangles[1]), 1),
+                                     fire=int(act[4]), fwd=int(act[2]), side=int(act[3])))
                 time.sleep(max(0.0, t0 + k * dt - time.perf_counter()))
             res = "ai" if info["kills"] else "you" if info["deaths"] else "draw"
             score[res] += 1
+            if log:
+                log.write(json.dumps(dict(round=rnd, result=res, model_side=a.model_side, snapshot=snap, steps=rows)) + "\n")
+                log.flush()
             msg = f"Round {rnd}: {'AI wins' if res == 'ai' else 'YOU win' if res == 'you' else 'time out'} ({info['time']:.2f}s) | AI {score['ai']} - {score['you']} you"
             print(msg, flush=True)
             env.bridge.command(f'say "{msg}"')
             realtime(150)  # 1.5 s to watch the result, then next round
+            if a.minutes and time.perf_counter() - t_session > a.minutes * 60:
+                env.bridge.command('say "Time is up for this end. Thanks!"')
+                realtime(200)
+                break
     except KeyboardInterrupt:
         pass
     finally:

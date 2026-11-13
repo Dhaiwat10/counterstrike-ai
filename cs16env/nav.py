@@ -187,6 +187,12 @@ class Navigator:
                          spawn side (`enemy_side`) -- nothing hidden is used at all while navigating.
       In both modes the VIEW while navigating depends only on the route (map geometry + own position), never directly on
       the enemy's hidden position; in "enemy" mode the route itself is chosen with it.
+      goal_mode="home" (HOME TEACHER, 2026-11-13): at the round start a spot of the hold table on the agent's OWN side is
+                         drawn (set_home; weighted by how long the owner held there); it walks there by keys (same
+                         route / look / recovery logic), then HOLDS: stops (counter-strafe), no movement keys, looks toward
+                         where the enemy was last seen (within `memory` s) or else the enemy side, pitch level. It never
+                         walks toward the enemy; after a fight it goes back to its spot. Nothing hidden is used.
+      goal_mode="point": the same walk-then-hold to self.point, set from outside after reset() (test scripts).
     """
 
     KEYS_NONE = (0, 0)
@@ -211,7 +217,57 @@ class Navigator:
         # look_follow (deg, 0 = off): if the look point is more than this far from the walking direction, look where it
         # walks instead (no walking backwards while staring ahead past an obstacle; found 2026-11-13 at the T-side box)
         self.look_follow = float(look_follow)
+        # goal_mode "home" / "point": the spot to walk to and hold, how close counts as there, where to look while holding
+        self.point = None
+        self.home_look = None
+        self.hold_reach = 20.0
+        self.hold_leave = 64.0
+        # goal_mode "home": after this many seconds (uniform range) holding without seeing the enemy, move to another
+        # own-side hold spot (a player repositions when nothing shows up; peek_v4 time-outs from the CT end). None = never.
+        self.home_repick = (6.0, 10.0)
         self.reset()
+
+    def set_home(self, spots, weights, look, rng, watch=None, watch_w=None, watch_lists=None):
+        """goal_mode "home": draw the round's own-side hold spot (weighted) and the point to look at while holding.
+        While holding with no recent sighting the teacher SCANS the other side's hold spots (map knowledge: where players
+        hold): it looks at one (weighted) for 0.8-2.0 s, then another -- instead of staring at the enemy side's centre,
+        which left enemies on the side spots (stone steps) ~50-80 deg off screen in peek_v1/v3's exams.
+        watch_lists[k] = (points, weights) of the other side's spots that home spot k REALLY sees (engine traces,
+        scripts/hold_spot_vis.py; preferred, since peek_v3). Fallback: watch / watch_w, kept if the nav graph says the
+        spot is visible from home (approximate: it misses the raised steps)."""
+        spots = np.asarray(spots, np.float64).reshape(-1, 3)
+        w = np.asarray(weights, np.float64)
+        k = int(rng.choice(len(spots), p=w / w.sum()))
+        self._home = (spots, w, look, watch, watch_w, watch_lists)
+        self._home_k = k
+        self._hold_since = None
+        self._holding = False
+        self.point = spots[k].copy()
+        self.home_look = None if look is None else np.asarray(look, np.float64)
+        self.watch, self.watch_w, self._watch_k, self._watch_until, self._rng = None, None, None, -1.0, rng
+        self._repick_s = float(rng.uniform(*self.home_repick)) if self.home_repick else None
+        if watch_lists is not None:
+            W, ww = watch_lists[k]
+            if len(W):
+                self.watch, self.watch_w = np.asarray(W, np.float64).reshape(-1, 3), np.asarray(ww, np.float64)
+            return
+        if watch is not None and len(watch):
+            W = np.asarray(watch, np.float64).reshape(-1, 3)
+            ww = np.asarray(watch_w if watch_w is not None else np.ones(len(W)), np.float64)
+            here = self.g.nearest(self.point)
+            vis = np.array([bool(self.g.vis[here, self.g.nearest(q)]) for q in W])
+            if vis.any():
+                self.watch, self.watch_w = W[vis], ww[vis]
+
+    def _hold_look_point(self, t):
+        """Where the holding teacher looks when it has not seen the enemy recently (see set_home)."""
+        if getattr(self, "watch", None) is None:
+            return self.home_look if self.home_look is not None else self.enemy_side
+        if self._watch_k is None or t >= self._watch_until:
+            p = self.watch_w / self.watch_w.sum()
+            self._watch_k = int(self._rng.choice(len(self.watch), p=p))
+            self._watch_until = t + float(self._rng.uniform(0.8, 2.0))
+        return self.watch[self._watch_k]
 
     def reset(self):
         self.path, self.k, self.goal_node = [], 0, None
@@ -225,9 +281,13 @@ class Navigator:
         self._best_goal_d, self._t_best = math.inf, 0.0
         self.label = {}
         self._following = False
+        self._hold_since = None
+        self._holding = False
 
     # ---------------------------------------------------------------- helpers
     def _goal_point(self, enemy_pos, t):
+        if self.goal_mode in ("home", "point"):
+            return self.point
         if self.goal_mode == "enemy" and enemy_pos is not None:
             return np.asarray(enemy_pos, np.float64)
         if self.last_seen is not None and t - self.last_seen[1] <= self.memory:
@@ -315,6 +375,41 @@ class Navigator:
         goal = self._goal_point(enemy_pos, t)
         if goal is None:
             goal = enemy_pos
+        if (self.goal_mode == "home" and getattr(self, "_repick_s", None) and self._hold_since is not None
+                and t - max(self._hold_since, self.last_seen[1] if self.last_seen is not None else -1e9) > self._repick_s):
+            spots, w, look, watch, watch_w, lists = self._home
+            w2 = w.copy()
+            if len(w2) > 1:
+                w2[self._home_k] = 0.0
+            self.set_home(spots, w2, look, self._rng, watch, watch_w, lists)
+            self._home = (spots, w, look, watch, watch_w, lists)  # keep the original weights for the next move
+            goal = self.point
+            self.repicks = getattr(self, "repicks", 0) + 1
+        gdist = float(np.linalg.norm(goal[:2] - pos[:2])) if self.goal_mode in ("home", "point") else 1e9
+        # hysteresis (peek_v8): HOLD starts within hold_reach of the spot and lasts until it is pushed more than hold_leave
+        # away. Without it a model jittering ~20 units around its spot got step-to-step flipping walk-back keys from the
+        # teacher (keys agreement 0.18), never reached HOLD, and so never got the reposition timer either (greedy time-outs)
+        self._holding = gdist < self.hold_reach or (getattr(self, "_holding", False) and gdist < self.hold_leave)
+        if self._holding:
+            if self._hold_since is None:
+                self._hold_since = t
+            # HOLD at the spot: stop (counter-strafe), look toward where the enemy was last seen, else the enemy side
+            keys = self.KEYS_NONE
+            if speed > 40.0:
+                keys, _ = best_keys(math.degrees(math.atan2(-vel[1], -vel[0])), view[1])
+            if self.last_seen is not None and t - self.last_seen[1] <= self.memory:
+                lp = self.last_seen[0]
+            else:
+                lp = self._hold_look_point(t)
+            look_yaw = view[1] if lp is None else math.degrees(math.atan2(lp[1] - pos[1], lp[0] - pos[0]))
+            a[0], a[1], dy, dp = self._turn(view, look_yaw)
+            a[2], a[3] = keys
+            self.hist.clear()
+            self._best_goal_d, self._t_best = math.inf, t
+            lab.update(mode=0, fwd=keys[0], side=keys[1], yaw_deg=float(dy), pitch_deg=float(dp), yaw_bin=int(a[0]),
+                       pitch_bin=int(a[1]), look_valid=1, hold=1)
+            self.label = lab
+            return a
         self._plan(pos, goal, t)
         # waypoint advance
         while self.k < len(self.path) - 1 and np.linalg.norm(self.g.nodes[self.path[self.k]][:2] - pos[:2]) < self.reach:
@@ -347,7 +442,15 @@ class Navigator:
 
         look = self._look_point(pos)
         look_yaw = move_yaw if look is None else math.degrees(math.atan2(look[1] - pos[1], look[0] - pos[0]))
-        if self.look_follow > 0:
+        home_look = self.goal_mode == "home" and getattr(self, "_rng", None) is not None
+        if home_look:
+            # home teacher (peek_v5): while walking to / between its own-side spots it faces where enemies can see it
+            # from (the scanned hold spots, or the last sighting) and moves with whatever keys fit -- in peek_v4 it walked
+            # with its back to the other side and was shot from ~80 deg off screen
+            lp = self.last_seen[0] if (self.last_seen is not None and t - self.last_seen[1] <= self.memory) else self._hold_look_point(t)
+            if lp is not None:
+                look_yaw = math.degrees(math.atan2(lp[1] - pos[1], lp[0] - pos[0]))
+        if self.look_follow > 0 and not home_look:
             # with hysteresis: start looking where it walks beyond look_follow deg, go back to the route view only once the
             # two are within look_follow - 40 deg (no step-to-step switching near the threshold)
             off = abs(wrap(look_yaw - move_yaw))

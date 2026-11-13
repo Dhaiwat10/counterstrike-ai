@@ -68,7 +68,7 @@ def processes():
             kind = "firing analysis"
         elif "record.py" in cmd or "duel_trial.py" in cmd:
             kind = "recording"
-        elif "nav_duel.py" in cmd or "move_duel.py" in cmd or "sides" in cmd.split(".py")[0].split("/")[-1]:
+        elif "nav_duel.py" in cmd or "move_duel.py" in cmd or "peek_duel.py" in cmd or "sides" in cmd.split(".py")[0].split("/")[-1]:
             kind = "duels"
         elif "make_nav_graph.py" in cmd:
             kind = "map building"
@@ -103,7 +103,9 @@ def current_run():
                 first_up = r["update"]
         ups = [u for u in ups if first_up is None or u["update"] >= first_up]
     keys = ("update", "kill_rate", "death_rate", "kill_close", "kill_medium", "kill_long", "fire_frac", "teacher", "teacher_yaw_err", "ent", "sps",
-            "camp_win", "camp_len_s", "duel_stage", "nav_keys_agree")
+            "camp_win", "camp_len_s", "duel_stage", "nav_keys_agree",
+            "duel_win", "duel_CT_win", "duel_past", "duel_CT_past", "duel_hold_win", "duel_CT_hold_win", "duel_timeout",
+            "arena_kill_T", "arena_kill_CT")
     pts = [{k: u.get(k) for k in keys} for u in ups]
     last = ups[-1]
     extra = {k: v for k, v in last.items() if isinstance(v, (int, float)) and k not in keys and not k.startswith(("remote", "actor", "peer"))}
@@ -131,7 +133,14 @@ def state():
     slog = sd / "sides_log.md"
     sides = dict(status=sstatus, results=read_jsonl(sd / "sides_results.jsonl"), log=slog.read_text(errors="replace")[-40000:] if slog.exists() else "",
                  log_age_s=(time.time() - slog.stat().st_mtime) if slog.exists() else None)
-    return dict(now=time.time(), processes=procs, engines=engines, nav=nav, move=move, sides=sides, results=read_jsonl(RESULTS),
+    try:
+        pstatus = json.loads((sd / "peek_status.json").read_text())
+    except Exception:
+        pstatus = None
+    plog = sd / "peek_log.md"
+    peek = dict(status=pstatus, results=read_jsonl(sd / "peek_results.jsonl"), log=plog.read_text(errors="replace")[-40000:] if plog.exists() else "",
+                log_age_s=(time.time() - plog.stat().st_mtime) if plog.exists() else None)
+    return dict(now=time.time(), processes=procs, engines=engines, nav=nav, move=move, sides=sides, peek=peek, results=read_jsonl(RESULTS),
                 log=LOG.read_text(errors="replace")[-40000:] if LOG.exists() else "",
                 log_age_s=(time.time() - LOG.stat().st_mtime) if LOG.exists() else None, run=current_run())
 
@@ -160,6 +169,8 @@ class Handler(SimpleHTTPRequestHandler):
             return
         self.path = self.path.split("?")[0]
         if self.path in ("/", "/index.html"):
+            self.path = "/peek.html"   # the open-is-deadly / hold-at-home phase (2026-11-13)
+        elif self.path.rstrip("/") == "/sides":
             self.path = "/sides.html"
         elif self.path.rstrip("/") == "/move":
             self.path = "/move.html"

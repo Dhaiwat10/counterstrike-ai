@@ -97,7 +97,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
     duel = bool(env.scn.reset_round)  # a real duel (duel_aimmap): own spawns, no arena placement
     nav = bool(rewards.get("nav", False))
     if nav:  # navigator labels (+ line-of-sight traces) in every game on a map with a navigation graph
-        env.enable_nav(goal_mode="side", look_cap=rewards.get("nav_look_cap", 0.0), look_deadband=rewards.get("nav_look_deadband", 0.0),
+        env.enable_nav(goal_mode=rewards.get("nav_goal", "side"), look_cap=rewards.get("nav_look_cap", 0.0), look_deadband=rewards.get("nav_look_deadband", 0.0),
                        look_follow=rewards.get("nav_look_follow", 0.0))
     if duel:
         env.duel_random_spawn = bool(rewards.get("duel_random_spawn", False))
@@ -106,6 +106,17 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
         env.route_shaping = rewards.get("route_shaping", 0.0)
         env.duel_spawn_adapt = rewards.get("duel_spawn_adapt", 0.0)
         env.still_cost = rewards.get("still_cost", 0.0)
+        env.duel_open_switch = bool(rewards.get("open_switch", False))  # --open-switch (cs16env/env.py, "THE SWITCH")
+        env.timeout_penalty = rewards.get("duel_timeout_penalty", 0.0)    # --duel-timeout-penalty
+        env.los_move_cost = rewards.get("los_move_cost", 0.0)            # --los-move-cost
+        env.hold_fixed_frac = rewards.get("hold_fixed_frac", 0.0)        # --hold-fixed-frac
+        env.nav_engage_look = bool(rewards.get("nav_engage_look", False))  # --nav-engage-look
+        env.go_look_after = rewards.get("go_look_after", 0.0)              # --go-look-after
+        env.hold_steps_frac = rewards.get("hold_steps_frac", 0.0)          # --hold-steps-frac
+        env.hold_hidden_frac = rewards.get("hold_hidden_frac", 0.0)        # --hold-hidden-frac
+    else:
+        env.arena_hold_frac = rewards.get("arena_hold_frac", 0.0)       # --arena-hold-frac
+    env.hold_raised_mult = rewards.get("hold_raised_mult", 1.0)          # --hold-raised-mult (duels and arena)
     env.aim_shaping, env.bullet_cost, env.rw_dmg = rewards["aim_shaping"], rewards["bullet_cost"], rewards["damage"]
     env.shaping_gamma = rewards["gamma"]
     env.offtarget_cost, env.acquire_bonus = rewards.get("offtarget", 0.0), rewards.get("acquire", 0.0)
@@ -148,6 +159,14 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
             st = DUEL_STAGES[duel_stage_of(state["cur"], side)]
             camp = st["bot"] == "camp" or rng.random() < rewards.get("duel_camp_frac", 0.0)
             env.duel_bot_mode = "camp" if camp else st["bot"]
+            # --open-switch-frac: share of duel rounds with THE SWITCH on (ease-in); drawn only when below 1
+            if rewards.get("open_switch", False):
+                f = rewards.get("open_switch_frac", 1.0)
+                env.duel_open_switch = f >= 1.0 or rng.random() < f
+                state["switch"] = env.duel_open_switch
+            # --duel-hold-frac: this share of the scripted-peeker rounds uses the hold-spot opponent instead (same difficulty)
+            if not camp and st["bot"] == "peek" and rewards.get("duel_hold_frac", 0.0) > 0 and rng.random() < rewards["duel_hold_frac"]:
+                env.duel_bot_mode = "hold"
             state["camp"] = camp
             if camp and rewards.get("camp_stage_diff", False):
                 # --camp-diff0: the stays-put rounds kept after stage 1 use stage 1's difficulty (0), as in the exams
@@ -197,7 +216,9 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
 
     remote.send((views(obs), labels(info)))
     ep_ret = 0.0
-    dstat = dict(los=False, fight=False, hp=100)  # real duel: did this round reach a fight
+    dstat = dict(los=False, fight=False, hp=100, n=0, past=0)  # real duel: did this round reach a fight; time past own line
+    from cs16env.nav import MAP_SPAWNS as _SP
+    _line = _SP.get(env.scn.map, {}).get(side)
     try:
         while True:
             cmd, data = remote.recv()
@@ -212,6 +233,10 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
                     dstat["los"] |= los
                     if (los and data[4]) or (los and hurt) or info["kills"] or info["deaths"]:
                         dstat["fight"] = True
+                    if _line is not None and info["alive"]:
+                        y = float(env._me(env.bridge.state).origin[1])
+                        dstat["n"] += 1
+                        dstat["past"] += int((y - _line["line_y"]) * _line["toward"] > 0)
                 if term or trunc:
                     ep = dict(ret=ep_ret, kills=info["kills"], deaths=info["deaths"], damage=info["damage"],
                               time=info["time"], timeout=bool(trunc), dist=info["spawn_dist"], offset=info["spawn_offset"],
@@ -220,8 +245,10 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
                               passive=state["passive"], side=side, enemy_model=info.get("enemy_model"))
                     if duel:
                         ep.update(duel=True, camp=state.get("camp", False), diff=state.get("diff", 0), fight=dstat["fight"],
-                                  saw=dstat["los"])
-                    dstat = dict(los=False, fight=False, hp=100)
+                                  saw=dstat["los"], opp=env.duel_bot_mode, switch_s=(info.get("camp") or {}).get("switch_s"),
+                                  switch=bool(state.get("switch", False)), past=dstat["past"] / max(1, dstat["n"]),
+                                  go_look=bool(info.get("go_look", False)))
+                    dstat = dict(los=False, fight=False, hp=100, n=0, past=0)
                     ep_ret = 0.0
                     if trunc:
                         final = views(obs)  # bootstrap V(final obs) on a time-limit cut
@@ -888,6 +915,9 @@ def main():
     ap.add_argument("--lam", type=float, default=0.95)
     ap.add_argument("--clip", type=float, default=0.2)
     ap.add_argument("--ent", type=float, default=0.01, help="coef on mean normalised entropy of learned heads")
+    ap.add_argument("--ent-move-mult", type=float, default=1.0,
+                    help="entropy weight of the movement heads (fwd, side) relative to the others (peek_v12: < 1 sharpens "
+                         "them so the greedy key pair matches what the policy does)")
     ap.add_argument("--ent-yaw-mult", type=float, default=1.0,
                     help="extra exploration on the turning (yaw) head: its entropy term is multiplied by this")
     ap.add_argument("--ent-pitch-mult", type=float, default=1.0,
@@ -1052,6 +1082,37 @@ def main():
     ap.add_argument("--search-flip-cost", type=float, default=0.0,
                     help="real duels: reward per step-to-step reversal of the turn direction (left then right or right then "
                          "left) while no enemy is in line of sight; turn size and one-way turning are free. 0 = off")
+    ap.add_argument("--open-switch", action="store_true",
+                    help="real duels: THE SWITCH (CS16Env.duel_open_switch): while the agent is past its own cover line the "
+                         "scripted opponent (peek / hold) gets deadly aim + pre-aim + YaPB expert settings; normal behind it")
+    ap.add_argument("--open-switch-frac", type=float, default=1.0,
+                    help="with --open-switch: share of real-duel rounds that have the switch on (ease-in)")
+    ap.add_argument("--duel-timeout-penalty", type=float, default=0.0,
+                    help="real duels: reward added once when a round runs out of time (a time-out is a loss). 0 = off")
+    ap.add_argument("--los-move-cost", type=float, default=0.0,
+                    help="real duels: per step x speed/250 while the enemy is in line of sight (stop to fight). 0 = off")
+    ap.add_argument("--hold-hidden-frac", type=float, default=0.0,
+                    help="real duels: share of hold rounds with the holder fixed at a spot no hold spot of the other side sees "
+                         "(no contact -> go looking after --go-look-after). 0 = off")
+    ap.add_argument("--hold-steps-frac", type=float, default=0.0,
+                    help="real duels: share of hold rounds with the holder fixed on its side's stone steps. 0 = off")
+    ap.add_argument("--go-look-after", type=float, default=0.0,
+                    help="real duels: after this many seconds with no line of sight at all, the switch turns off and the "
+                         "navigator teacher walks toward the enemy side for the rest of the round (owner: go looking). 0 = off")
+    ap.add_argument("--nav-engage-look", action="store_true",
+                    help="real duels: while the navigator engages, its look label is the aim teacher's turn to the enemy")
+    ap.add_argument("--hold-raised-mult", type=float, default=1.0,
+                    help="weight multiplier for raised hold spots (stone steps) in hold duels and arena hold rounds. 1 = off")
+    ap.add_argument("--hold-fixed-frac", type=float, default=0.0,
+                    help="real duels: share of hold-opponent rounds whose holder never changes spot. 0 = off")
+    ap.add_argument("--duel-hold-frac", type=float, default=0.0,
+                    help="real duels: share of the scripted-peeker rounds that use the hold-spot opponent (duel_bot_mode "
+                         "'hold', cs16env/aim_map_hold_spots.json) instead. 0 = off")
+    ap.add_argument("--arena-hold-frac", type=float, default=0.0,
+                    help="aim arena: share of rounds whose enemy stands at a hold-table spot (raised steps included). 0 = off")
+    ap.add_argument("--nav-goal", default="side", choices=("side", "home"),
+                    help="navigator teacher's goal: side = walk to the enemy side (old); home = walk to a hold spot on the "
+                         "agent's own side and hold there (the home teacher)")
     ap.add_argument("--arena-wall-frac", type=float, default=0.0,
                     help="aim arena: share of rounds whose enemy stands with a wall/box within 150 units behind it. 0 = off")
     ap.add_argument("--skin-adapt", type=float, default=0.0,
@@ -1098,7 +1159,8 @@ def main():
     heads = [h.strip() for h in a.heads.split(",") if h.strip()]
     mask = [h in heads for h in HEADS]
     # per-head entropy weights (learned heads only): the turning head can get extra exploration
-    head_w = torch.tensor([a.ent_yaw_mult if h == "yaw" else a.ent_pitch_mult if h == "pitch" else 1.0
+    head_w = torch.tensor([a.ent_yaw_mult if h == "yaw" else a.ent_pitch_mult if h == "pitch"
+                           else a.ent_move_mult if h in ("fwd", "side") else 1.0
                            for h in HEADS if h in heads], device=dev)
     if a.init:
         ck = torch.load(a.init, map_location="cpu")
@@ -1210,6 +1272,33 @@ def main():
         rewards["skin_adapt"] = a.skin_adapt
     if a.arena_wall_frac > 0:
         rewards["wall_frac"] = a.arena_wall_frac
+    # 2026-11-13 open-is-deadly phase; only present when switched on, so the workers' defaults stay unchanged
+    if a.open_switch:
+        rewards["open_switch"] = True
+        if a.open_switch_frac < 1.0:
+            rewards["open_switch_frac"] = a.open_switch_frac
+    if a.duel_hold_frac > 0:
+        rewards["duel_hold_frac"] = a.duel_hold_frac
+    if a.duel_timeout_penalty:
+        rewards["duel_timeout_penalty"] = a.duel_timeout_penalty
+    if a.los_move_cost:
+        rewards["los_move_cost"] = a.los_move_cost
+    if a.hold_fixed_frac:
+        rewards["hold_fixed_frac"] = a.hold_fixed_frac
+    if a.nav_engage_look:
+        rewards["nav_engage_look"] = True
+    if a.go_look_after:
+        rewards["go_look_after"] = a.go_look_after
+    if a.hold_steps_frac:
+        rewards["hold_steps_frac"] = a.hold_steps_frac
+    if a.hold_hidden_frac:
+        rewards["hold_hidden_frac"] = a.hold_hidden_frac
+    if a.hold_raised_mult != 1.0:
+        rewards["hold_raised_mult"] = a.hold_raised_mult
+    if a.arena_hold_frac > 0:
+        rewards["arena_hold_frac"] = a.arena_hold_frac
+    if a.nav_goal != "side":
+        rewards["nav_goal"] = a.nav_goal
     sides = [x.strip() for x in a.sides.split(",") if x.strip()]
     assert all(x in ("T", "CT") for x in sides), "--sides takes T and/or CT"
     duel_stage = a.duel_stage0 or (int(resume.get("duel_stage", 1)) if resume is not None else 1)
@@ -1600,7 +1689,14 @@ def main():
                 return {f"{pre}_win": float(np.mean([e["kills"] > 0 for e in q])),
                         f"{pre}_death": float(np.mean([e["deaths"] > 0 for e in q])),
                         f"{pre}_fight": float(np.mean([e["fight"] for e in q])),
-                        f"{pre}_len_s": float(np.mean([e["time"] for e in q])), f"{pre}_n": len(q)}
+                        f"{pre}_len_s": float(np.mean([e["time"] for e in q])), f"{pre}_n": len(q),
+                        f"{pre}_past": float(np.mean([e.get("past", 0.0) for e in q])),
+                        f"{pre}_timeout": float(np.mean([bool(e.get("timeout")) for e in q])),
+                        f"{pre}_golook": float(np.mean([bool(e.get("go_look")) for e in q])),
+                        f"{pre}_hold_win": (float(np.mean([e["kills"] > 0 for e in q if e.get("opp") == "hold"]))
+                                            if any(e.get("opp") == "hold" for e in q) else None),
+                        f"{pre}_sw_win": (float(np.mean([e["kills"] > 0 for e in q if e.get("switch")]))
+                                          if any(e.get("switch") for e in q) else None)}
             duel_rec = {}
             if nav_on:  # the first side keeps the old key names (dashboard); other sides get a _SIDE suffix
                 duel_rec = dict(duel_stage=duel_stage, nav_coef=nav_coef, **dsum(duel_camp[side_list[0]], "camp"),

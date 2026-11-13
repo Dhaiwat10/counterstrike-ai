@@ -226,6 +226,27 @@ def test_env_skin_choice_is_reproducible_and_off_by_default():
     assert e._bot_want == (3, 2)
 
 
+def test_round_start_heading_faces_the_other_side():
+    """No engine: both players start a real-duel round facing straight across to the other side, +-jitter."""
+    import numpy as np
+    from cs16env import CS16Env
+    from cs16env.nav import MAP_SPAWNS
+    sp = MAP_SPAWNS["aim_map"]
+    e = CS16Env("duel_aimmap")
+    e.np_random = np.random.default_rng(0)
+    assert e.duel_start_facing == "toward"
+    for side in ("T", "CT"):
+        # direction from this side's spawns to the other side's, in degrees
+        me, them = np.mean(sp[side]["pts"], 0), np.mean(sp["CT" if side == "T" else "T"]["pts"], 0)
+        across = float(np.degrees(np.arctan2(them[1] - me[1], them[0] - me[0])))
+        off = [abs((e._start_yaw(sp, side) - across + 180) % 360 - 180) for _ in range(300)]
+        assert max(off) <= e.duel_start_jitter + 12, (side, max(off))   # the spawn rows are not exactly opposite: ~10 deg
+        assert max(off) > 15                                             # not dead on: "the general direction"
+    e.duel_start_facing = "any"
+    ys = [e._start_yaw(sp, "T") for _ in range(300)]
+    assert min(ys) < 30 and max(ys) > 330
+
+
 if __name__ == "__main__":
     for k, f in list(globals().items()):
         if k.startswith("test_"):
