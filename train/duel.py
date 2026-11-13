@@ -8,6 +8,8 @@ Default (aim arena on aim_map): each round, both players are teleported to a spa
 the round time; the score is printed and said in game chat. The server listens on 127.0.0.1 only.
 
     .venv/bin/python -m train.duel --real          # the real duel: each player at their own spawn side, 45 s rounds
+    .venv/bin/python -m train.duel --real --model-side CT   # the AI plays from the CT end, you from the T end
+                                                           (default --model-side T: the AI at the T end, you at CT)
 """
 from __future__ import annotations
 
@@ -21,15 +23,13 @@ import numpy as np
 
 from cs16env import CS16Env
 from cs16env.bridge import DEFAULT_GAME_DIR
+from cs16env.nav import MAP_SPAWNS, other_team
 from cs16env.scenarios import SCENARIOS
 from train.eval_agent import TorchAgent
 from train.ppo import round_seconds
 
 
-
-# aim_map's counter-terrorist spawn points (info_player_start in the map file); the agent spawns on the terrorist side
-CT_SPAWNS = [(-176, -2048, -423), (-304, -2048, -431), (-432, -2048, -431), (-48, -1920, -423), (-64, -1984, -423),
-             (-48, -2048, -423), (-48, -2112, -423), (-176, -2112, -431), (-176, -1984, -431), (-176, -1920, -431)]
+# aim_map's spawn points per team (nav.MAP_SPAWNS, read from the map file); the human gets the team the AI is not on
 
 def client(width, height, sound):
     args = ["./xash3d", "-game", "cstrike", "-windowed", "-nohighdpi", "-width", str(width), "-height", str(height),
@@ -52,6 +52,8 @@ def main():
     ap.add_argument("--offset", type=float, default=45.0)
     ap.add_argument("--offset-min", type=float, default=15.0)
     ap.add_argument("--rounds", type=int, default=1000)
+    ap.add_argument("--model-side", default="T", choices=("T", "CT"),
+                    help="the AI's team and end of the map (you get the other team and spawn at the other end)")
     a = ap.parse_args()
     if a.client:
         client(a.width, a.height, not a.mute)
@@ -59,7 +61,9 @@ def main():
 
     snap = a.snapshot
     agent = TorchAgent(snap, temperature=a.temp)
-    scn = dataclasses.replace(SCENARIOS["duel_aimmap" if a.real else "aim_aimmap"], bots=0)  # the opponent is you
+    you_team = other_team(a.model_side)
+    scn = dataclasses.replace(SCENARIOS["duel_aimmap" if a.real else "aim_aimmap"], bots=0,  # the opponent is you
+                              human_team=a.model_side)
     env = CS16Env(scn, width=agent.res[0], height=agent.res[1], reaction_delay=a.delay)
     env.cfg.extra_args = ("+ip", "127.0.0.1")  # reachable from this machine only
     env.set_bot_level(3)
@@ -78,12 +82,13 @@ def main():
             env.bridge.step(capture=False)
             time.sleep(max(0.0, t0 + (k + 1) * env.tick - time.perf_counter()))
 
-    print(f"AI: {snap}  {agent.res[0]}x{agent.res[1]}  reaction delay {int(a.delay * 1000)} ms")
+    print(f"AI: {snap}  {agent.res[0]}x{agent.res[1]}  reaction delay {int(a.delay * 1000)} ms  AI plays {a.model_side}, "
+          f"you play {you_team}")
     env._boot()  # start the server only: nobody to place until you join
-    if a.real:
-        # the agent is in (terrorist side); every human who joins from now on is put on the other team, so the game
-        # itself spawns you at the far side each round (no moving you after the round has started)
-        env.bridge.command("humans_join_team CT")
+    # the agent is in (on --model-side); every human who joins from now on is put on the other team, so the game itself
+    # spawns you at the far side each round (no moving you after the round has started)
+    env.bridge.command(f"humans_join_team {you_team}")
+    you_spawns = MAP_SPAWNS["aim_map"][you_team]
     print("Server up on 127.0.0.1. Waiting for you to join (python -m train.duel --client) ...", flush=True)
     while not others(env.bridge.state) or not env._others_alive(env.bridge.state):
         realtime(10)
@@ -101,8 +106,8 @@ def main():
                 i = others(s)[0]
                 gap = float(np.linalg.norm(np.array(env._me(s).origin) - np.array(s.players[i].origin)))
                 if gap < 700:  # safety net: still on the agent's side, so move you to one of the far side's spawn points
-                    x, y, z = CT_SPAWNS[rng.integers(len(CT_SPAWNS))]
-                    env.bridge.step(cmd=f"cs2ai_place {i} {x:.1f} {y:.1f} {z:.1f} 0 270 100", capture=False)
+                    x, y, z = you_spawns["pts"][rng.integers(len(you_spawns["pts"]))]
+                    env.bridge.step(cmd=f"cs2ai_place {i} {x:.1f} {y:.1f} {z + 1:.1f} 0 {you_spawns['yaw']:.0f} 100", capture=False)
                 print(f"  round {rnd} start: {gap:.0f} units apart{' -> moved you to the far side' if gap < 700 else ''}", flush=True)
             else:
                 # same handicap for you: start offset..offset_min deg off the AI, not dead on

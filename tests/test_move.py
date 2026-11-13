@@ -97,7 +97,7 @@ def test_selfloc_loss():
 
 
 def test_constants():
-    assert NAV0 == N_LABELS == 13 and N_NAV == 14
+    assert NAV0 == N_LABELS == 13 and N_NAV == 15
     assert DUEL_STAGES[1]["bot"] == "camp" and all(DUEL_STAGES[k]["bot"] == "peek" for k in (2, 3, 4))
     sp = MAP_SPAWNS["aim_map"]
     assert len(sp["T"]["pts"]) == 16 and len(sp["CT"]["pts"]) == 16
@@ -125,6 +125,105 @@ def test_peeker_stays_behind_line_and_jumps_only_when_confirmed():
             assert (pos[1] - L["line_y"]) * L["toward"] <= -20.0 + 1e-6
         assert pk.stats["peeks"] >= 5
         assert (pk.stats["jumps"] > 0) == verdict and (pk.stats["jumps_refused"] > 0) == (not verdict)
+
+
+def test_peeker_on_the_T_side_stays_behind_its_line():
+    """Both-ends work: the mirrored peeker (bot on the T side, player at the CT end) never passes the T line."""
+    from cs16env.nav import NavGraph
+    from cs16env.peeker import Peeker
+    g = NavGraph.load(str(Path(__file__).resolve().parents[1] / "data/arena/aim_map_nav.npz"))
+    L = MAP_SPAWNS["aim_map"]["T"]
+    assert L["toward"] == -1.0 and -950 < L["line_y"] < -880
+    # the T line is the CT line turned by 180 degrees about the map's centre (the spawns are point-symmetric)
+    yc = np.mean([p[1] for p in MAP_SPAWNS["aim_map"]["T"]["pts"]] + [p[1] for p in MAP_SPAWNS["aim_map"]["CT"]["pts"]])
+    assert abs((2 * yc - MAP_SPAWNS["aim_map"]["CT"]["line_y"]) - L["line_y"]) < 15
+    me = np.array(MAP_SIDES["aim_map"]["CT"], np.float64)
+    for verdict in (True, False):
+        pk = Peeker(g, L["line_y"], L["toward"], np.random.default_rng(2), 0, look_point=me)
+        assert len(pk.area) > 10 and all(g.nodes[k][1] > L["line_y"] for k in pk.area)
+        p0 = pk.reset(me)
+        assert p0[1] >= L["line_y"] + 20.0 - 1e-6
+        for t in range(8000):
+            if pk.phase == "jumpcheck":
+                if pk.jump_traced:
+                    pk.jump_verdict = verdict
+                pk.jump_traced = True
+            pos, _, _, _ = pk.tick(0.01, me, me + (0, 0, 10), False)
+            assert (pos[1] - L["line_y"]) * L["toward"] <= -20.0 + 1e-6
+        assert pk.stats["peeks"] >= 5
+
+
+def test_game_sides_and_duel_stage_of():
+    from train.ppo import duel_stage_of, game_sides
+    names = ["duel_aimmap", "duel_aimmap", "aim_aimmap"]
+    games = [names[i % 3] for i in range(8)]
+    teams = game_sides(games, ["T", "CT"])
+    duel_t = [t for g, t in zip(games, teams) if g == "duel_aimmap"]
+    arena_t = [t for g, t in zip(games, teams) if g == "aim_aimmap"]
+    assert duel_t.count("T") == duel_t.count("CT") == 3 and sorted(arena_t) == ["CT", "T"]
+    assert game_sides(games, []) == [""] * 8  # old behaviour: every game keeps its scenario's team
+    assert duel_stage_of({"duel_stage": 3}, "CT") == 3  # old knobs: one stage for everyone
+    assert duel_stage_of({"duel_stage": {"T": 4, "CT": 1}}, "CT") == 1
+    assert duel_stage_of({"duel_stage": {"T": 4, "CT": 1}}, "T") == 4
+    assert duel_stage_of({}, "T") == 1
+
+
+def test_startend_head_and_loss():
+    from train.ppo import startend_loss
+    m = tiny(selfloc=True, startend=True)
+    missing, unexpected = m.load_state_dict(tiny(selfloc=True).state_dict(), strict=False)
+    assert missing == ["startend.weight", "startend.bias"] and not unexpected  # older checkpoints still load
+    lab = torch.zeros(2, 3, N_LABELS + N_NAV)
+    lab[0, :, NAV0 + 14] = 1.0   # started at the T end
+    lab[1, :2, NAV0 + 14] = -1.0  # CT end; last step unlabelled
+    z = torch.zeros(2, 3, requires_grad=True)
+    loss, st = startend_loss(z, lab)
+    loss.backward()
+    assert abs(float(loss) - math.log(2)) < 1e-5
+    assert (z.grad[0] < 0).all() and (z.grad[1, :2] > 0).all() and z.grad[1, 2] == 0
+    good = torch.tensor([[5.0] * 3, [-5.0] * 3])
+    assert startend_loss(good, lab)[1]["startend_acc"] == 1.0
+
+
+def test_team_models():
+    from cs16env.nav import TEAM_MODELS, other_team
+    assert len(TEAM_MODELS["T"]) == len(TEAM_MODELS["CT"]) == 4 and not set(TEAM_MODELS["T"]) & set(TEAM_MODELS["CT"])
+    assert other_team("T") == "CT" and other_team("CT") == "T"
+
+
+def test_env_skin_choice_is_reproducible_and_off_by_default():
+    """No engine: only the class-choice bookkeeping of CS16Env (bot_skin 0 = old behaviour, no bot of our own)."""
+    from cs16env import CS16Env
+    e = CS16Env("aim_aimmap")
+    e._choose_skin(5)
+    assert e._bot_want is None and e.enemy_model == "unknown" and e.enemy_team == "CT"
+    e.bot_skin, e.skin_change = "mixed", 1.0
+    picks = []
+    for k in range(40):
+        e._choose_skin(100 if k == 0 else None)
+        picks.append(e._bot_want[0])
+    assert set(picks) == {1, 2, 3, 4}
+    e2 = CS16Env("aim_aimmap")
+    e2.bot_skin = "mixed"
+    picks2 = []
+    for k in range(40):
+        e2._choose_skin(100 if k == 0 else None)
+        picks2.append(e2._bot_want[0])
+    assert picks == picks2
+    # failure-weighted choice: a class that is never beaten is drawn far more often
+    e3 = CS16Env("aim_aimmap")
+    e3.bot_skin, e3.skin_adapt = "mixed", 20.0
+    e3._skin_fail[:] = [0, 0, 1.0, 0, 0]
+    picks3 = []
+    for k in range(200):
+        e3._choose_skin(7 if k == 0 else None)
+        picks3.append(e3._bot_want[0])
+    assert picks3.count(2) > 100
+    e.bot_skin = 3
+    e._choose_skin(None)
+    assert e._bot_want[0] == 3
+    e.set_bot(difficulty=2)
+    assert e._bot_want == (3, 2)
 
 
 if __name__ == "__main__":

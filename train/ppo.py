@@ -41,7 +41,7 @@ IDLE = (NVEC[0] // 2, NVEC[1] // 2, 0, 0, 0, 0, 0, 0, 0)  # "no input" for every
 # + teacher yaw turn, pitch turn in degrees, fire, valid-even-off-screen (4); see CS16Env._aux_ext
 N_LABELS = 13
 # --nav-coef / --selfloc (movement work, 2026-11-12): the navigator's 14 labels (CS16Env._nav_ext) follow the 13 above
-N_NAV = 14
+N_NAV = 15  # 14 until 2026-11-13; [14] = which end the round started from (--startend)
 NAV0 = N_LABELS
 LOGN = torch.tensor([math.log(n) for n in NVEC])
 # real-duel opponent stages (--duel-stage0, promotion by --duel-gates): every opponent shoots back
@@ -55,13 +55,45 @@ DUEL_STAGES = {1: dict(bot="camp", diff=0),    # stays at its spawn, turns/aims/
 
 
 # ---------------------------------------------------------------------------------- workers
-def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), prior_scale=0.0):
+def duel_stage_of(knobs, side):
+    """Real-duel opponent stage of games played from `side` (knobs["duel_stage"]: one int for every side -- the old form --
+    or {side: stage} since the both-ends work, 2026-11-13)."""
+    d = knobs.get("duel_stage", 1)
+    if isinstance(d, dict):
+        return int(d.get(side, d.get("T", 1)))
+    return int(d)
+
+
+def game_sides(names, sides):
+    """Team of the agent in each game: games are dealt round-robin over the scenario names, and the games of each
+    scenario name alternate over `sides` (e.g. 8 games over duel,duel,arena with sides T,CT: duels T,CT,T,CT,T,CT,
+    arenas T,CT). No sides = every game keeps its scenario's own team ("")."""
+    if not sides:
+        return [""] * len(names)
+    seen, out = {}, []
+    for n in names:
+        k = seen.get(n, 0)
+        seen[n] = k + 1
+        out.append(sides[k % len(sides)])
+    return out
+
+
+def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), prior_scale=0.0, team=""):
     import signal
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # only the main process handles stop signals; it closes us via "close"
+    import dataclasses
     from cs16env import CS16Env
+    from cs16env.scenarios import SCENARIOS
     from cs16env.vision import views_from_frame
 
-    env = CS16Env(scenario, width=res[0], height=res[1], reaction_delay=knobs["delay"])
+    scn = SCENARIOS[scenario]
+    if team:  # --sides: this game's agent plays from that team's end (the bot gets the other team)
+        scn = dataclasses.replace(scn, human_team=team)
+    env = CS16Env(scn, width=res[0], height=res[1], reaction_delay=knobs["delay"])
+    side = env.scn.human_team
+    if rewards.get("skin_change", 0.0) > 0:  # --skin-change: the enemy wears a random class of its team, changed now and then
+        env.bot_skin, env.skin_change = "mixed", float(rewards["skin_change"])
+        env.skin_adapt = float(rewards.get("skin_adapt", 0.0))
     duel = bool(env.scn.reset_round)  # a real duel (duel_aimmap): own spawns, no arena placement
     nav = bool(rewards.get("nav", False))
     if nav:  # navigator labels (+ line-of-sight traces) in every game on a map with a navigation graph
@@ -102,6 +134,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
         # free-roaming bot: leash (put back into view when it walks > leash units away) and pocket-visibility filter
         env.arena_leash, env.arena_leash_frac = rewards.get("leash", 0.0), rewards.get("leash_frac", 1.0)
         env.arena_min_vis = rewards.get("min_vis", 0.0)
+        env.arena_wall_frac = rewards.get("wall_frac", 0.0)
 
     import random
     rng = random.Random(seed)
@@ -112,19 +145,21 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
         state["passive"] = False
         if duel:  # opponent stage (DUEL_STAGES): stage 1 = the stays-put shooter; later stages keep a share of it
             set_knobs(state["cur"])
-            st = DUEL_STAGES[int(state["cur"].get("duel_stage", 1))]
+            st = DUEL_STAGES[duel_stage_of(state["cur"], side)]
             camp = st["bot"] == "camp" or rng.random() < rewards.get("duel_camp_frac", 0.0)
             env.duel_bot_mode = "camp" if camp else st["bot"]
             state["camp"] = camp
+            if camp and rewards.get("camp_stage_diff", False):
+                # --camp-diff0: the stays-put rounds kept after stage 1 use stage 1's difficulty (0), as in the exams
+                st = dict(st, diff=DUEL_STAGES[1]["diff"])
             if env.bridge is None:  # not booted yet: the bot is created at this difficulty
-                import dataclasses
                 env.scn = dataclasses.replace(env.scn, bot_difficulty=st["diff"])
             elif st["diff"] != state.get("diff", env.scn.bot_difficulty):
-                # a harder bot: YaPB applies yb_difficulty to bots it creates, so the bot is kicked and re-added; the
+                # a harder bot: YaPB applies yb_difficulty to bots it creates, so the bot is removed and added again at the
+                # next reset (CS16Env.set_bot; the old `yb_kickall` here was not a YaPB command and did nothing); the
                 # scenario copy is updated too (the peeker reads its aim settings from it)
-                import dataclasses
-                env.bridge.command(f"yb_difficulty {st['diff']}; yb_kickall")
                 env.scn = dataclasses.replace(env.scn, bot_difficulty=st["diff"])
+                env.set_bot(difficulty=st["diff"])
             state["diff"] = st["diff"]
             return
         if state["pool"] and rng.random() < rewards.get("rehearsal", 0.0):
@@ -182,7 +217,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
                               time=info["time"], timeout=bool(trunc), dist=info["spawn_dist"], offset=info["spawn_offset"],
                               acquire=info.get("acquire_time"), rehearsal=state["rehearsing"], delayed=state["delayed"],
                               no_contest=info.get("no_contest", False), leashed=info.get("leashed", False),
-                              passive=state["passive"])
+                              passive=state["passive"], side=side, enemy_model=info.get("enemy_model"))
                     if duel:
                         ep.update(duel=True, camp=state.get("camp", False), diff=state.get("diff", 0), fight=dstat["fight"],
                                   saw=dstat["los"])
@@ -203,13 +238,16 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
 
 
 class VecEnv:
-    def __init__(self, n, scenario, hw, fovea, knobs, rewards, seed=0, res=(320, 240), prior_scale=0.0):
+    def __init__(self, n, scenario, hw, fovea, knobs, rewards, seed=0, res=(320, 240), prior_scale=0.0, sides=()):
         ctx = mp.get_context("spawn")
         self.remotes, self.procs = [], []
         names = [x.strip() for x in scenario.split(",") if x.strip()]  # "a,b,c": the games are dealt round-robin over the maps
+        games = [names[i % len(names)] for i in range(n)]
+        self.teams = game_sides(games, list(sides))
         for i in range(n):
             a, b = ctx.Pipe()
-            p = ctx.Process(target=_worker, args=(b, names[i % len(names)], seed + i, hw, fovea, dict(knobs), rewards, tuple(res), prior_scale), daemon=True)
+            p = ctx.Process(target=_worker, args=(b, games[i], seed + i, hw, fovea, dict(knobs), rewards, tuple(res), prior_scale,
+                                                  self.teams[i]), daemon=True)
             p.start()
             self.remotes.append(a)
             self.procs.append(p)
@@ -541,8 +579,11 @@ def seq_forward(model, frames, fov, state, starts, hist=None, want_loc=False, wa
             ax = torch.cat([ax, model.aux_now(o)], -1)
         if want_loc:
             return model.heads(o), model.value(o).squeeze(-1), ax, model.loc(o)
-        if want_selfloc:
-            return model.heads(o), model.value(o).squeeze(-1), ax, model.selfloc(o)
+        if want_selfloc:  # [..., :4] where am I, [..., 4] which end did I start from (if the model has that head)
+            sl = model.selfloc(o)
+            if hasattr(model, "startend"):
+                sl = torch.cat([sl, model.startend(o)], -1)
+            return model.heads(o), model.value(o).squeeze(-1), ax, sl
         return model.heads(o), model.value(o).squeeze(-1), ax
 
 
@@ -675,11 +716,25 @@ def nav_loss(lg, lab, look_mult=1.0):
     return loss, stats
 
 
+def startend_loss(logit, lab):
+    """'Which end did I start from': logit [...] vs lab[..., NAV0+14] (+1 T, -1 CT, 0 = no label). Binary cross-entropy
+    over labelled steps. Returns (loss, stats: accuracy)."""
+    y = lab[..., NAV0 + 14].reshape(-1).float()
+    z = logit.reshape(-1).float()
+    v = (y != 0).float()
+    n = v.sum().clamp(min=1.0)
+    t = (y > 0).float()
+    loss = (F.binary_cross_entropy_with_logits(z, t, reduction="none") * v).sum() / n
+    with torch.no_grad():
+        acc = ((((z > 0).float() == t).float()) * v).sum() / n
+    return loss, dict(startend_acc=acc.item())
+
+
 def selfloc_loss(pred, lab):
     """'Where am I': pred [..., 4] vs lab[..., NAV0+7:NAV0+11] (own x, y in [-1, 1], sin/cos of the view yaw), valid
     lab[..., NAV0+11]. Mean squared error over valid steps. Returns (loss, stats: mean position error in units ~ /2 of
     the map extent, heading error in degrees)."""
-    pred = pred.reshape(-1, 4).float()
+    pred = pred[..., :4].reshape(-1, 4).float()
     ne = lab[..., NAV0:NAV0 + N_NAV].reshape(-1, N_NAV)
     tgt, v = ne[:, 7:11], ne[:, 11]
     n = v.sum().clamp(min=1.0)
@@ -997,6 +1052,27 @@ def main():
     ap.add_argument("--search-flip-cost", type=float, default=0.0,
                     help="real duels: reward per step-to-step reversal of the turn direction (left then right or right then "
                          "left) while no enemy is in line of sight; turn size and one-way turning are free. 0 = off")
+    ap.add_argument("--arena-wall-frac", type=float, default=0.0,
+                    help="aim arena: share of rounds whose enemy stands with a wall/box within 150 units behind it. 0 = off")
+    ap.add_argument("--skin-adapt", type=float, default=0.0,
+                    help="with --skin-change: failure-weighted enemy class choice, weight 1 + this x the class's running "
+                         "rate of rounds not won. 0 = uniform")
+    ap.add_argument("--camp-diff0", action="store_true",
+                    help="the stays-put rounds kept after stage 1 use stage 1's bot difficulty (0, as in the exams) instead "
+                         "of the current stage's (until 2026-11-13 the in-run difficulty change did nothing, so they ran at "
+                         "the difficulty the game booted with)")
+    ap.add_argument("--startend", type=float, default=0.0,
+                    help="weight of the 'which end did I start this round from' side task (real duels; adds the policy's "
+                         "training-only startend head; needs --selfloc). 0 = off")
+    ap.add_argument("--sides", default="",
+                    help="comma list of teams the agent plays from, e.g. T,CT: the games of each scenario alternate over them "
+                         "(fixed per game). Default: every game keeps its scenario's team (T)")
+    ap.add_argument("--duel-stage-sides", default="",
+                    help="real-duel opponent stage per side, e.g. CT=1 (sides not named start at --duel-stage0 / the resumed "
+                         "stage); each side is then promoted by its own training rounds")
+    ap.add_argument("--skin-change", type=float, default=0.0,
+                    help="enemy player model: the bot wears a random one of its team's 4 classes, and before each round a new "
+                         "one is drawn with this probability (re-adds the bot, ~0.5 s). 0 = off (YaPB's own pick at boot)")
     a = ap.parse_args()
     assert (a.teacher_near_mult == 1.0 and a.teacher_fire_coef == 0) or (a.teacher_soft and a.teacher_coef > 0), \
         "--teacher-near-mult / --teacher-fire-coef need --teacher-soft and --teacher-coef > 0"
@@ -1044,13 +1120,14 @@ def main():
         has_now = any(k.startswith("aux_now.") for k in resume["model"])
         has_loc = any(k.startswith("loc.") for k in resume["model"])
         has_self = any(k.startswith("selfloc.") for k in resume["model"])
+        has_se = any(k.startswith("startend.") for k in resume["model"])
         model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist or k_old, aux_now=bool(a.aux_now) or has_now,
-                       loc=bool(a.loc) or has_loc, selfloc=bool(a.selfloc) or has_self)
+                       loc=bool(a.loc) or has_loc, selfloc=bool(a.selfloc) or has_self, startend=bool(a.startend) or has_se)
         missing, unexpected = model.load_state_dict(grow_state(resume["model"], model.state_dict()), strict=False)
-        assert not unexpected and all(k.startswith(("act_in.", "aux_now.", "loc.", "selfloc.")) for k in missing), (missing, unexpected)  # only new zero/aux inputs
+        assert not unexpected and all(k.startswith(("act_in.", "aux_now.", "loc.", "selfloc.", "startend.")) for k in missing), (missing, unexpected)  # only new zero/aux inputs
     elif a.act_hist or a.aux_now or a.loc or a.selfloc:
         model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist, aux_now=bool(a.aux_now), loc=bool(a.loc),
-                       selfloc=bool(a.selfloc))
+                       selfloc=bool(a.selfloc), startend=bool(a.startend))
         if a.init:
             model.load_state_dict({k: v.float() if v.is_floating_point() else v for k, v in ck["model"].items()}, strict=False)
     K = model.act_hist
@@ -1070,7 +1147,7 @@ def main():
     else:
         res = (320, 240)
     model_args = dict(hw=list(hw), chans=list(chans), fovea=fovea, active_heads=heads, res=list(res), act_hist=K,
-                      loc=hasattr(model, "loc"), selfloc=hasattr(model, "selfloc"))
+                      loc=hasattr(model, "loc"), selfloc=hasattr(model, "selfloc"), startend=hasattr(model, "startend"))
     prior = None
     kl_idx = [HEADS.index(h.strip()) for h in a.kl_heads.split(",") if h.strip()]
     if a.kl_prior:
@@ -1089,7 +1166,8 @@ def main():
     opt = build_optimizer(model, a.lr, resume)
     warm_params = list(model.value.parameters()) + list(model.aux.parameters()) + \
         (list(model.aux_now.parameters()) if hasattr(model, "aux_now") else []) + \
-        (list(model.selfloc.parameters()) if hasattr(model, "selfloc") else [])
+        (list(model.selfloc.parameters()) if hasattr(model, "selfloc") else []) + \
+        (list(model.startend.parameters()) if hasattr(model, "startend") else [])
     wopt = torch.optim.Adam(warm_params, lr=1e-3)
 
     stages = curriculum_stages(delay_ramp=a.delay_ramp or None)
@@ -1123,13 +1201,38 @@ def main():
                        duel_seconds=a.duel_seconds, nav_look_cap=a.nav_look_cap, nav_look_deadband=a.nav_look_deadband, nav_look_follow=a.nav_look_follow,
                        search_flip_cost=a.search_flip_cost, route_shaping=a.route_shaping, still_cost=a.still_cost,
                        duel_spawn_adapt=a.duel_spawn_adapt)
+    assert a.startend == 0 or a.selfloc > 0, "--startend rides on the --selfloc side task"
+    if a.skin_change > 0:
+        rewards["skin_change"] = a.skin_change
+    if a.camp_diff0:
+        rewards["camp_stage_diff"] = True
+    if a.skin_adapt > 0:
+        rewards["skin_adapt"] = a.skin_adapt
+    if a.arena_wall_frac > 0:
+        rewards["wall_frac"] = a.arena_wall_frac
+    sides = [x.strip() for x in a.sides.split(",") if x.strip()]
+    assert all(x in ("T", "CT") for x in sides), "--sides takes T and/or CT"
     duel_stage = a.duel_stage0 or (int(resume.get("duel_stage", 1)) if resume is not None else 1)
+    # per-side opponent stages (both-ends work): {side: stage}; one side only = the old single stage
+    side_list = sides or ["T"]
+    dstages = {sd: duel_stage for sd in side_list}
+    if resume is not None and isinstance(resume.get("duel_stages"), dict) and not a.duel_stage0:
+        dstages.update({k: int(v) for k, v in resume["duel_stages"].items() if k in dstages})
+    for item in (x.strip() for x in a.duel_stage_sides.split(",") if x.strip()):
+        k, v = item.split("=")
+        assert k in dstages, f"--duel-stage-sides: {k} is not one of --sides {side_list}"
+        dstages[k] = int(v)
+    multi = len(side_list) > 1
+
+    def stage_knob():  # what the games read (duel_stage_of): one int as before, a dict with several sides
+        return dict(dstages) if multi else dstages[side_list[0]]
+    duel_stage = dstages[side_list[0]]
     duel_gates = [float(x) for x in a.duel_gates.split(",")]
-    knobs["duel_stage"] = duel_stage
+    knobs["duel_stage"] = stage_knob()
     venv = None
     if a.collect != "remote":
         venv = VecEnv(a.envs, a.scenario, hw, fovea, knobs, rewards, seed=a.seed * 100, res=res,
-                      prior_scale=prior_scale if prior_scale != 1.0 else 0.0)
+                      prior_scale=prior_scale if prior_scale != 1.0 else 0.0, sides=sides)
     N, T = a.envs, a.rollout
 
     def to_dev(views_list):
@@ -1171,21 +1274,27 @@ def main():
               collect=a.collect, actor_listen=a.actor_listen, epochs=a.epochs, teacher_only=a.teacher_only, teacher_soft=a.teacher_soft,
               ent_yaw_mult=a.ent_yaw_mult, params=sum(p.numel() for p in model.parameters())))
 
-    duel_camp = collections.deque(maxlen=a.duel_window)   # real duels vs the stays-put shooter
-    duel_norm = collections.deque(maxlen=a.duel_window)   # real duels vs a normal bot at the current stage's difficulty
-    duel_new = [0]  # duel rounds of the gating kind since the last stage change
+    # per side (one entry, "T", unless --sides names several)
+    duel_camp = {sd: collections.deque(maxlen=a.duel_window) for sd in side_list}  # real duels vs the stays-put shooter
+    duel_norm = {sd: collections.deque(maxlen=a.duel_window) for sd in side_list}  # vs the current stage's moving opponent
+    duel_new = {sd: 0 for sd in side_list}  # duel rounds of the gating kind since the last stage change
+    arena_side = {sd: collections.deque(maxlen=200) for sd in side_list}  # aim-arena rounds per side (tripwire)
 
     def on_episode(e):  # one finished round: which statistics it counts for
         nonlocal all_eps, stage_eps
+        sd = e.get("side") if e.get("side") in dstages else side_list[0]
         if e.get("duel"):  # real duels never count for the aim-arena curriculum
             all_eps += 1
+            st = DUEL_STAGES[dstages[sd]]
             if e["camp"]:
-                duel_camp.append(e)
-            elif e["diff"] == DUEL_STAGES[duel_stage]["diff"]:
-                duel_norm.append(e)
-            if (DUEL_STAGES[duel_stage]["bot"] == "camp") == bool(e["camp"]):
-                duel_new[0] += 1
+                duel_camp[sd].append(e)
+            elif e["diff"] == st["diff"]:
+                duel_norm[sd].append(e)
+            if (st["bot"] == "camp") == bool(e["camp"]):
+                duel_new[sd] += 1
             return
+        if not e.get("passive") and not e.get("no_contest") and not e.get("delayed") and not e.get("rehearsal"):
+            arena_side[sd].append(e)
         if e.get("rehearsal"):
             reh.append(e); all_eps += 1
             return
@@ -1349,6 +1458,12 @@ def main():
                         for key, val in slst.items():
                             stats[key].append(val)
                         stats["selfloc"].append(sl_loss.item())
+                        if a.startend > 0 and fw[3].shape[-1] > 4:
+                            se_loss, sest = startend_loss(fw[3][..., 4], AUX[j])
+                            sl_loss = sl_loss + (a.startend / a.selfloc) * se_loss  # (sl_loss is multiplied by a.selfloc)
+                            stats["startend"].append(se_loss.item())
+                            for key, val in sest.items():
+                                stats[key].append(val)
                     vloss = 0.5 * (v - ret[j]).pow(2).mean()
                     xloss = aux_loss(ax[..., :3].float(), AUX[j][..., :3]) if a.aux else torch.zeros((), device=dev)
                     if a.aux_now and ax.shape[-1] >= 6:
@@ -1452,27 +1567,31 @@ def main():
                 if move:
                     stage += move
                     knobs = dict(stages[stage], pool=[dict(x) for x in stages[:stage]])
+                    knobs["duel_stage"] = stage_knob()  # before sending (the games used to fall back to duel stage 1)
                     (venv if venv is not None else remote).set_knobs(knobs)
-                    knobs["duel_stage"] = duel_stage
                     eps.clear(); far.clear(); stage_eps = 0; low_windows = 0; win = []; passes = 0
                     emit(dict(event="curriculum", update=update, steps=steps, stage=stage, move=move, knobs=pub(knobs)))
 
-            if nav_on and duel_stage < max(DUEL_STAGES) and duel_new[0] >= a.duel_window:
-                gq = duel_camp if DUEL_STAGES[duel_stage]["bot"] == "camp" else duel_norm
+            for sd in side_list:  # each side is promoted by its own rounds
+                ds = dstages[sd]
+                if not (nav_on and ds < max(DUEL_STAGES) and duel_new[sd] >= a.duel_window):
+                    continue
+                gq = duel_camp[sd] if DUEL_STAGES[ds]["bot"] == "camp" else duel_norm[sd]
                 if len(gq) >= a.duel_window:
                     wr = float(np.mean([e["kills"] > 0 for e in gq]))
                     mlen = float(np.mean([e["time"] for e in gq]))
-                    len_ok = DUEL_STAGES[duel_stage]["bot"] != "camp" or a.duel_max_len <= 0 or mlen <= a.duel_max_len
-                    emit(dict(event="duel_window", update=update, steps=steps, duel_stage=duel_stage, win_rate=wr,
-                              gate=duel_gates[duel_stage - 1], mean_len_s=mlen, len_ok=len_ok))
-                    duel_new[0] = 0
-                    if wr >= duel_gates[duel_stage - 1] and len_ok:
-                        duel_stage += 1
-                        knobs["duel_stage"] = duel_stage
+                    len_ok = DUEL_STAGES[ds]["bot"] != "camp" or a.duel_max_len <= 0 or mlen <= a.duel_max_len
+                    emit(dict(event="duel_window", update=update, steps=steps, duel_stage=ds, side=sd, win_rate=wr,
+                              gate=duel_gates[ds - 1], mean_len_s=mlen, len_ok=len_ok))
+                    duel_new[sd] = 0
+                    if wr >= duel_gates[ds - 1] and len_ok:
+                        dstages[sd] = ds + 1
+                        knobs["duel_stage"] = stage_knob()
                         venv.set_knobs(knobs)
-                        duel_norm.clear()
-                        emit(dict(event="duel_curriculum", update=update, steps=steps, duel_stage=duel_stage,
-                                  stage=DUEL_STAGES[duel_stage]))
+                        duel_norm[sd].clear()
+                        emit(dict(event="duel_curriculum", update=update, steps=steps, duel_stage=ds + 1, side=sd,
+                                  stage=DUEL_STAGES[ds + 1]))
+            duel_stage = dstages[side_list[0]]
 
             def dsum(q, pre):
                 if not q:
@@ -1482,8 +1601,19 @@ def main():
                         f"{pre}_death": float(np.mean([e["deaths"] > 0 for e in q])),
                         f"{pre}_fight": float(np.mean([e["fight"] for e in q])),
                         f"{pre}_len_s": float(np.mean([e["time"] for e in q])), f"{pre}_n": len(q)}
-            duel_rec = dict(duel_stage=duel_stage, nav_coef=nav_coef, **dsum(duel_camp, "camp"), **dsum(duel_norm, "duel")) \
-                if nav_on else {}
+            duel_rec = {}
+            if nav_on:  # the first side keeps the old key names (dashboard); other sides get a _SIDE suffix
+                duel_rec = dict(duel_stage=duel_stage, nav_coef=nav_coef, **dsum(duel_camp[side_list[0]], "camp"),
+                                **dsum(duel_norm[side_list[0]], "duel"))
+                for sd in side_list[1:]:
+                    duel_rec.update({f"duel_stage_{sd}": dstages[sd], **dsum(duel_camp[sd], f"camp_{sd}"),
+                                     **dsum(duel_norm[sd], f"duel_{sd}")})
+                if multi:
+                    for sd in side_list:
+                        q = list(arena_side[sd])
+                        if q:
+                            duel_rec[f"arena_kill_{sd}"] = float(np.mean([e["kills"] > 0 for e in q]))
+                            duel_rec[f"arena_n_{sd}"] = len(q)
             el = time.time() - t0
             E = list(eps)
             rec = dict(event="update", update=update, steps=steps, episodes=all_eps, warmup=warm,
@@ -1518,14 +1648,15 @@ def main():
             if update % a.snapshot_every == 0:
                 torch.save(dict(model={k: v.half() if v.is_floating_point() else v for k, v in model.state_dict().items()},
                                 args=model_args, steps=steps, update=update, knobs=pub(knobs), stage=stage,
-                                duel_stage=duel_stage), out / "snapshots" / f"update_{update:06d}.pt")
+                                duel_stage=duel_stage, duel_stages=dict(dstages)), out / "snapshots" / f"update_{update:06d}.pt")
                 torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), args=model_args, steps=steps,
-                                update=update, knobs=pub(knobs), stage=stage, duel_stage=duel_stage), out / "last.pt")
+                                update=update, knobs=pub(knobs), stage=stage, duel_stage=duel_stage,
+                                duel_stages=dict(dstages)), out / "last.pt")
             if (a.max_steps and steps >= a.max_steps) or el > a.hours * 3600:
                 break
     finally:
         torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), args=model_args, steps=steps, update=update,
-                        knobs=pub(knobs), stage=stage, duel_stage=duel_stage), out / "last.pt")
+                        knobs=pub(knobs), stage=stage, duel_stage=duel_stage, duel_stages=dict(dstages)), out / "last.pt")
         emit(dict(event="done", steps=steps, updates=update, episodes=all_eps, knobs=pub(knobs)))
         if peer is not None:
             peer.close()

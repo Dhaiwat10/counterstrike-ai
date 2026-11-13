@@ -33,7 +33,12 @@ MAP_SPAWNS = {"aim_map": {
     "T": dict(yaw=90.0, pts=[(232, -777, -431), (232, -713, -431), (232, -585, -431), (104, -585, -431), (104, -713, -431),
                              (104, -777, -431), (-24, -777, -431), (-24, -713, -431), (-24, -585, -431), (-152, -585, -423),
                              (-152, -649, -423), (-152, -713, -423), (-152, -777, -423), (232, -649, -431), (104, -649, -431),
-                             (-24, -649, -423)]),
+                             (-24, -649, -423)],
+              # cover line of the T side (added 2026-11-13 for the model-as-CT work): the front face of the T row of boxes.
+              # aim_map is point-symmetric about (-100, -1348.5) (the 16 T spawns are the CT spawns turned by 180 deg), so the
+              # CT line y = -1790 maps to y = -907; engine traces northward hit the T boxes' front faces at y -904..-916
+              # (one box sticks out to -949, the mirror of the CT box at -1748). "toward" = -1: the CT side is at smaller y.
+              line_y=-907.0, toward=-1.0),
     "CT": dict(yaw=270.0, pts=[(-176, -2048, -423), (-304, -2048, -431), (-432, -2048, -431), (-48, -1920, -423),
                                (-64, -1984, -423), (-48, -2048, -423), (-48, -2112, -423), (-176, -2112, -431),
                                (-176, -1984, -431), (-176, -1920, -431), (-304, -1920, -431), (-304, -1984, -431),
@@ -42,6 +47,14 @@ MAP_SPAWNS = {"aim_map": {
                # duel_bot_mode="side" keeps the bot's origin at y <= line_y ("toward" = +1: the T side is at larger y)
                line_y=-1790.0, toward=1.0),
 }}
+
+# YaPB player models (classes) per team, in the order of `yb add <difficulty> <personality> <team> <model>` (model 1..4;
+# team 1 = T, 2 = CT). Checked by eye on aim_map 2026-11-13 (scratch/sides/probe/*_add_sheet.png).
+TEAM_MODELS = {"T": ("terror", "leet", "arctic", "guerilla"), "CT": ("urban", "gsg9", "sas", "gign")}
+
+
+def other_team(team):
+    return "CT" if team == "T" else "T"
 
 # the 8 movement key combinations (forward key, side key) and the direction each moves in, relative to the view yaw
 # (degrees, counter-clockwise = left; env: forward 1 = fwd / 2 = back, side 1 = left / 2 = right)

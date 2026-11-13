@@ -126,6 +126,11 @@ class CS16Env(gym.Env):
         # arena: reject spawn pairs whose pocket (24 points, radii 64-192 around the bot's spot) is less than this
         # fraction visible from the agent's eye (reachable points only); 0 = accept every pair
         self.arena_min_vis = 0.0
+        # arena, training (2026-11-13): this share of rounds draws only spawn pairs whose enemy has a wall/box within
+        # arena_wall_dist units behind it along the line of sight (live trace; up to 12 tries) -- the case where dark/sand
+        # outfits were missed most (leet: 66% kills vs 92%). 0 = off.
+        self.arena_wall_frac = 0.0
+        self.arena_wall_dist = 150.0
         self._leash = None
         self._pocket_vis = None
         self.episode_seconds = self.scn.episode_seconds  # can grow with the arena distance
@@ -204,7 +209,73 @@ class CS16Env(gym.Env):
         self._camp = None
         self._peeker = None
         self._freeze_applied = None
+        # ENEMY PLAYER MODEL (added 2026-11-13). Each team has 4 YaPB classes (nav.TEAM_MODELS); the bot wears one of the 4
+        # of the team opposite scn.human_team. bot_skin 0 (default) = old behaviour: the scenario's `yb_quota` adds the bot
+        # at boot with YaPB's own random class and it keeps it for the whole game. bot_skin 1..4 = that class; "mixed" = a
+        # random class (from its own RNG, so spawn sequences do not change): before each round, with probability
+        # skin_change, a new class is drawn (1.0 = every round). We then add the bot ourselves (`yb add`, quota 0).
+        # Changing class or difficulty re-adds the bot (~0.5 s of game time). NOTE: `yb_kickall` is not a YaPB command
+        # (the console ignores it; `yb kickall` is, and it also lowers the quota), so the old in-run difficulty change
+        # never re-added the bot; set_bot(difficulty=...) does it properly.
+        self.bot_skin = 0
+        self.skin_change = 1.0
+        # "mixed" only, training: failure-weighted class choice (like duel_spawn_adapt). Each class keeps a running rate
+        # of rounds the agent did not win against it; a new class is drawn with weight 1 + skin_adapt x that rate. 0 = off.
+        self.skin_adapt = 0.0
+        self._skin_fail = np.zeros(5)
+        self._skin_rng = np.random.default_rng(0)
+        self._bot_want = None      # (skin, difficulty) wanted for our own bot; None = scenario quota (old behaviour)
+        self._bot_applied = None
+        self._bot_skin_now = 0     # class (1..4) the bot wears, if we added it; 0 = unknown (YaPB's own choice)
         self._blank = np.zeros((height, width, 3), np.uint8)
+
+    # ------------------------------------------------------------------ enemy player model / difficulty
+    @property
+    def enemy_team(self):
+        return "CT" if self.scn.human_team == "T" else "T"
+
+    @property
+    def enemy_model(self):
+        """Name of the class the enemy bot wears, or "unknown" (YaPB's own pick at boot)."""
+        from .nav import TEAM_MODELS
+        return TEAM_MODELS[self.enemy_team][self._bot_skin_now - 1] if self._bot_skin_now else "unknown"
+
+    def set_bot(self, skin=None, difficulty=None):
+        """Wanted class (1..4) and/or YaPB difficulty of the enemy bot; applied at the next reset (re-adds the bot)."""
+        cur = self._bot_want or (self._bot_skin_now or 0, self.scn.bot_difficulty)
+        sk = cur[0] if skin is None else int(skin)
+        if not sk:
+            sk = int(self._skin_rng.integers(1, 5))
+        self._bot_want = (sk, cur[1] if difficulty is None else int(difficulty))
+
+    def _readd_bot(self):
+        """Remove the bot(s) and add one ourselves with the wanted class and difficulty, on the team opposite the agent."""
+        b = self.bridge
+        skin, diff = self._bot_want
+        team = 2 if self.scn.human_team == "T" else 1
+        b.command("yb_quota 0; yb kickall")
+        b.wait_until(lambda s: not any(p.connected for k, p in enumerate(s.players) if k != s.playernum), max_steps=3000)
+        b.command(f"yb_difficulty {diff}; yb add {diff} -1 {team} {skin}")
+        b.wait_until(lambda s: self._bots_ready(s) and self._others_alive(s), max_steps=3000)
+        self._bot_applied = self._bot_want
+        self._bot_skin_now = skin
+        self._freeze_applied = None  # a fresh bot: re-send the freeze state when it matters
+
+    def _choose_skin(self, seed):
+        if seed is not None:
+            self._skin_rng = np.random.default_rng(int(seed) + 7919)
+        k = self._bot_skin_now
+        if k and getattr(self, "_snap", None) is not None and not getattr(self, "_no_contest", False):
+            self._skin_fail[k] = 0.9 * self._skin_fail[k] + 0.1 * float(getattr(self, "_kills", 0) == 0)
+        if self.bot_skin == "mixed":
+            if self._bot_want is None or self._skin_rng.random() < self.skin_change:
+                if self.skin_adapt > 0:
+                    w = 1.0 + self.skin_adapt * self._skin_fail[1:]
+                    self.set_bot(skin=int(self._skin_rng.choice(4, p=w / w.sum())) + 1)
+                else:
+                    self.set_bot(skin=int(self._skin_rng.integers(1, 5)))
+        elif self.bot_skin:
+            self.set_bot(skin=int(self.bot_skin))
 
     def enable_nav(self, graph_path=None, sides=None, **kw):
         """Turn on the scripted navigator teacher and its labels (default off: nothing changes without this call).
@@ -283,9 +354,13 @@ class CS16Env(gym.Env):
     # ------------------------------------------------------------------ gym API
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
-        if self.bridge is None:
+        self._choose_skin(seed)
+        booted = self.bridge is None
+        if booted:
             self._boot()
-        elif self.scn.reset_round:
+        if self._bot_want is not None and self._bot_want != self._bot_applied:
+            self._readd_bot()  # enemy class / difficulty change (or the first round with our own bot)
+        if not booted and self.scn.reset_round:
             # fresh round: both sides respawn at their spawn points
             t_restart = self.bridge.state.time
             if self.scn.restart_confirm:
@@ -795,6 +870,7 @@ class CS16Env(gym.Env):
         self._leash = None
         self._pocket_vis = None
         leash = self.bot_level == 3 and self.arena_leash > 0 and self.np_random.random() < self.arena_leash_frac
+        wall_round = self.arena_wall_frac > 0 and self.np_random.random() < self.arena_wall_frac
         for attempt in range(12):
             q = self.np_random.choice(ok)
             i, j = pairs[q]
@@ -809,6 +885,13 @@ class CS16Env(gym.Env):
                     continue  # cover right next to the bot's spot: another pair from the same distance band
                 if leash:
                     self._leash = dict(bot=bot, c=e.copy(), pts=[e.copy()] + pts, n=0)
+            if wall_round and attempt < 11:
+                eye = a + (0.0, 0.0, 17.0)
+                u = (e + (0.0, 0.0, 10.0)) - eye
+                u = u / max(1e-6, float(np.linalg.norm(u)))
+                p0 = e + (0.0, 0.0, 10.0) + 24.0 * u
+                if self._trace([(p0, p0 + self.arena_wall_dist * u)])[0] >= 0.999:
+                    continue  # open behind the enemy: try another pair
             break
         self._ep_dist = float(np.linalg.norm(e - a))
         d = e - a
@@ -874,9 +957,10 @@ class CS16Env(gym.Env):
         [6] keys valid (both alive; while engaging the keys are "stop"/counter-strafe)
         [7] own x, [8] own y scaled to [-1, 1] over the nav graph  [9] sin, [10] cos of the view yaw  ("where am I")
         [11] where-am-I valid (agent alive)  [12] mode (-1 none, 0 navigate, 1 engage)  [13] enemy in line of sight
+        [14] which end this round started from (real duels only, agent alive): +1 T end, -1 CT end, 0 = no label
         Computed from the state after this step = the decision for the NEXT action (with reaction_delay 0 the frame
         the agent sees is this same state)."""
-        out = np.zeros(14, np.float32)
+        out = np.zeros(15, np.float32)
         m = self._me(s)
         foes = [p for k, p in enumerate(s.players) if k != s.playernum and p.connected and p.alive]
         los = bool(m.alive and foes and (s.aux[7] >= 0.999 or s.aux[6] >= 0.999))
@@ -903,6 +987,8 @@ class CS16Env(gym.Env):
             out[9], out[10], out[11] = math.sin(yaw), math.cos(yaw), 1.0
         out[12] = lab.get("mode", -1) if (m.alive and enemy is not None) else -1
         out[13] = float(los)
+        if self.scn.reset_round and m.alive:  # the agent starts every real-duel round at its own team's end
+            out[14] = 1.0 if self.scn.human_team == "T" else -1.0
         return out
 
     def _trace(self, segs):
@@ -1098,6 +1184,8 @@ class CS16Env(gym.Env):
             "health": me.health,
             "alive": bool(me.alive),
             "spawn_dist": self._ep_dist,
+            "team": self.scn.human_team,
+            "enemy_model": self.enemy_model,
             "spawn_offset": self._ep_offset,
             "no_contest": bool(getattr(self, "_no_contest", False)),
             "leashed": bool(self._leash is not None),

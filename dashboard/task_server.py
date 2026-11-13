@@ -68,7 +68,7 @@ def processes():
             kind = "firing analysis"
         elif "record.py" in cmd or "duel_trial.py" in cmd:
             kind = "recording"
-        elif "nav_duel.py" in cmd or "move_duel.py" in cmd:
+        elif "nav_duel.py" in cmd or "move_duel.py" in cmd or "sides" in cmd.split(".py")[0].split("/")[-1]:
             kind = "duels"
         elif "make_nav_graph.py" in cmd:
             kind = "map building"
@@ -123,7 +123,15 @@ def state():
         status = None
     move = dict(status=status, results=read_jsonl(MOVE_RESULTS), log=MOVE_LOG.read_text(errors="replace")[-40000:] if MOVE_LOG.exists() else "",
                 log_age_s=(time.time() - MOVE_LOG.stat().st_mtime) if MOVE_LOG.exists() else None)
-    return dict(now=time.time(), processes=procs, engines=engines, nav=nav, move=move, results=read_jsonl(RESULTS),
+    sd = REPO / "scratch"
+    try:
+        sstatus = json.loads((sd / "sides_status.json").read_text())
+    except Exception:
+        sstatus = None
+    slog = sd / "sides_log.md"
+    sides = dict(status=sstatus, results=read_jsonl(sd / "sides_results.jsonl"), log=slog.read_text(errors="replace")[-40000:] if slog.exists() else "",
+                 log_age_s=(time.time() - slog.stat().st_mtime) if slog.exists() else None)
+    return dict(now=time.time(), processes=procs, engines=engines, nav=nav, move=move, sides=sides, results=read_jsonl(RESULTS),
                 log=LOG.read_text(errors="replace")[-40000:] if LOG.exists() else "",
                 log_age_s=(time.time() - LOG.stat().st_mtime) if LOG.exists() else None, run=current_run())
 
@@ -135,6 +143,11 @@ class Handler(SimpleHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def end_headers(self):  # pages change while a task runs: never let the browser keep an old copy
+        if "Cache-Control" not in "".join(str(h) for h in getattr(self, "_headers_buffer", [])):
+            self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def do_GET(self):
         if self.path.startswith("/api/state"):
             body = json.dumps(state()).encode()
@@ -145,7 +158,10 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        self.path = self.path.split("?")[0]
         if self.path in ("/", "/index.html"):
+            self.path = "/sides.html"
+        elif self.path.rstrip("/") == "/move":
             self.path = "/move.html"
         elif self.path.rstrip("/") == "/nav":
             self.path = "/nav.html"

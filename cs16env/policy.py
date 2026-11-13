@@ -39,7 +39,7 @@ class _Stage(nn.Module):
 
 class Policy(nn.Module):
     def __init__(self, in_hw=(120, 160), chans=(32, 64, 64), hidden=512, fovea=0, fovea_chans=(16, 32, 32), act_hist=0, aux_now=False,
-                 loc=False, selfloc=False):
+                 loc=False, selfloc=False, startend=False):
         super().__init__()
         self.in_hw = tuple(in_hw)
         self.fovea = int(fovea)
@@ -78,6 +78,11 @@ class Policy(nn.Module):
             # the own view yaw, predicted from the picture + memory (labels from CS16Env._nav_ext [7:11]); never used to
             # act. Registered after everything else, so older checkpoints load unchanged (and load into it with strict=False).
             self.selfloc = nn.Linear(hidden, 4)
+        if startend:
+            # optional training-only "which end did I start this round from" head (--startend, 2026-11-13): one logit,
+            # T end vs CT end, label held for the whole round (CS16Env._nav_ext [14]); never used to act. aim_map is
+            # point-symmetric, so the right way to walk in the middle depends on where the round started.
+            self.startend = nn.Linear(hidden, 1)
 
     @staticmethod
     def _tower(chans):
