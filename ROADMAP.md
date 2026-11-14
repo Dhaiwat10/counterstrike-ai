@@ -1,5 +1,12 @@
 # Roadmap
 
+> **Note (2026-11-15):** this is the original plan from the start of the project, kept as written. The project went a
+> different way: imitation (Phase 2) was done on pro demos rather than bot footage and did not learn aim; RL was a
+> custom recurrent PPO (not Sample Factory) on a single Mac Mini; the reaction-delay rule was dropped after the aim
+> arena plateaued at 120 ms; and the scope narrowed to 1v1 duels on the map aim_map instead of Dust2 / deathmatch /
+> self-play. Phases 4-5 have not started, apart from informal duels against the owner. See [README.md](README.md) for
+> where things stand and [docs/](docs/) for the per-phase notes.
+
 Goal: find the highest level of Counter-Strike play a computer can reach when given exactly what a human gets — pixels in, keyboard/mouse out, human-like reaction delay. Offline only.
 
 Chain of reasoning behind the plan:

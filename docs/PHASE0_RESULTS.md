@@ -8,7 +8,7 @@ Date: 2026-11-08. Machine: Apple Silicon Mac (14 cores, 64 GB), native arm64 bui
 
 ## What works
 
-- Full open-source CS 1.6 stack builds and runs natively on arm64 (see `SETUP.md`): Xash3D FWGS engine + dedicated server, CS16Client, ReGameDLL (game logic), YaPB bots.
+- Full open-source CS 1.6 stack builds and runs natively on arm64 (see [SETUP.md](../SETUP.md)): Xash3D FWGS engine + dedicated server, CS16Client, ReGameDLL (game logic), YaPB bots.
 - Valve content from your own Steam copy, downloaded via the Steam console (`download_depot 10 11` → `cstrike/`, `download_depot 70 1` → `valve/`). SteamCMD on macOS was broken by a Gatekeeper/code-signing failure and is not needed.
 - Dedicated server on `de_dust2` with 9 YaPB bots playing full rounds (kills, bomb plants, round ends) — logged via `log on` to `cstrike/logs/`.
 - Bots: YaPB is loaded by pointing `gamedll_osx` in `cstrike/liblist.gam` at `dlls/yapb.dylib`; YaPB then loads ReGameDLL itself. Original saved as `liblist.gam.valve`. ReGameDLL's built-in bots also work (`bot_enable 1` in `cstrike/game_init.cfg`) but have no nav mesh for de_dust2 out of the box.
@@ -79,8 +79,8 @@ Takeaways:
 - **HLTV demo** (ESWC 2010 fnatic vs WMF, 1 h): ~10 Hz, usercmd empty (spectator). Player poses are only inside the network messages (entity deltas) — not yet decoded; 10 Hz is too coarse for aim labels anyway.
 
 **Rendering in our engine** (`scripts/goldsrc_to_xash_demo.py`). Xash3D only plays its own container (v3) but parses GoldSrc protocol-48 network messages, so the converter rewraps net-message frames 1:1 with header `net_protocol = 48|0x80`. Result, on the lockstep build with `-hiddenwindow` (no window on screen):
-- **POV demo plays correctly** in first person: HUD, buy menu, teammates, bomb carrier, team chat from the 2010 match, and the camera follows the player's aim between frames (`docs/img/pov_dsn_buy.png`, `docs/img/pov_dsn_tspawn.png`).
-- **HLTV demo plays**, camera in-eye of a player but the player's own model clips into the view (`docs/img/hltv_eswc10.png`); needs spectator-mode handling.
+- **POV demo plays correctly** in first person: HUD, buy menu, teammates, bomb carrier, team chat from the 2010 match, and the camera follows the player's aim between frames ([img/pov_dsn_buy.png](img/pov_dsn_buy.png), [img/pov_dsn_tspawn.png](img/pov_dsn_tspawn.png)).
+- **HLTV demo plays**, camera in-eye of a player but the player's own model clips into the view ([img/hltv_eswc10.png](img/hltv_eswc10.png)); needs spectator-mode handling.
 - Known gaps: dropped GoldSrc client-side frames (events/sounds/weapon anims) so some effects are missing; "Decal has invalid texture" warnings; `CL_ParseUserMessage: No pfn HLTV` on spectator demos.
 
 **So the data plan is viable:** POV demos give (rendered frame, exact pro input) pairs at ~94 Hz, rendered in our own engine. Still to do: frame-exact alignment of rendered frames to parsed usercmds, demo playback in lockstep/fast mode (demos currently keep stock timing), carrying over client-side events, and HLTV entity decoding for the larger spectator corpus.

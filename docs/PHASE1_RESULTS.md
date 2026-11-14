@@ -4,7 +4,7 @@ Date: 2026-11-08. Machine: Apple Silicon Mac (14 cores), everything muted and re
 
 ## 1. Engine bridge (instead of screen capture + OS input injection)
 
-Because we own the engine, the agent's I/O goes through a small in-engine bridge rather than OS screen capture and fake input devices — faster, exact, and works headless. Details: [patches/BRIDGE.md](patches/BRIDGE.md).
+Because we own the engine, the agent's I/O goes through a small in-engine bridge rather than OS screen capture and fake input devices — faster, exact, and works headless. Details: [patches/BRIDGE.md](../patches/BRIDGE.md).
 
 - **Out:** after world + HUD are drawn (before console/overlays), the renderer reads back the frame (new ref API `VID_GetFrameRGB`, GL and software) into a shared-memory file.
 - **In:** Python's action becomes the usercmd a real mouse/keyboard would produce: view angles += mouse delta before the client dll builds the command; movement/buttons set after.

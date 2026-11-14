@@ -3,7 +3,7 @@
     .venv/bin/python -m train.ppo --run aim_bc --init checkpoints/bc_fov80/best.pt
     .venv/bin/python -m train.ppo --run aim_scratch --fovea 80 --lr 2.5e-4
 
-Design notes (v2, after the first runs' review -- see PHASE3_NOTES.md):
+Design notes (v2, after the first runs' review -- see docs/PHASE3_NOTES.md):
 - Time-limit truncation is NOT death: on a timeout the value of the final observation is
   bootstrapped (r += gamma * V(s_final)); only real kills/deaths end the return.
 - Only the heads that matter for the scenario are learned (--heads; aim arena: yaw, pitch, attack).

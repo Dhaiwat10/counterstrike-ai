@@ -1,4 +1,4 @@
-"""Autopilot: an unattended experiment manager for the aim_640 PPO run (design: scratch/autopilot/DESIGN.md).
+"""Autopilot: an unattended experiment manager for the aim_640 PPO run (design: docs/autopilot/DESIGN.md).
 
     .venv/bin/python train/autopilot.py --adopt-trainer 15683 --adopt-eval 15703   # go live
     .venv/bin/python train/autopilot.py --dry-run                                   # decisions on the existing log, no actions
@@ -79,7 +79,7 @@ RUNGS = [
     dict(tag="lrhalf", budget_windows=40, change=dict(lr=5e-5),
          why="Last resort: lower the step size for fine-tuning (approx KL 0.005/update and clip fraction 0.05 say the "
              "LR is not too high, so this is unlikely to be the cause; Andrychowicz et al. 2020 on LR sensitivity)."),
-    # added 2026-11-10 from scratch/autopilot/IDEAS_delay_plateau.md (Fable's diagnosis: the delay cost is settling of a
+    # added 2026-11-10 from docs/autopilot/IDEAS_delay_plateau.md (Fable's diagnosis: the delay cost is settling of a
     # reactive loop near its stability limit; the oracle, with the agent's information, wins 94-98% at every delay)
     dict(tag="denoise", budget_windows=40, change=dict(kl_coef=0.0, ent_yaw_mult=1.0, ent=0.003),
          why="Action noise is the measured bottleneck: the same 120 ms checkpoint kills 46.5% sampling at temperature 1, "
@@ -814,7 +814,7 @@ class Autopilot:
         if not JOURNAL.exists() or not JOURNAL.read_text().startswith("# Autopilot journal"):
             old = JOURNAL.read_text() if JOURNAL.exists() else ""
             JOURNAL.write_text("# Autopilot journal (aim_640)\n\nDecisions of the unattended supervisor, newest last. "
-                               "Rules and reasoning: scratch/autopilot/DESIGN.md. Structured copy: decisions.jsonl.\n\n" + old)
+                               "Rules and reasoning: docs/autopilot/DESIGN.md. Structured copy: decisions.jsonl.\n\n" + old)
         self.decide("autopilot_start", f"supervisor started (pid {os.getpid()}); ladder: " + ", ".join(r["tag"] for r in RUNGS),
                     regime=self.s["regime"], cur_phase=self.s["phase"])
         while True:

@@ -191,7 +191,7 @@ Archived in `checkpoints/_baseline/`.
   is already on the other side) 3.5 -> **8.7%**, same yaw response curve at both delays (no delay-aware control), yaw
   entropy 0.57 at both, 60-65% of shots >4 deg off at both, bot hits first in 62-63% of deaths at both. So: the delay costs
   settling through closed-loop control on stale frames; the policy has no way to know what it did since the frame it sees.
-- **Autopilot** (`train/autopilot.py`, design in `scratch/autopilot/DESIGN.md`, journal in `scratch/autopilot/JOURNAL.md`):
+- **Autopilot** (`train/autopilot.py`, design in `docs/autopilot/DESIGN.md`, journal in `scratch/autopilot/JOURNAL.md`):
   pooled-window plateau test, then a pre-registered ladder, one change at a time, each branched from `pre_<tag>_last.pt`
   and rolled back to the best checkpoint by exam: (1) `--act-hist 3` (last 3 actions as policy input, zero-init: the
   textbook Markov augmentation for delayed observations), (2) insert a 60 ms stage (`--delay-ramp`), (3) yaw entropy
@@ -202,7 +202,7 @@ Archived in `checkpoints/_baseline/`.
 
 **Facts established**
 - **"100 ms" never existed.** The env runs delay in whole 40 ms agent steps and `round(0.1 / 0.04) == 2`, so the
-  inserted stage 15 was 80 ms again (found by Fable, `scratch/autopilot/IDEAS_delay_plateau.md`). The autopilot now
+  inserted stage 15 was 80 ms again (found by Fable, `docs/autopilot/IDEAS_delay_plateau.md`). The autopilot now
   refuses a midpoint that rounds onto an existing delay. Stage 16 (120 ms) is the real next step after 80 ms.
 - **Action noise is the measured bottleneck at 120 ms.** Same checkpoint (pre_lrhalf_last.pt), 200 rounds, seed 4321:
 
@@ -215,7 +215,7 @@ Archived in `checkpoints/_baseline/`.
   Results in `results/phase3/temp_sweep_120ms.jsonl`. The greedy policy already clears the 50% gate. The training
   windows, which sample, sit around 42%.
 - **The teacher labels are correct.** An agent that just follows them scores 88% at 0 ms and 82% at 120 ms
-  (`scratch/teacher_check.py`).
+  (`scripts/teacher_check.py`).
 
 **Kick-starting toward the delayed oracle failed its smoke test.** The code is in, default off (`--teacher-coef`).
 - With 2 envs at 120 ms, kills collapsed to near zero at coef 0.5 and also at coef 0.1. Firing stopped.
@@ -395,7 +395,7 @@ on the previous commit: `tests/test_act_hist.py` (optimizer-resume assert) and o
 `tests/test_arena_env.py` (scripted aim kills >= 3 of 4).
 
 ### Second machine: MacBook Pro M4 Pro (8 performance + 4 efficiency cores, 24 GB), 2026-11-12
-- Set up at `~/code/cs2-ai` on `Apple@192.168.1.8` by copying the working tree, `game-dev/` (the Mini's binaries run
+- Set up on the MacBook by copying the working tree, `game-dev/` (the Mini's binaries run
   as they are; Homebrew already had sdl2-compat, mpg123, libogg, libvorbis), `data/arena/` and the two checkpoints
   the trainer needs; `uv` venv with the same Python 3.12.13 / torch 2.15.0. It is a plain copy, not a git checkout.
 - Engine works over SSH (hidden window): scripted delayed aimer 98.3% (exam setup) and 93.3% (leash + min_vis), 60

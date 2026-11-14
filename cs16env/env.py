@@ -15,7 +15,7 @@ Action (MultiDiscrete), applied for `action_repeat` engine ticks:
   8 reload : 0/1
 
 Fairness layer (defaults chosen from DeepMind FTW / OpenAI Five precedent and our pro
-POV demo stats, see PHASE0_RESULTS.md):
+POV demo stats, see docs/PHASE0_RESULTS.md):
   * reaction_delay = 0.20 s observation latency
   * max turn rate  = 1200 deg/s (dsn's 99.9th percentile per-frame yaw speed ~1160 deg/s)
   * decision rate  = 1 / (tick * action_repeat) = 25 Hz by default
@@ -993,7 +993,7 @@ class CS16Env(gym.Env):
     def _aux_ext(self, s):
         """Training-only labels (never observed by the policy), 10 values:
         [0:3] the auxiliary label NOW (the agent sees it `delay_steps` steps late: predicting it = undoing the delay);
-        [3:6] teacher action (yaw bin, pitch bin, valid): what the delayed oracle (scratch/ceiling_delay.py, 94-98% at
+        [3:6] teacher action (yaw bin, pitch bin, valid): what the delayed oracle (scripts/ceiling_delay.py, 94-98% at
         every delay) does -- turn toward where the enemy was in the frame the agent sees, from the current view angles.
         Valid only when that frame shows the enemy in view and the agent is alive.
         [6:10] the same teacher in full: the exact turn it wants (yaw degrees, view-pitch degrees), whether it fires
@@ -1020,7 +1020,7 @@ class CS16Env(gym.Env):
 
     def _fire_label(self, dy, dp, dist):
         """Teacher's fire decision for the next step, from the crosshair's offset (dy, dp degrees) to the enemy's chest
-        (by the real view angle, which ignores the recoil kick; see the recoil notes in PHASE3_NOTES.md 2026-11-12).
+        (by the real view angle, which ignores the recoil kick; see the recoil notes in docs/PHASE3_NOTES.md 2026-11-12).
         tap  : within ~9 units of the chest (>= 0.4 deg) and no shot in the last 3 steps (the oracle's single taps).
         reach: on the body -- within 10 units sideways and 14 units up/down of the chest point, plus 0.15 deg -- with a
                cadence by distance: under 500 units bursts of up to 5 steps (then 2 steps' pause), 500-1000 units

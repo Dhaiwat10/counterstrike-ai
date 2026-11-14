@@ -51,7 +51,7 @@ class Scenario:
     reset_round: bool = False      # restart the round (respawn everyone at spawn points) on every reset
     # reset_round only: wait until the restart has really happened before the episode starts. ReGameDLL reads
     # sv_restart on a 1 s periodic think, so the respawn lands 1.0-2.0 s after the command; the plain 1.2 s wait let
-    # rounds start with both players still where the previous round left them (measured 2026-11-12, see PHASE3_NOTES).
+    # rounds start with both players still where the previous round left them (measured 2026-11-12, see docs/PHASE3_NOTES.md).
     restart_confirm: bool = False
     arena: str = ""                # aim arena: npz of line-of-sight spawn pairs (scripts/make_arena_pairs.py)
     arena_max_dist: float = 2000.0 # curriculum: max spawn distance (units)

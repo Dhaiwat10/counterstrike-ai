@@ -76,7 +76,7 @@ with prediction; not with the current reactive controller.
 ## 2. Ranked ideas
 
 **1. Oracle kick-starting (distil the delayed oracle into the pixel policy).**
-*What:* at every training step compute the action the scripted oracle (`scratch/ceiling_delay.py`) would take, and add
+*What:* at every training step compute the action the scripted oracle (`scripts/ceiling_delay.py`) would take, and add
 a cross-entropy loss pulling the yaw/pitch heads toward it, with a weight that decays. The policy still sees only
 delayed pixels plus its own actions; labels are training-only, like the existing aux loss.
 *Why here:* the oracle already solves every delay with the information the agent has (delayed target position is in

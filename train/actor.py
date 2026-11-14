@@ -1,6 +1,6 @@
 """Actor for the central-learner setup (train/remote.py): runs the games and a copy of the model that only picks moves.
 
-    .venv/bin/python -m train.actor --connect 192.168.1.8:47900 --envs 12
+    .venv/bin/python -m train.actor --connect HOST:47900 --envs 12
 
 Everything about the games and the model comes from the learner's handshake (scenario, render settings, rewards,
 curriculum knobs, model shape, weights), so the actor has no training options. Loop: swap in the newest weights

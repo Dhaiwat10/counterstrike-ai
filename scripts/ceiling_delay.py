@@ -4,7 +4,7 @@ The oracle reads true positions from the game (no pixels), but only as they were
 lag the agent's frames have. It knows its own view angles now (the agent knows what it has done), turns at the same
 capped human rate through the same action bins, and taps when the crosshair is on the (delayed) chest.
 
-    .venv/bin/python scratch/ceiling_delay.py --rounds 150 --delays 0 0.04 0.08 0.12 0.16 0.2
+    PYTHONPATH=$PWD .venv/bin/python scripts/ceiling_delay.py --rounds 150 --delays 0 0.04 0.08 0.12 0.16 0.2
 """
 import argparse
 import collections

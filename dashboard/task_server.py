@@ -1,6 +1,6 @@
 """Live page for the task in progress (local only): pass marks, exam results, the training run, the worker's log.
 
-    /Users/dhaiwat/code/cs2-ai/.venv/bin/python dashboard/task_server.py      # then open http://127.0.0.1:8051
+    .venv/bin/python dashboard/task_server.py      # from the repo root; then open http://127.0.0.1:8051
 
 Everything is read from disk and the process table on each request; the page polls every few seconds.
 - scratch/fire_fix_results.jsonl : one JSON line per finished exam or firing analysis
