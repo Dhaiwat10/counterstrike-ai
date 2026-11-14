@@ -242,10 +242,24 @@ index 0000000..41c4ce6
 +
 +#endif
 diff --git a/engine/client/cl_demo.c b/engine/client/cl_demo.c
-index e1c46ca..5c9d5ca 100644
+index e1c46ca..ce1b978 100644
 --- a/engine/client/cl_demo.c
 +++ b/engine/client/cl_demo.c
-@@ -940,7 +940,13 @@ qboolean CL_DemoReadMessage( byte *buffer, size_t *length )
+@@ -649,6 +649,13 @@ static void CL_ReadDemoUserCmd( qboolean discard )
+ 
+ 		// save last usercmd
+ 		cl.cmd = pcmd->cmd;
++
++		// cs2-ai: run the local weapon prediction for this command now, from the state before it
++		if( cl_demo_predweapons.value )
++		{
++			CL_DemoPredictWeapons( outgoing_sequence, &pcmd->cmd );
++			pcmd->processedfuncs = true;
++		}
+ 	}
+ }
+ 
+@@ -940,7 +947,13 @@ qboolean CL_DemoReadMessage( byte *buffer, size_t *length )
  		return false;
  	}
  
@@ -261,7 +275,7 @@ index e1c46ca..5c9d5ca 100644
  		demo.starttime += host.frametime;
  		return false; // paused
 diff --git a/engine/client/cl_main.c b/engine/client/cl_main.c
-index 39e4f9c..0ae0895 100644
+index 39e4f9c..79912f4 100644
 --- a/engine/client/cl_main.c
 +++ b/engine/client/cl_main.c
 @@ -15,6 +15,7 @@ GNU General Public License for more details.
@@ -272,7 +286,16 @@ index 39e4f9c..0ae0895 100644
  #include "client.h"
  #include "net_encode.h"
  #include "cl_tent.h"
-@@ -805,8 +806,10 @@ static void CL_CreateCmd( void )
+@@ -76,6 +77,8 @@ static CVAR_DEFINE_AUTO( cl_dlmax, "0", FCVAR_USERINFO|FCVAR_ARCHIVE, "max allow
+ static CVAR_DEFINE_AUTO( cl_upmax, "508", FCVAR_ARCHIVE, "max allowed incoming fragment size" );
+ 
+ CVAR_DEFINE_AUTO( cl_lw, "1", FCVAR_ARCHIVE|FCVAR_USERINFO, "enable client weapon predicting" );
++// cs2-ai: render-time demo playback of the local player's predicted weapon (fire animation, shells, muzzle flash, impacts)
++CVAR_DEFINE_AUTO( cl_demo_predweapons, "0", 0, "cs2-ai: in demo playback run the client weapon code for every recorded usercmd once, from the server state before it (default off)" );
+ CVAR_DEFINE_AUTO( cl_charset, "utf-8", FCVAR_ARCHIVE, "1-byte charset to use (iconv style)" );
+ CVAR_DEFINE_AUTO( cl_trace_consistency, "0", 0, "enable consistency info tracing (good for developers)" );
+ CVAR_DEFINE_AUTO( cl_trace_stufftext, "0", 0, "enable stufftext (server-to-client console commands) tracing (good for developers)" );
+@@ -805,8 +808,10 @@ static void CL_CreateCmd( void )
  
  	qboolean  active = (( cls.signon == SIGNONS ) && !cl.paused && !cls.demoplayback );
  	Platform_PreCreateMove();
@@ -283,7 +306,15 @@ index 39e4f9c..0ae0895 100644
  
  	CL_PopPMStates();
  
-@@ -3894,6 +3897,12 @@ void Host_ClientBegin( void )
+@@ -3728,6 +3733,7 @@ static void CL_InitLocal( void )
+ 	Cvar_RegisterVariable( &topcolor );
+ 	Cvar_RegisterVariable( &bottomcolor );
+ 	Cvar_RegisterVariable( &cl_lw );
++	Cvar_RegisterVariable( &cl_demo_predweapons ); // cs2-ai
+ 	Cvar_Get( "cl_lc", "1", FCVAR_ARCHIVE|FCVAR_USERINFO, "enable lag compensation" );
+ 	Cvar_Get( "password", "", FCVAR_USERINFO, "server password" );
+ 	Cvar_Get( "team", "", FCVAR_USERINFO, "player team" );
+@@ -3894,6 +3900,12 @@ void Host_ClientBegin( void )
  	SteamBroker_Frame();
  }
  
@@ -296,7 +327,7 @@ index 39e4f9c..0ae0895 100644
  /*
  ==================
  Host_ClientFrame
-@@ -3995,6 +4004,7 @@ void CL_Init( void )
+@@ -3995,6 +4007,7 @@ void CL_Init( void )
  	cl.maxclients = 1; // allow to drawing player in menu
  	cls.olddemonum = -1;
  	cls.demonum = -1;
@@ -336,10 +367,18 @@ index b428096..5cda967 100644
  	{
  	case scrshot_inactive:
 diff --git a/engine/client/client.h b/engine/client/client.h
-index ecb69a1..6c1db82 100644
+index ecb69a1..869ad09 100644
 --- a/engine/client/client.h
 +++ b/engine/client/client.h
-@@ -736,6 +736,7 @@ extern convar_t	net_graph;
+@@ -721,6 +721,7 @@ extern convar_t	r_showtextures;
+ extern convar_t	r_showtextures_zoom;
+ extern convar_t	cl_bmodelinterp;
+ extern convar_t	cl_lw;		// local weapons
++extern convar_t	cl_demo_predweapons;	// cs2-ai
+ extern convar_t	cl_charset;
+ extern convar_t	cl_trace_consistency;
+ extern convar_t	cl_trace_stufftext;
+@@ -736,6 +737,7 @@ extern convar_t	net_graph;
  extern convar_t	rate;
  extern convar_t cl_ticket_generator;
  extern convar_t	m_ignore;
@@ -347,6 +386,14 @@ index ecb69a1..6c1db82 100644
  extern convar_t	r_showtree;
  extern convar_t	ui_renderworld;
  extern convar_t cl_fixmodelinterpolationartifacts;
+@@ -1024,6 +1026,7 @@ void CL_RedoPrediction( void );
+ void CL_PushPMStates( void );
+ void CL_PopPMStates( void );
+ void CL_SetUpPlayerPrediction( int dopred, int bIncludeLocalClient );
++void CL_DemoPredictWeapons( int sequence, const usercmd_t *ucmd ); // cs2-ai
+ void CL_SetIdealPitch( void );
+ 
+ //
 diff --git a/engine/client/dll_int/cl_game.c b/engine/client/dll_int/cl_game.c
 index 495245d..6c5de0c 100644
 --- a/engine/client/dll_int/cl_game.c
@@ -361,7 +408,7 @@ index 495245d..6c5de0c 100644
  	pfnConstructTutorMessageDecayBuffer,
  	pfnResetTutorMessageDecayData,
 diff --git a/engine/client/dll_int/cl_pmove.c b/engine/client/dll_int/cl_pmove.c
-index 9ca1f79..21beb39 100644
+index 9ca1f79..5e90456 100644
 --- a/engine/client/dll_int/cl_pmove.c
 +++ b/engine/client/dll_int/cl_pmove.c
 @@ -15,6 +15,7 @@ GNU General Public License for more details.
@@ -381,7 +428,80 @@ index 9ca1f79..21beb39 100644
  	clgame.pmove->PM_StuckTouch = pfnStuckTouch;
  	clgame.pmove->PM_PointContents = (void*)PM_CL_PointContents;
  	clgame.pmove->PM_TruePointContents = pfnTruePointContents;
-@@ -985,7 +986,10 @@ void CL_PredictMovement( qboolean repredicting )
+@@ -965,6 +966,72 @@ void CL_MoveSpectatorCamera( void )
+ 	VectorCopy( cls.spectator_state.client.view_ofs, cl.viewheight );
+ }
+ 
++/*
++=================
++CL_DemoPredictWeapons
++
++cs2-ai: demo playback of the local player's client-side weapon effects.
++
++Live (cl_lw 1), the fire animation, shell ejection, muzzle flash and bullet impacts of the local player
++come only from the client's weapon prediction: each new usercmd is run once with runfuncs from the last
++server state, which does not yet contain that command. The server never sends these to the shooter.
++In demo playback the stock loop stores recorded command N in slot N + 1 and predicts the slots after the
++acknowledged one, so with a local server (every update acknowledges the command before it) it only ever
++re-runs commands the server already processed: the clip is already lower and the next-attack timer is
++running, so the weapon code never fires (and at a render rate below the command rate some commands are
++never run at all). Here every recorded command is run exactly once, with runfuncs, as soon as it is read:
++from the last parsed server frame (= the state before it), commands between that frame's acknowledgement
++and this one replayed silently first. random_seed is the recorded command number, as live.
++=================
++*/
++void CL_DemoPredictWeapons( int sequence, const usercmd_t *ucmd )
++{
++	frame_t		*frame;
++	local_state_t	from, to;
++	usercmd_t	cmd;
++	double		time;
++	int		lastground, ack, seq;
++
++	if( !cls.demoplayback || !cl_demo_predweapons.value || !cl_lw.value )
++		return;
++	if( cls.state != ca_active || cls.spectator || !cl.validsequence || cl.intermission )
++		return;
++
++	frame = &cl.frames[cl.parsecountmod];
++	if( !frame->valid )
++		return;
++
++	ack = cls.netchan.incoming_acknowledged;
++	if( sequence - ack < 1 || sequence - ack >= CL_UPDATE_MASK )
++		return;
++
++	memset( &from, 0, sizeof( from ));
++	memcpy( from.weapondata, frame->weapondata, sizeof( from.weapondata ));
++	from.playerstate = frame->playerstate[cl.playernum];
++	from.client = frame->clientdata;
++	time = frame->time;
++	lastground = cl.local.lastground;
++
++	CL_SetUpPlayerPrediction( false, false );
++	CL_SetSolidEntities();
++	CL_PushPMStates();
++	CL_SetSolidPlayers( cl.playernum );
++
++	// commands sent but not yet acknowledged by this frame (none with a local server): silently
++	for( seq = ack + 1; seq < sequence; seq++ )
++	{
++		cmd = cl.commands[( seq + 1 ) & CL_UPDATE_MASK].cmd; // CL_ReadDemoUserCmd stores command N in slot N + 1
++		CL_RunUsercmd( &from, &to, &cmd, false, &time, seq );
++		from = to;
++	}
++
++	cmd = *ucmd;
++	CL_RunUsercmd( &from, &to, &cmd, true, &time, sequence );
++
++	CL_PopPMStates();
++	cl.local.lastground = lastground;
++}
++
+ /*
+ =================
+ CL_PredictMovement
+@@ -985,7 +1052,10 @@ void CL_PredictMovement( qboolean repredicting )
  		return;
  
  	if( cls.demoplayback && !repredicting )
@@ -392,6 +512,15 @@ index 9ca1f79..21beb39 100644
  
  	CL_SetUpPlayerPrediction( false, false );
  
+@@ -1045,6 +1115,8 @@ void CL_PredictMovement( qboolean repredicting )
+ 		to = &cl.predicted_frames[(cl.parsecountmod + i) & CL_UPDATE_MASK];
+ 		to_cmd = &cl.commands[current_command_mod];
+ 		runfuncs = ( !repredicting && !to_cmd->processedfuncs );
++		if( cls.demoplayback && cl_demo_predweapons.value )
++			runfuncs = false; // cs2-ai: CL_DemoPredictWeapons already ran it, from the right state
+ 
+ 		CL_RunUsercmd( from, to, &to_cmd->cmd, runfuncs, &time, current_command );
+ 		VectorCopy( to->playerstate.origin, cl.local.predicted_origins[current_command_mod] );
 diff --git a/engine/client/input/input.c b/engine/client/input/input.c
 index 712a86e..6752725 100644
 --- a/engine/client/input/input.c

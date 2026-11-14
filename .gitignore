@@ -19,3 +19,6 @@ scratch/
 # rendered gameplay (Valve content) stays local
 results/**/*.gif
 results/**/*.mp4
+
+# render-only engine/game dir for scripts/fragmovie.py (symlinks into game-dev + render binaries)
+/game-render

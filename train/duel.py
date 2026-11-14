@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import math
+import signal
 import subprocess
 import json
 import time
@@ -32,12 +33,12 @@ from train.ppo import round_seconds
 
 # aim_map's spawn points per team (nav.MAP_SPAWNS, read from the map file); the human gets the team the AI is not on
 
-def client(width, height, sound, fullscreen=False, sens=3.0, rawinput=True, extra=()):
+def client(width, height, sound, fullscreen=False, sens=3.0, rawinput=True, extra=(), port=27015):
     # -fullscreen switches the display to width x height (a 4:3 mode on a 16:9 screen is stretched by the monitor)
     args = ["./xash3d", "-game", "cstrike", "-fullscreen" if fullscreen else "-windowed", "-nohighdpi",
             "-width", str(width), "-height", str(height), *([] if sound else ["-nosound"]), "+name", "you",
             "+cl_crosshair_size", "small", "+sensitivity", f"{sens:g}", "+m_rawinput", str(int(rawinput)), "+m_ignore", "0", *extra,
-            "+connect", "127.0.0.1:27015"]
+            "+connect", f"127.0.0.1:{port}"]
     return subprocess.Popen(args, cwd=DEFAULT_GAME_DIR, stdin=subprocess.DEVNULL,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
@@ -54,6 +55,11 @@ def main():
     ap.add_argument("--client-cmd", default="", help="--client: extra console commands, e.g. '+m_ignore 1'")
     ap.add_argument("--log", default="", help="server: record every step of every round to this .jsonl (positions of both "
                                               "players, line of sight, health, the model's shots)")
+    ap.add_argument("--port", type=int, default=27015)
+    ap.add_argument("--demo", default="", help="server: record an engine demo of the AI's own view (one per end) and "
+                    "every round's result into this directory, for the frag movie: scripts/fragmovie.py --session DIR")
+    ap.add_argument("--test-opp", default="", help="headless tests only: a YaPB bot plays the other side instead of you, "
+                    "e.g. bot0 (YaPB difficulty 0, roams freely); nobody needs to join")
     ap.add_argument("--minutes", type=float, default=0.0, help="server: stop after the round in which this much time has passed")
     ap.add_argument("--snapshot", default="checkpoints/fire_best/fire_best_update9875.pt")
     ap.add_argument("--real", action="store_true", help="real duel from the map's own spawns instead of the aim arena")
@@ -68,16 +74,19 @@ def main():
     a = ap.parse_args()
     if a.client:
         client(a.width, a.height, not a.mute, fullscreen=a.fullscreen, sens=a.sens, rawinput=not a.no_rawinput,
-               extra=tuple(a.client_cmd.split()))
+               extra=tuple(a.client_cmd.split()), port=a.port)
         return
 
     snap = a.snapshot
     agent = TorchAgent(snap, temperature=a.temp)
     you_team = other_team(a.model_side)
-    scn = dataclasses.replace(SCENARIOS["duel_aimmap" if a.real else "aim_aimmap"], bots=0,  # the opponent is you
-                              human_team=a.model_side)
+    test_bot = int("".join(c for c in a.test_opp if c.isdigit()) or 0) if a.test_opp else None
+    scn = dataclasses.replace(SCENARIOS["duel_aimmap" if a.real else "aim_aimmap"], human_team=a.model_side,
+                              **(dict(bots=0) if test_bot is None else dict(bots=1, bot_difficulty=test_bot)))  # bots=0: you
     env = CS16Env(scn, width=agent.res[0], height=agent.res[1], reaction_delay=a.delay)
-    env.cfg.extra_args = ("+ip", "127.0.0.1")  # reachable from this machine only
+    if test_bot is not None:
+        env.duel_bot_mode = "normal"
+    env.cfg.extra_args = ("+ip", "127.0.0.1", "-port", str(a.port))  # reachable from this machine only
     env.set_bot_level(3)
     env.arena_max_offset, env.arena_min_offset, env.arena_max_dist = a.offset, a.offset_min, a.dist
     env.arena_review_frac = 0.0
@@ -87,6 +96,13 @@ def main():
     log = open(a.log, "a") if a.log else None
     if log:  # the navigator is only switched on for its line-of-sight traces (info["nav_ext"][13]); the model acts alone
         env.enable_nav(goal_mode="side")
+
+    rec = None
+    if a.demo:  # engine demos of the AI's own view (cs16env/fragdemo.py); the model's frames are untouched
+        from cs16env.fragdemo import DemoRecorder
+        rec = DemoRecorder(lambda: env.bridge, a.demo, a.model_side, "me" if test_bot is None else "bot",
+                           env.cfg.game_dir)
+    signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))  # kill -> finish cleanly
 
     def others(s):
         return [i for i, p in enumerate(s.players) if p.connected and i != s.playernum]
@@ -102,17 +118,20 @@ def main():
     env._boot()  # start the server only: nobody to place until you join
     # the agent is in (on --model-side); every human who joins from now on is put on the other team, so the game itself
     # spawns you at the far side each round (no moving you after the round has started)
-    env.bridge.command(f"humans_join_team {you_team}")
+    if test_bot is None:
+        env.bridge.command(f"humans_join_team {you_team}")
+    if rec:
+        rec.begin()  # before anyone joins (see cs16env/fragdemo.py)
     you_spawns = MAP_SPAWNS["aim_map"][you_team]
     print("Server up on 127.0.0.1. Waiting for you to join (python -m train.duel --client) ...", flush=True)
-    while not others(env.bridge.state) or not env._others_alive(env.bridge.state):
-        realtime(10)
-    print("You joined. Get ready.", flush=True)
-    realtime(300)
     score = dict(ai=0, you=0, draw=0)
     rng = np.random.default_rng()
-    t_session = time.perf_counter()
     try:
+        while not others(env.bridge.state) or not env._others_alive(env.bridge.state):
+            realtime(10)
+        print("You joined. Get ready.", flush=True)
+        realtime(300)
+        t_session = time.perf_counter()
         for rnd in range(1, a.rounds + 1):
             while not env._others_alive(env.bridge.state) or not others(env.bridge.state):
                 realtime(5)
@@ -134,6 +153,7 @@ def main():
                 env.bridge.step(cmd=f"cs2ai_place {others(s)[0]} {you.origin[0]:.1f} {you.origin[1]:.1f} {you.origin[2]:.1f} 0 {yaw:.2f} 100",
                                 capture=False)
             agent.reset()
+            t_start = env.bridge.state.time
             done = False
             t0 = time.perf_counter()
             k = 0
@@ -154,6 +174,7 @@ def main():
                                      hhp=int(you.health) if you else None, myaw=round(float(s.viewangles[1]), 1),
                                      fire=int(act[4]), fwd=int(act[2]), side=int(act[3])))
                 time.sleep(max(0.0, t0 + k * dt - time.perf_counter()))
+            t_end = env.bridge.state.time
             res = "ai" if info["kills"] else "you" if info["deaths"] else "draw"
             score[res] += 1
             if log:
@@ -163,6 +184,8 @@ def main():
             print(msg, flush=True)
             env.bridge.command(f'say "{msg}"')
             realtime(150)  # 1.5 s to watch the result, then next round
+            if rec:
+                rec.log_round(rnd, res, t_start, t_end, score, info["time"])
             if a.minutes and time.perf_counter() - t_session > a.minutes * 60:
                 env.bridge.command('say "Time is up for this end. Thanks!"')
                 realtime(200)
@@ -171,7 +194,11 @@ def main():
         pass
     finally:
         print(f"Final: AI {score['ai']} - {score['you']} you ({score['draw']} time-outs)")
+        if rec:
+            rec.end()
         env.close()
+        if rec:
+            print(f"Frag-movie demo: {rec.keep()}", flush=True)
 
 
 if __name__ == "__main__":

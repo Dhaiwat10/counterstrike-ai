@@ -52,3 +52,24 @@ The per-capture cost is a synchronous `glReadPixels`; PBO double-buffering or th
   CS16Env.duel_open_switch is on (YaPB's own trigger hesitates for seconds even with perfect scripted aim). Old engines
   ignore the command. Installed into `game-dev/libxash.dylib` on 2026-11-13 (previous library kept as
   `game-dev/libxash.dylib.pre-cs2ai_fire-20261113`).
+
+## Demo playback of the local weapon (`cl_demo_predweapons`, added 2026-11-15, render only)
+
+Stock playback of the AI's own demos shows no fire animation, shell ejection, muzzle flash or bullet impacts for the
+recording player (the ammo counter still drops). Live with `cl_lw 1` these come only from the client's weapon prediction
+(`HUD_PostRunCmd` -> weapon code -> local `EV_FireAK47` etc.), run once per new usercmd with `runfuncs` from the last
+server state; the server never sends them to the shooter. In playback `CL_ReadDemoUserCmd` stores recorded command N in
+slot N + 1 and `CL_PredictMovement` predicts the slots after the acknowledged one, so with the AI's local server (every
+update acknowledges the command before it) it only re-runs commands the server already processed: clip already lower,
+next-attack timer running, the weapon never fires. At a render rate below the 100 Hz command rate some commands are
+never run with `runfuncs` at all.
+
+`cl_demo_predweapons 1` (default 0; client cvar, `cl_main.c`): in playback every recorded usercmd is run exactly once
+with `runfuncs`, when it is read (`CL_DemoPredictWeapons`, `cl_pmove.c`), from the last parsed server frame (= the state
+before it; commands between that frame's acknowledgement and this one replayed silently first), `random_seed` = the
+recorded command number as live; the per-frame prediction loop then runs with `runfuncs` off so nothing fires twice.
+Movement/view prediction is unchanged. Live play, recording and training never set it.
+
+The live `game-dev/libxash.dylib` is NOT rebuilt with this. `scripts/make_render_game.sh` builds the tree in a temporary
+copy into `game-render/` (own `libxash.dylib`, copies of small cstrike files and `cl_dlls`, symlinks into `game-dev/` for
+the rest) and `scripts/fragmovie.py` renders with `game-render/` and `cl_demo_predweapons 1`.
