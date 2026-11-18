@@ -116,6 +116,7 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
         env.hold_hidden_frac = rewards.get("hold_hidden_frac", 0.0)        # --hold-hidden-frac
     else:
         env.arena_hold_frac = rewards.get("arena_hold_frac", 0.0)       # --arena-hold-frac
+    env.teacher_present = bool(rewards.get("teacher_present", False))      # --teacher-present (duels and arena)
     env.hold_raised_mult = rewards.get("hold_raised_mult", 1.0)          # --hold-raised-mult (duels and arena)
     env.aim_shaping, env.bullet_cost, env.rw_dmg = rewards["aim_shaping"], rewards["bullet_cost"], rewards["damage"]
     env.shaping_gamma = rewards["gamma"]
@@ -156,6 +157,9 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
         state["passive"] = False
         if duel:  # opponent stage (DUEL_STAGES): stage 1 = the stays-put shooter; later stages keep a share of it
             set_knobs(state["cur"])
+            d = pick_round_delay(rng, rewards.get("round_delays"))  # --round-delays: this round's reaction delay
+            if d is not None:
+                env.set_reaction_delay(d)
             st = DUEL_STAGES[duel_stage_of(state["cur"], side)]
             camp = st["bot"] == "camp" or rng.random() < rewards.get("duel_camp_frac", 0.0)
             env.duel_bot_mode = "camp" if camp else st["bot"]
@@ -188,6 +192,9 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
             # 0 ms stages: some rounds get a random small delay so habits stay delay-robust (not counted for promotion)
             if state["cur"]["delay"] == 0.0 and rng.random() < rewards.get("rand_delay", 0.0):
                 env.set_reaction_delay(rng.choice((0.04, 0.08))); state["delayed"] = True
+        d = pick_round_delay(rng, rewards.get("round_delays"))  # --round-delays: this round's reaction delay (kept by
+        if d is not None:                                        # the --passive-frac branch below)
+            env.set_reaction_delay(d)
             # --passive-frac: a strafing bot that never shoots back, so long shots can be practised (never counted)
             if rewards.get("passive_frac", 0.0) > 0 and rng.random() < rewards["passive_frac"]:
                 delay = env.delay_steps
@@ -212,7 +219,10 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
             ne[2:6] = 0.0
             if ne[12] != 1:
                 ne[6] = 0.0
-        return np.concatenate([lab, ne])
+        out = np.concatenate([lab, ne])
+        if rewards.get("label_delay", False):  # --teacher-delay-mult: one extra column = this round's delay in steps
+            out = np.concatenate([out, np.array([env.delay_steps], np.float32)])
+        return out
 
     remote.send((views(obs), labels(info)))
     ep_ret = 0.0
@@ -242,7 +252,8 @@ def _worker(remote, scenario, seed, hw, fovea, knobs, rewards, res=(320, 240), p
                               time=info["time"], timeout=bool(trunc), dist=info["spawn_dist"], offset=info["spawn_offset"],
                               acquire=info.get("acquire_time"), rehearsal=state["rehearsing"], delayed=state["delayed"],
                               no_contest=info.get("no_contest", False), leashed=info.get("leashed", False),
-                              passive=state["passive"], side=side, enemy_model=info.get("enemy_model"))
+                              passive=state["passive"], side=side, enemy_model=info.get("enemy_model"),
+                              delay_ms=int(round(env.delay_steps * env.tick * env.repeat * 1000)))
                     if duel:
                         ep.update(duel=True, camp=state.get("camp", False), diff=state.get("diff", 0), fight=dstat["fight"],
                                   saw=dstat["los"], opp=env.duel_bot_mode, switch_s=(info.get("camp") or {}).get("switch_s"),
@@ -365,18 +376,25 @@ class Collector:
         # them and spins past the enemy), so the teacher drives most steps and hands over gradually.
         self.beta = 0.0
         self.rng = np.random.default_rng(0)
+        # --overlap-collect (OverlapCollector): a stop request and a wait timeout so a background collection can end
+        self.stop_flag = False
+        self.wait_timeout = None
 
-    def collect(self, n, on_episode):
-        """Run until n segments are complete; on_episode(record) is called for every finished round."""
+    def collect(self, n, on_episode, to_dev=True):
+        """Run until n segments are complete; on_episode(record) is called for every finished round.
+        to_dev False: the returned tensors stay on the CPU (a background collection never touches the training device)."""
         self.serves = self.served = 0
         while len(self.finished) < n:
+            if self.stop_flag:
+                return None
             if not self.ready:
-                for i, rep in self.venv.wait(self.pending):
+                for i, rep in self.venv.wait(self.pending, self.wait_timeout):
                     self._reply(i, rep, on_episode)
             self._serve()
         rows = [self.finished.popleft() for _ in range(n)]
-        out = {k: torch.from_numpy(np.stack([r[k] for r in rows])).to(self.dev) for k in rows[0] if k != "h0"}
-        h0 = torch.from_numpy(np.stack([r["h0"] for r in rows], 1)).to(self.dev)  # [2, n, hidden]
+        mv = (lambda x: x.to(self.dev)) if to_dev else (lambda x: x)
+        out = {k: mv(torch.from_numpy(np.stack([r[k] for r in rows]))) for k in rows[0] if k != "h0"}
+        h0 = mv(torch.from_numpy(np.stack([r["h0"] for r in rows], 1)))  # [2, n, hidden]
         out["h0"] = (h0[0:1].contiguous(), h0[1:2].contiguous())
         out["batch"] = self.served / max(1, self.serves)  # games served per forward pass
         return out
@@ -475,6 +493,19 @@ MAX_DIST = 1050.0  # 2026-11-10: long range parked -- see curriculum_stages()
 DEFAULT_DELAY_RAMP = (0.04, 0.08, 0.12, 0.16, 0.20)
 
 
+def parse_round_delays(text):
+    """--round-delays "0,0.04,0.04": reaction delays in seconds, one drawn per round (repeat a value to weight it)."""
+    vals = tuple(float(x) for x in text.split(",") if x.strip()) if text else ()
+    assert all(0.0 <= v <= 0.20 for v in vals), f"bad round delays {vals}"
+    return vals
+
+
+def pick_round_delay(rng, delays):
+    """The reaction delay (s) for the next round with --round-delays, or None (off: the stage's own delay). Draws from
+    `rng` only when the list is given, so runs without the option keep their exact random sequence."""
+    return rng.choice(delays) if delays else None
+
+
 def parse_delay_ramp(text):
     """'0.04,0.06,0.08' -> (0.04, 0.06, 0.08); empty/None -> None."""
     if not text:
@@ -564,6 +595,24 @@ def gae(rewards, values, next_values, terminal, gamma, lam):
     return adv, adv + values
 
 
+def attack_mult_at(update, update0, start, end, ramp):
+    """--ent-attack-mult with --ent-attack-ramp: linear from `start` (the value the resumed checkpoint was trained with)
+    at update0 to `end` after `ramp` updates; no ramp (0) = `end` at once."""
+    if ramp <= 0:
+        return end
+    f = min(1.0, max(0.0, (update - update0) / ramp))
+    return start + (end - start) * f
+
+
+def entropy_term(ent_heads, head_w):
+    """The entropy bonus as in the loss: mean over steps of the head-weighted mean normalised entropy (a negative weight
+    on a head turns its bonus into a penalty, i.e. sharpens that head). Unchanged expression for the default weights."""
+    if bool((head_w > 0).all()):  # (the original expression, kept so default runs give bit-identical losses)
+        ent_w = (ent_heads * head_w).sum(-1) / head_w.sum()
+        return ent_w.mean() * head_w.mean()
+    return ((ent_heads * head_w).sum(-1) / head_w.numel()).mean()  # the same quantity, safe when the weights sum to ~0
+
+
 def dist_stats(logits, mask, actions=None):
     """Categorical per learned head. Returns full action vectors (idle on unlearned heads), summed
     log-prob over learned heads, and mean normalised entropy over learned heads."""
@@ -627,6 +676,22 @@ def grow_state(saved, target):
     return out
 
 
+def build_resumed_policy(resume, act_hist=0, aux_now=0.0, loc=0.0, selfloc=0.0, startend=0.0):
+    """The policy for --resume: the saved weights, plus any NEW inputs/heads (--act-hist growth, --aux-now, ...) left at
+    their zero initialisation, so the resumed policy acts exactly like the saved one until they learn
+    (tests/test_resume_act_hist.py checks this on the real checkpoint)."""
+    ra = resume["args"]
+    hw, chans, fovea = tuple(ra["hw"]), tuple(ra["chans"]), int(ra["fovea"])
+    k_old = int(ra.get("act_hist", 0))
+    assert act_hist == 0 or act_hist >= k_old, "--act-hist can grow on resume (zero-padded), never shrink"
+    has = {p: any(k.startswith(p + ".") for k in resume["model"]) for p in ("aux_now", "loc", "selfloc", "startend")}
+    model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=act_hist or k_old, aux_now=bool(aux_now) or has["aux_now"],
+                   loc=bool(loc) or has["loc"], selfloc=bool(selfloc) or has["selfloc"], startend=bool(startend) or has["startend"])
+    missing, unexpected = model.load_state_dict(grow_state(resume["model"], model.state_dict()), strict=False)
+    assert not unexpected and all(k.startswith(("act_in.", "aux_now.", "loc.", "selfloc.", "startend.")) for k in missing), (missing, unexpected)  # only new zero/aux inputs
+    return model
+
+
 def teacher_loss(lg, lab):
     """Cross-entropy of the yaw and pitch heads toward the teacher's bins (lab[..., 6:9] = yaw bin, pitch bin, valid),
     averaged over valid steps. Returns (loss, share of valid steps where the policy's top yaw bin equals the teacher's)."""
@@ -659,7 +724,7 @@ def soft_bins(table, x):
     return tgt
 
 
-def teacher_loss_soft(lg, lab, fire_head=True, near_mult=1.0, near_deg=0.0, fire_out=None, pitch_deadband=0.0):
+def teacher_loss_soft(lg, lab, fire_head=True, near_mult=1.0, near_deg=0.0, fire_out=None, pitch_deadband=0.0, step_w=None):
     """Copy the delayed oracle in full (lab[..., 9:13] = yaw turn deg, view-pitch turn deg, fire, valid): soft two-bin
     cross-entropy on the yaw and pitch heads plus cross-entropy on the attack head, averaged over valid steps
     (valid = both players alive, enemy on screen or not). Returns (loss, stats).
@@ -695,6 +760,8 @@ def teacher_loss_soft(lg, lab, fire_head=True, near_mult=1.0, near_deg=0.0, fire
         fire_out.append((fce * valid).sum() / n)
     elif fire_head:  # (off with --teacher-aim-only: the oracle's tap rule needs aim within ~9 units of the chest, which a
         per = per + fce  # sloppier aimer almost never meets -> "never fire")
+    if step_w is not None:  # --teacher-delay-mult: steps of delayed rounds weigh more (the average stays over valid steps)
+        per = per * step_w.reshape(-1)
     loss = (per * valid).sum() / n
     with torch.no_grad():
         yt = torch.as_tensor(YAW_TABLE, device=lg.device)
@@ -836,7 +903,7 @@ def aux_loss(pred, label):
 
 
 # ---------------------------------------------------------------------------------- main
-def build_optimizer(model, lr, resume=None):
+def build_optimizer(model, lr, resume=None, hist_lr_mult=1.0):
     """Adam over the model; restores a resumed optimiser state and applies `lr` on top of it (the saved state carries its
     old lr). Groups: "main", then the optional "hist" (--act-hist input) and "aux_now" (--aux-now head) groups, so
     checkpoints saved with or without either resume cleanly. Saved per-parameter Adam moments are matched by group and
@@ -880,8 +947,67 @@ def build_optimizer(model, lr, resume=None):
                     restored += 1
         assert restored >= len(main_params) * 0.9, f"optimizer resume matched only {restored} parameters"
     for g in opt.param_groups:
-        g["lr"] = lr
+        g["lr"] = lr * (hist_lr_mult if g.get("name") == "hist" else 1.0)  # --hist-lr-mult: the action-history input learns faster
     return opt
+
+
+class OverlapCollector:
+    """--overlap-collect: collect the NEXT rollout in a background thread while the main thread runs the learning step on
+    the current one. The games are served by `actor`, a copy of the policy that is only refreshed from the learner
+    between rollouts (sync(), never while a collection runs), so every step's stored log-probability and value come from
+    the weights that actually chose the action, and PPO's ratio is taken against them (the rollout a learning step trains
+    on was collected with the weights from one update earlier). The collector's state (recurrent state at segment
+    boundaries, action history, unfinished segments, bootstrap frames) is only touched by the collecting thread; finished
+    rounds are buffered and handed to on_episode in the main thread after the join, so nothing is dropped or doubled.
+    The actor runs on `actor_dev` (default CPU), so the background thread never uses the training device."""
+
+    def __init__(self, collector, actor, learner):
+        import threading
+        self._threading = threading
+        self.collector, self.actor, self.learner = collector, actor, learner
+        self.collector.wait_timeout = 1.0
+        self.thread = None
+        self.result = self.error = None
+        self.episodes = []
+        self.version = 0          # learner weights the actor holds (count of sync() calls)
+        self.t_start = 0.0
+
+    def sync(self):
+        assert self.thread is None, "the actor must not change while a collection runs"
+        with torch.no_grad():
+            self.actor.load_state_dict(self.learner.state_dict())
+        self.actor.eval()
+        self.version += 1
+
+    def start(self, n, beta=0.0):
+        assert self.thread is None
+        self.collector.beta = beta
+        self.result = self.error = None
+        self.episodes = []
+        self.collected_version = self.version
+
+        def run():
+            try:
+                self.result = self.collector.collect(n, self.episodes.append, to_dev=False)
+            except BaseException as e:  # noqa: BLE001 -- re-raised in the main thread by finish()
+                self.error = e
+        self.t_start = time.time()
+        self.thread = self._threading.Thread(target=run, name="overlap-collect", daemon=True)
+        self.thread.start()
+
+    def finish(self):
+        """Wait for the running collection; returns (rollout on CPU, finished rounds, weights version it was collected with)."""
+        self.thread.join()
+        self.thread = None
+        if self.error is not None:
+            raise self.error
+        return self.result, self.episodes, self.collected_version
+
+    def stop(self, timeout=30.0):
+        if self.thread is not None:
+            self.collector.stop_flag = True
+            self.thread.join(timeout)
+            self.thread = None
 
 
 def _install_stop_handlers():
@@ -918,6 +1044,12 @@ def main():
     ap.add_argument("--ent-move-mult", type=float, default=1.0,
                     help="entropy weight of the movement heads (fwd, side) relative to the others (peek_v12: < 1 sharpens "
                          "them so the greedy key pair matches what the policy does)")
+    ap.add_argument("--ent-attack-mult", type=float, default=1.0,
+                    help="weight of the attack (fire) head in the entropy bonus; negative = an entropy PENALTY that makes the "
+                         "fire decision decisive. 1 = unchanged")
+    ap.add_argument("--ent-attack-ramp", type=int, default=0,
+                    help="ramp --ent-attack-mult linearly over this many updates, from the value the resumed checkpoint was "
+                         "trained with (1 if it does not say) to --ent-attack-mult. 0 = at once")
     ap.add_argument("--ent-yaw-mult", type=float, default=1.0,
                     help="extra exploration on the turning (yaw) head: its entropy term is multiplied by this")
     ap.add_argument("--ent-pitch-mult", type=float, default=1.0,
@@ -937,6 +1069,21 @@ def main():
                     help="free-roaming bot: skip spawn pairs whose pocket around the bot is less than this fraction visible (0 = off)")
     ap.add_argument("--rand-delay", type=float, default=0.0,
                     help="0 ms stages: share of rounds played with a random 40 or 80 ms delay (not counted for promotion)")
+    ap.add_argument("--overlap-collect", action="store_true",
+                    help="collect the next rollout in a background thread while the GPU learns on the current one "
+                         "(the acting copy of the policy lags the learner by one update; PPO ratios use its log-probs). "
+                         "Off = unchanged behaviour")
+    ap.add_argument("--overlap-actor-device", default="cpu", help="device of the acting copy with --overlap-collect")
+    ap.add_argument("--teacher-present", action="store_true",
+                    help="the aim teacher's turn (and the navigator's engage look, which copies it) aims at where the enemy IS "
+                         "now from where the crosshair points now, instead of where it was in the delayed frame (0 ms: same)")
+    ap.add_argument("--teacher-delay-mult", type=float, default=1.0,
+                    help="weight of the aim-teacher loss on steps of DELAYED rounds (x this; 0 ms rounds unchanged). 1 = off")
+    ap.add_argument("--hist-lr-mult", type=float, default=1.0,
+                    help="learning-rate multiplier for the action-history input layer (act_in). 1 = off")
+    ap.add_argument("--round-delays", default="",
+                    help="reaction delays in seconds drawn per round in every game (duels and arena), e.g. 0,0.04,0.04,0.04 "
+                         "(repeat a value to weight it); overrides the stage's delay. Empty = off (unchanged behaviour)")
     ap.add_argument("--rehearsal", type=float, default=0.0,
                     help="share of rounds that replay a random EARLIER stage (anti-forgetting; not counted for promotion)")
     ap.add_argument("--vf", type=float, default=0.5)
@@ -1177,16 +1324,7 @@ def main():
     if resume is not None:
         ra = resume["args"]
         hw, chans, fovea = tuple(ra["hw"]), tuple(ra["chans"]), int(ra["fovea"])
-        k_old = int(ra.get("act_hist", 0))
-        assert a.act_hist == 0 or a.act_hist >= k_old, "--act-hist can grow on resume (zero-padded), never shrink"
-        has_now = any(k.startswith("aux_now.") for k in resume["model"])
-        has_loc = any(k.startswith("loc.") for k in resume["model"])
-        has_self = any(k.startswith("selfloc.") for k in resume["model"])
-        has_se = any(k.startswith("startend.") for k in resume["model"])
-        model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist or k_old, aux_now=bool(a.aux_now) or has_now,
-                       loc=bool(a.loc) or has_loc, selfloc=bool(a.selfloc) or has_self, startend=bool(a.startend) or has_se)
-        missing, unexpected = model.load_state_dict(grow_state(resume["model"], model.state_dict()), strict=False)
-        assert not unexpected and all(k.startswith(("act_in.", "aux_now.", "loc.", "selfloc.", "startend.")) for k in missing), (missing, unexpected)  # only new zero/aux inputs
+        model = build_resumed_policy(resume, a.act_hist, a.aux_now, a.loc, a.selfloc, a.startend)
     elif a.act_hist or a.aux_now or a.loc or a.selfloc:
         model = Policy(in_hw=hw, chans=chans, fovea=fovea, act_hist=a.act_hist, aux_now=bool(a.aux_now), loc=bool(a.loc),
                        selfloc=bool(a.selfloc), startend=bool(a.startend))
@@ -1200,7 +1338,7 @@ def main():
         init_move_heads(model, mh, a.move_init_p0)
     nav_on = a.nav_coef > 0 or a.selfloc > 0
     assert not (nav_on and a.collect == "remote"), "--nav-coef/--selfloc need local games"
-    n_labels = N_LABELS + (N_NAV if nav_on else 0)
+    n_labels = N_LABELS + (N_NAV if nav_on else 0) + (1 if a.teacher_delay_mult != 1.0 else 0)  # +1: round delay column
     model.to(dev)
     if a.res:
         res = tuple(int(x) for x in a.res.lower().split("x"))
@@ -1225,7 +1363,7 @@ def main():
         prior_scale = res[0] / prior_res[0] if fovea else 0.0  # >1: the prior gets its own, wider fovea crop
     else:
         prior_scale = 0.0
-    opt = build_optimizer(model, a.lr, resume)
+    opt = build_optimizer(model, a.lr, resume, hist_lr_mult=a.hist_lr_mult)
     warm_params = list(model.value.parameters()) + list(model.aux.parameters()) + \
         (list(model.aux_now.parameters()) if hasattr(model, "aux_now") else []) + \
         (list(model.selfloc.parameters()) if hasattr(model, "selfloc") else []) + \
@@ -1289,6 +1427,12 @@ def main():
         rewards["nav_engage_look"] = True
     if a.go_look_after:
         rewards["go_look_after"] = a.go_look_after
+    if a.round_delays:
+        rewards["round_delays"] = parse_round_delays(a.round_delays)
+    if a.teacher_present:
+        rewards["teacher_present"] = True
+    if a.teacher_delay_mult != 1.0:
+        rewards["label_delay"] = True
     if a.hold_steps_frac:
         rewards["hold_steps_frac"] = a.hold_steps_frac
     if a.hold_hidden_frac:
@@ -1355,6 +1499,9 @@ def main():
     steps = resume.get("steps", 0) if resume is not None else 0
     update = resume.get("update", 0) if resume is not None else 0
     update0 = update
+    i_att_l = [h for h in HEADS if h in heads].index("attack")  # the fire head's position among the learned heads
+    att0 = float(resume.get("ent_attack_mult", 1.0)) if resume is not None else 1.0  # --ent-attack-ramp starts here
+    ent_attack_mult = attack_mult_at(update, update0, att0, a.ent_attack_mult, a.ent_attack_ramp)
     steps0 = steps
     emit(dict(event="start", device=str(dev), envs=N, rollout=T, init=a.init, fovea=fovea, heads=heads, res=list(res),
               prior_scale=prior_scale,
@@ -1369,11 +1516,23 @@ def main():
     duel_new = {sd: 0 for sd in side_list}  # duel rounds of the gating kind since the last stage change
     arena_side = {sd: collections.deque(maxlen=200) for sd in side_list}  # aim-arena rounds per side (tripwire)
 
+    by_delay = collections.defaultdict(lambda: collections.deque(maxlen=200))  # --round-delays: duel rounds per delay
+    ep_log = open(out / "episodes.jsonl", "a") if a.round_delays else None
+    arena_by_delay = collections.defaultdict(lambda: collections.deque(maxlen=200))  # --round-delays: aim-arena rounds per delay
+
     def on_episode(e):  # one finished round: which statistics it counts for
         nonlocal all_eps, stage_eps
         sd = e.get("side") if e.get("side") in dstages else side_list[0]
+        if a.round_delays:  # one line per round, so a supervisor can keep its own windows across trainer restarts
+            ep_log.write(json.dumps(dict(u=update, duel=bool(e.get("duel")), camp=bool(e.get("camp")), side=e.get("side"),
+                                         delay_ms=e.get("delay_ms", 0), win=bool(e["kills"] > 0), opp=e.get("opp"),
+                                         switch=bool(e.get("switch")), passive=bool(e.get("passive")),
+                                         no_contest=bool(e.get("no_contest")))) + "\n")
+            ep_log.flush()
         if e.get("duel"):  # real duels never count for the aim-arena curriculum
             all_eps += 1
+            if a.round_delays and not e["camp"]:
+                by_delay[e.get("delay_ms", 0)].append(e)
             st = DUEL_STAGES[dstages[sd]]
             if e["camp"]:
                 duel_camp[sd].append(e)
@@ -1384,6 +1543,8 @@ def main():
             return
         if not e.get("passive") and not e.get("no_contest") and not e.get("delayed") and not e.get("rehearsal"):
             arena_side[sd].append(e)
+            if a.round_delays:
+                arena_by_delay[e.get("delay_ms", 0)].append(e)
         if e.get("rehearsal"):
             reh.append(e); all_eps += 1
             return
@@ -1410,7 +1571,16 @@ def main():
             win.append(e)
 
     assert not nav_on or a.collect == "async", "--nav-coef/--selfloc need --collect async"
-    collector = Collector(venv, model, dev, T, mask, a.gamma, fovea, K, n_labels) if a.collect == "async" else None
+    overlap = None
+    if a.overlap_collect:
+        assert a.collect == "async", "--overlap-collect needs --collect async"
+        import copy
+        adev = torch.device(a.overlap_actor_device)
+        actor = copy.deepcopy(model).to(adev).eval()
+        collector = Collector(venv, actor, adev, T, mask, a.gamma, fovea, K, n_labels)
+        overlap = OverlapCollector(collector, actor, model)
+    else:
+        collector = Collector(venv, model, dev, T, mask, a.gamma, fovea, K, n_labels) if a.collect == "async" else None
     remote = None
     if a.collect == "remote":  # everything an actor needs to build the same games and model; weights follow every update
         from train.remote import RemoteCollector
@@ -1437,7 +1607,18 @@ def main():
             if collector is not None:
                 collector.beta = max(a.teacher_beta_min, a.teacher_beta - (a.teacher_beta - a.teacher_beta_min)
                                      * (steps - steps0) / max(1.0, a.teacher_beta_steps))
-                ro = collector.collect(N, on_episode)
+                if overlap is None:
+                    ro = collector.collect(N, on_episode)
+                else:  # --overlap-collect: take the rollout collected during the last learning step, start the next one
+                    if overlap.thread is None:
+                        overlap.start(N, collector.beta)
+                    ro_cpu, ep_buf, _ = overlap.finish()
+                    for e in ep_buf:
+                        on_episode(e)
+                    overlap.sync()  # the actor gets the weights after the last update before the next collection starts
+                    overlap.start(N, collector.beta)
+                    ro = {k: (v.to(dev) if torch.is_tensor(v) else v) for k, v in ro_cpu.items() if k != "h0"}
+                    ro["h0"] = tuple(x.to(dev) for x in ro_cpu["h0"])
                 P, Fv, FvP, AUX, HIST = ro["P"], ro.get("F"), ro.get("FP"), ro["AUX"], ro.get("HIST")
                 A, LP, V, V_next, R, TERM, S = ro["A"], ro["LP"], ro["V"], ro["Vn"], ro["R"], ro["TERM"], ro["S"]
                 h0, serve_batch = ro["h0"], ro["batch"]
@@ -1533,6 +1714,8 @@ def main():
             stats = collections.defaultdict(list)
             idx = np.arange(N)
             mb = max(1, N // a.minibatches)
+            ent_attack_mult = attack_mult_at(update, update0, att0, a.ent_attack_mult, a.ent_attack_ramp)
+            head_w[i_att_l] = ent_attack_mult  # (1.0 = unchanged)
             for _ in range(1 if warm else a.epochs):
                 np.random.shuffle(idx)
                 for s0 in range(0, N, mb):
@@ -1568,12 +1751,11 @@ def main():
                         continue
                     _, lp, ent_heads = dist_stats(lg, mask, A[j])
                     ent = ent_heads.mean(-1)
-                    ent_w = (ent_heads * head_w).sum(-1) / head_w.sum()  # turning head weighted --ent-yaw-mult times
                     adv_j = adv[j]
                     adv_j = (adv_j - adv_j.mean()) / (adv_j.std() + 1e-8)
                     ratio = (lp - LP[j]).exp()
                     pg = -torch.min(ratio * adv_j, ratio.clamp(1 - a.clip, 1 + a.clip) * adv_j).mean()
-                    loss = pg + a.vf * vloss - a.ent * ent_w.mean() * head_w.mean() + a.aux * xloss
+                    loss = pg + a.vf * vloss - a.ent * entropy_term(ent_heads, head_w) + a.aux * xloss
                     if a.teacher_only:  # copy-only: no trial-and-error terms at all
                         loss = a.vf * vloss + a.aux * xloss
                     if sl_loss is not None:
@@ -1593,9 +1775,10 @@ def main():
                     if teacher_coef > 0:  # kick-starting toward the delayed oracle (masked to rounds/steps where it is defined)
                         if a.teacher_soft:
                             fire_out = [] if a.teacher_fire_coef > 0 else None
+                            sw = (1.0 + (a.teacher_delay_mult - 1.0) * (AUX[j][..., -1] > 0).float()) if a.teacher_delay_mult != 1.0 else None
                             tl, tst = teacher_loss_soft(lg.float(), AUX[j], fire_head=not a.teacher_aim_only,
                                                         near_mult=a.teacher_near_mult, near_deg=a.teacher_near_deg,
-                                                        fire_out=fire_out, pitch_deadband=a.teacher_pitch_deadband)
+                                                        fire_out=fire_out, pitch_deadband=a.teacher_pitch_deadband, step_w=sw)
                             for key, val in tst.items():
                                 stats[key].append(val)
                             if fire_out:
@@ -1621,6 +1804,13 @@ def main():
                         stats["vloss"].append(vloss.item())
                         stats["aux"].append(xloss.item())
                         stats["ent"].append(ent.mean().item())
+                        stats["ent_attack"].append(ent_heads[..., i_att_l].mean().item())  # normalised entropy of the fire head
+                        # training-time proxy for greedy firing: share of steps with fire probability > 0.5 among steps
+                        # where the coach's fire rule says "on target, fire now" (logging only)
+                        on = (AUX[j][..., 12] > 0) & (AUX[j][..., 11] > 0.5)
+                        if bool(on.any()):
+                            pf = torch.softmax(Policy.split(lg.float())[HEADS.index("attack")], -1)[..., 1]
+                            stats["fire_p_gt05_on_target"].append((pf[on] > 0.5).float().mean().item())
                         stats["kl"].append((LP[j] - lp).mean().item())
                         stats["clipfrac"].append(((ratio - 1).abs() > a.clip).float().mean().item())
             if collector is None:
@@ -1723,7 +1913,7 @@ def main():
                        if any(e.get("acquire") is not None for e in E) else None,
                        stage=stage, gate=float(gate), passes=passes, window_fill=len(win),
                        kill_rehearsal=float(np.mean([e["kills"] > 0 for e in reh])) if reh else None,
-                       no_contest_rate=float(np.mean(nc)) if nc else None, kl_coef=kl_coef, teacher_coef=teacher_coef,
+                       no_contest_rate=float(np.mean(nc)) if nc else None, kl_coef=kl_coef, teacher_coef=teacher_coef, ent_attack_mult=ent_attack_mult,
                        kill_delayed=float(np.mean([e["kills"] > 0 for e in dly])) if dly else None,
                        **({"kill_passive": float(np.mean([e["kills"] > 0 for e in psv])),
                            "kill_passive_long": float(np.mean([e["kills"] > 0 for e in psv if e["dist"] >= 1050]))
@@ -1739,25 +1929,35 @@ def main():
                        teacher_beta=collector.beta if collector is not None else 0.0,
                        **{k: float(np.mean(v)) for k, v in stats.items()}, **(remote.stats() if remote is not None else {}),
                        **duel_rec)
+            for ms, q in sorted(by_delay.items()):  # --round-delays only (empty otherwise)
+                rec[f"duel_win_{ms}ms"] = float(np.mean([e["kills"] > 0 for e in q]))
+                rec[f"duel_n_{ms}ms"] = len(q)
+            for ms, q in sorted(arena_by_delay.items()):  # --round-delays only (both sides pooled)
+                rec[f"arena_kill_{ms}ms"] = float(np.mean([e["kills"] > 0 for e in q]))
+                rec[f"arena_n_{ms}ms"] = len(q)
             if update % 5 == 0 or update <= 3:
                 emit(rec)
             if update % a.snapshot_every == 0:
                 torch.save(dict(model={k: v.half() if v.is_floating_point() else v for k, v in model.state_dict().items()},
                                 args=model_args, steps=steps, update=update, knobs=pub(knobs), stage=stage,
-                                duel_stage=duel_stage, duel_stages=dict(dstages)), out / "snapshots" / f"update_{update:06d}.pt")
+                                duel_stage=duel_stage, duel_stages=dict(dstages), ent_attack_mult=ent_attack_mult),
+                           out / "snapshots" / f"update_{update:06d}.pt")
                 torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), args=model_args, steps=steps,
                                 update=update, knobs=pub(knobs), stage=stage, duel_stage=duel_stage,
-                                duel_stages=dict(dstages)), out / "last.pt")
+                                duel_stages=dict(dstages), ent_attack_mult=ent_attack_mult), out / "last.pt")
             if (a.max_steps and steps >= a.max_steps) or el > a.hours * 3600:
                 break
     finally:
         torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), args=model_args, steps=steps, update=update,
-                        knobs=pub(knobs), stage=stage, duel_stage=duel_stage, duel_stages=dict(dstages)), out / "last.pt")
+                        knobs=pub(knobs), stage=stage, duel_stage=duel_stage, duel_stages=dict(dstages),
+                        ent_attack_mult=ent_attack_mult), out / "last.pt")
         emit(dict(event="done", steps=steps, updates=update, episodes=all_eps, knobs=pub(knobs)))
         if peer is not None:
             peer.close()
         if remote is not None:
             remote.close()
+        if overlap is not None:  # end a background collection before the games are closed
+            overlap.stop()
         if venv is not None:
             venv.close()
 

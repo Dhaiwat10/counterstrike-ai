@@ -11,11 +11,19 @@
     },
     {
       "name": "fire-fix",
-      "runtimeExecutable": "/Users/dhaiwat/code/cs2-ai/.venv/bin/python",
+      "runtimeExecutable": ".venv/bin/python",
       "runtimeArgs": [
         "dashboard/task_server.py"
       ],
       "port": 8051
+    },
+    {
+      "name": "delay",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": [
+        "dashboard/delay_server.py"
+      ],
+      "port": 8052
     }
   ]
 }

@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reaction delay</title>
+<style>
+:root{--bg:#0e0f12;--card:#17191e;--line:#262a32;--text:#e9eaee;--dim:#9097a3;--good:#3ecf8e;--bad:#f0616d;--wait:#6b7280;--accent:#f2c14e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:13px/1.4 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:-.005em}
+main{max-width:1040px;margin:0 auto;padding:18px 16px 60px}
+h1{font-size:14px;font-weight:600;margin:0 0 10px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border:1px solid var(--line);border-radius:6px;color:var(--dim);font-size:12px;background:var(--card);white-space:nowrap}
+.chip b{color:var(--text);font-weight:500}
+.chip.bad{border-color:rgba(240,97,109,.55);color:var(--bad);background:rgba(240,97,109,.08)}.chip.bad b{color:var(--bad)}
+.chip.amb{border-color:rgba(242,193,78,.45);color:var(--accent)}
+.pulse{width:7px;height:7px;border-radius:50%;background:var(--wait);flex:none}.pulse.on{background:var(--good);box-shadow:0 0 0 0 rgba(62,207,142,.6);animation:p 1.8s infinite}
+.pulse.amb{background:var(--accent)}.pulse.bad{background:var(--bad)}.pulse.good{background:var(--good)}
+@keyframes p{70%{box-shadow:0 0 0 7px rgba(62,207,142,0)}100%{box-shadow:0 0 0 0 rgba(62,207,142,0)}}
+.group{display:flex;align-items:center;gap:8px;min-height:32px;padding:0 10px;background:var(--card);border:1px solid var(--line);border-radius:8px 8px 0 0;font-size:12px;font-weight:500;margin-top:18px;flex-wrap:wrap}
+.group .n{color:var(--dim);font-weight:400}.group .lg{margin-left:auto;display:flex;gap:12px;color:var(--dim);font-weight:400;flex-wrap:wrap}
+.group .lg span{display:inline-flex;align-items:center;gap:5px}
+.list{border:1px solid var(--line);border-top:0;border-radius:0 0 8px 8px;overflow:hidden}
+.stage{display:grid;grid-template-columns:150px 1fr 50px 112px 128px 96px;gap:12px;align-items:center;height:40px;padding:0 14px;border-top:1px solid var(--line)}
+.stage:first-child{border-top:0}.stage.cur{background:rgba(242,193,78,.04)}
+.stage.nodata .lbl{color:var(--dim)}
+.lbl{display:flex;align-items:center;gap:9px;font-weight:600;font-size:14px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.lbl small{font-size:11px;font-weight:400;color:var(--accent)}
+.ic{width:14px;height:14px;flex:none}
+.val{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;font-size:14px}
+.val.g{color:var(--good)}.val.r{color:var(--bad)}.val.w{color:var(--wait);font-weight:400;font-size:12px}.val.n{color:var(--text)}
+.dim{color:var(--dim);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}.dim b{color:var(--text);font-weight:500}
+.track{position:relative;height:18px}
+.track .base{position:absolute;left:0;right:0;top:8px;height:2px;background:var(--line);border-radius:1px}
+.track .grid{position:absolute;top:6px;width:1px;height:6px;background:var(--line)}
+.track .zone{position:absolute;top:5px;height:8px;background:rgba(62,207,142,.16);border-radius:2px}
+.track .tick{position:absolute;top:2px;width:1px;height:14px;background:var(--good);opacity:.7}
+.track .link{position:absolute;top:8px;height:2px;opacity:.55}
+.track .was{position:absolute;top:4px;width:10px;height:10px;margin-left:-5px;border-radius:50%;border:1.5px solid var(--dim);background:var(--bg)}
+.track .now{position:absolute;top:3px;width:12px;height:12px;margin-left:-6px;border-radius:50%;box-shadow:0 0 0 3px var(--bg)}
+.track .empty{position:absolute;left:0;right:0;top:8px;height:2px;background:repeating-linear-gradient(90deg,var(--wait) 0 3px,transparent 3px 7px);opacity:.45}
+.stack{display:flex;height:8px;border-radius:3px;overflow:hidden;gap:1px;background:var(--line)}.stack i{display:block;height:100%}
+.dotl{width:9px;height:9px;border-radius:50%;display:inline-block}.ring{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--dim);display:inline-block}
+.sq{width:9px;height:9px;border-radius:2px;display:inline-block}.zl{width:14px;height:8px;border-radius:2px;background:rgba(62,207,142,.25);display:inline-block}
+svg.mini{width:96px;height:22px;display:block}
+.mark{display:grid;grid-template-columns:300px 1fr 64px 74px;gap:12px;align-items:center;height:34px;padding:0 14px;border-top:1px solid var(--line)}
+.mark:first-child{border-top:0}.mark .nm{display:flex;align-items:center;gap:9px;font-weight:500;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.sdot{width:9px;height:9px;border-radius:50%;flex:none}
+.need{text-align:right;color:var(--dim);font-variant-numeric:tabular-nums}
+.none{padding:12px 14px;color:var(--dim);display:flex;align-items:center;gap:9px}
+.two{display:grid;grid-template-columns:2fr 1fr;gap:14px}
+.panel{border:1px solid var(--line);border-top:0;border-radius:0 0 8px 8px;padding:12px}
+.wc{position:relative;height:150px;margin:8px 0 0}.wc svg{position:absolute;left:38px;top:0;width:calc(100% - 132px);height:120px;display:block}
+.wc .yl{position:absolute;left:0;width:30px;text-align:right;color:var(--dim);font-size:11px;line-height:14px;font-variant-numeric:tabular-nums}
+.wc .end{position:absolute;right:0;width:86px;font-size:12px;line-height:14px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}.wc .end i{font-style:normal;font-weight:400;color:var(--dim);font-size:11px}
+.wc .dot{position:absolute;width:7px;height:7px;border-radius:50%;margin:-3.5px 0 0 -3.5px;left:calc(100% - 94px)}
+.wc .xl{position:absolute;top:126px;color:var(--dim);font-size:11px}.wc .goal{position:absolute;left:44px;color:var(--accent);font-size:11px;line-height:14px}
+.lg{display:inline-flex;align-items:center;gap:5px;margin-left:12px}.lg s{width:14px;height:2px;display:inline-block;text-decoration:none}
+svg.sp{width:100%;height:84px;display:block}
+.cap{display:flex;gap:12px;color:var(--dim);font-size:11px;margin-bottom:4px;align-items:center}.cap b{color:var(--text);font-weight:500;font-size:12px;margin-right:auto}
+.cap .v{color:var(--text);font-size:12px;font-variant-numeric:tabular-nums;font-weight:600}
+footer{margin-top:22px;color:var(--dim);font-size:12px}a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+@media(max-width:820px){.stage{grid-template-columns:140px 1fr 50px;height:auto;padding:8px 14px;row-gap:6px}.stage>:nth-child(n+4){grid-column:span 1}
+  .mark{grid-template-columns:1fr 64px 74px;height:auto;padding:8px 14px}.mark .nm{grid-column:1/-1}.two{grid-template-columns:1fr}}
+</style></head><body><main>
+<h1>Trained model · real duel on aim_map · learning a reaction delay</h1>
+<div class="chips" id="chips"></div>
+
+<div class="group">Reaction delay <span class="n" id="ladn"></span>
+  <span class="lg"><span><i class="ring"></i>before training</span><span><i class="dotl" style="background:var(--text)"></i>newest exam</span>
+  <span title="rounds won"><i class="sq" style="background:var(--good)"></i>won</span><span title="rounds lost"><i class="sq" style="background:var(--bad)"></i>lost</span>
+  <span title="rounds that ended without the two ever meeting"><i class="sq" style="background:var(--wait)"></i>no contact</span>
+  <span title="rounds that ran out of time after they had met"><i class="sq" style="background:var(--accent)"></i>timed out</span></span></div>
+<div class="list" id="ladder"></div>
+
+<div class="group">Pass marks <span class="n" id="marksn"></span><span class="lg"><span><i class="ring"></i>before training</span><span><i class="dotl" style="background:var(--text)"></i>this exam</span><span><i class="zl"></i>pass zone</span></span></div>
+<div class="list" id="marks"></div>
+
+<div class="two">
+  <div><div class="group">Training wins <span class="n" id="pn1"></span></div><div class="panel" id="p1"></div></div>
+  <div><div class="group">Training speed <span class="n" id="pn2"></span></div><div class="panel" id="p2"></div></div>
+</div>
+<footer><a href="/notes" target="_blank" title="last 60 lines of the worker's log.md on the MacBook">notes</a></footer>
+</main>
+<script>
+const $=id=>document.getElementById(id),C=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim(),NS="http://www.w3.org/2000/svg";
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const sv=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e};
+const pc=v=>v==null?"–":Math.round(v*100)+"%";
+const dur=s=>{if(s==null)return"–";s=Math.max(0,s);if(s<90)return Math.round(s)+" s";if(s<5400)return Math.round(s/60)+" min";const h=Math.floor(s/3600);return h<48?h+"h "+Math.round((s-h*3600)/60)+"m":Math.floor(h/24)+"d "+(h%24)+"h"};
+const P=v=>Math.max(0,Math.min(100,v*100))+"%";
+function icon(k){ // passed / in training now / not started
+  const s=sv("svg",{viewBox:"0 0 14 14",class:"ic"}),c=sv("circle",{cx:7,cy:7,r:6,fill:"none","stroke-width":1.5});
+  if(k==="passed"){c.setAttribute("fill",C("--good"));c.setAttribute("stroke",C("--good"));s.append(c,sv("path",{d:"M4 7.2l2 2 4-4.2",fill:"none",stroke:C("--bg"),"stroke-width":1.6,"stroke-linecap":"round"}))}
+  else if(k==="training"||k==="confirming"){c.setAttribute("stroke",C("--accent"));s.append(c,sv("path",{d:"M7 7V2.6A4.4 4.4 0 0 1 7 11.4z",fill:C("--accent")}))}
+  else if(k==="ref"){c.setAttribute("stroke",C("--dim"));s.append(c,sv("circle",{cx:7,cy:7,r:2.6,fill:C("--dim")}))}
+  else{c.setAttribute("stroke",C("--wait"));c.setAttribute("stroke-dasharray","2 2.2");s.append(c)}
+  const tt={passed:"passed the full exam",training:"in training now",confirming:"passed the quick check; the full exam decides the stage",todo:"not started",ref:"starting point, no delay to learn"}[k];s.append(Object.assign(sv("title",{}),{textContent:tt}));return s}
+const col=p=>C(p===true?"--good":p===false?"--bad":"--text");
+function chip(parts,cls,title){const c=el("span","chip"+(cls?" "+cls:""));for(const p of parts)c.append(typeof p==="string"?document.createTextNode(p):p);if(title)c.title=title;return c}
+const B=x=>el("b",null,x);
+
+function header(s){
+  const st=s.status||{},cs=$("chips");cs.replaceChildren();
+  if(s.sample)cs.append(chip(["sample data"],"amb","reading a local sample folder, not the MacBook"));
+  if(s.reachable===false)cs.append(chip([B("MacBook not reachable"),"· showing last data"],"bad",s.error||""));
+  else if(s.stale)cs.append(chip([B("No update for "+dur(s.status_age_s)),"· run may have stopped"],"bad","status.json has not changed for over 10 minutes"));
+  if(s.reachable==null)cs.append(chip(["reading the MacBook…"]));
+  else if(!s.status&&s.reachable)cs.append(chip([s.nodir?"no run folder on the MacBook yet":"waiting for the run to start"],null,"scratch/delay/status.json is missing or empty"));
+  if(s.status){
+    const state=st.state||"–",pu=el("span","pulse"+({training:" on",exam:" on",setup:" amb",baseline:" amb",stalled:" bad",error:" bad",done:" good"}[state]||""));
+    if(s.exam){pu.className="pulse on";cs.append(chip([pu,B(s.exam.what),`${s.exam.done} of ${s.exam.total} parts`],null,(st.message||"")))}
+    else cs.append(chip([pu,B(state)],state==="stalled"||state==="error"?"bad":null,(st.message||"")+(st.engines!=null?` · ${st.engines} engines`:"")));
+    cs.append(chip([B(st.stage_ms!=null?st.stage_ms+" ms":"–"),"of "+(st.target_ms??160)],null,"delay being trained now, of the target delay"));
+    if(st.update!=null)cs.append(chip(["update",B(String(st.update))],null,`started at update ${st.start_update??"?"}`+(st.start_update!=null?` (+${st.update-st.start_update})`:"")+(st.run?` · run ${st.run}`:"")));
+    if(st.updates_per_hour!=null)cs.append(chip([B(String(Math.round(st.updates_per_hour))),"updates/h"],null,"training speed"));
+    if(s.running_s!=null)cs.append(chip(["running",B(dur(s.running_s))],null,"since "+(st.started||"")));
+    if(st.battery_pct!=null){const bad=st.on_ac===false||st.battery_pct<50;cs.append(chip(["MacBook",B(st.battery_pct+"%"),st.on_ac?"on power":"on battery"],bad?"bad":null,"MacBook battery"))}
+  }
+  const age=s.status_age_s??s.fetched_age_s;
+  if(age!=null)cs.append(chip(["data",B(dur(age)),"old"],null,"last MacBook read "+dur(s.fetched_age_s)+" ago"+(s.reachable===false?" · last try failed":"")));
+}
+
+function winTrack(r){
+  const t=el("div","track");t.append(el("div","base"));
+  for(const g of [.25,.5,.75]){const k=el("div","grid");k.style.left=P(g);t.append(k)}
+  const b=r.baseline&&r.baseline.win,n=r.latest&&r.latest.win;
+  if(b==null&&n==null){t.replaceChildren(el("div","empty"));t.title="not measured at this delay yet";return t}
+  if(b!=null&&n!=null){const l=el("div","link"),a=Math.min(b,n),z=Math.max(b,n);l.style.left=P(a);l.style.width=(z-a)*100+"%";l.style.background=col(r.latest.passed);t.append(l)}
+  if(b!=null){const w=el("div","was");w.style.left=P(b);w.title=`before training: ${pc(b)} won (${r.baseline.won}/${r.baseline.rounds})`;t.append(w)}
+  if(n!=null){const d=el("div","now");d.style.left=P(n);d.style.background=col(r.latest.passed);d.title=`${r.latest.size} at update ${r.latest.update}: ${pc(n)} won (${r.latest.won}/${r.latest.rounds})`+(r.latest.passed==null?"":r.latest.passed?" · passed":" · not passed");t.append(d)}
+  t.title="share of rounds won, 0 to 100%";return t}
+function stack(x){
+  const s=el("div","stack");if(!x||!x.rounds){s.title="not measured";return s}
+  for(const [k,c,l] of [["won","--good","won"],["lost","--bad","lost"],["no_contact","--wait","no contact"],["timeout_contact","--accent","timed out after contact"]]){
+    if(!x[k])continue;const i=el("i");i.style.flex=x[k];i.style.background=C(c);s.append(i)}
+  s.title=`${x.won} won · ${x.lost} lost · ${x.no_contact} no contact · ${x.timeout_contact} timed out after contact · ${x.rounds} rounds`;return s}
+function mini(gates){
+  const s=sv("svg",{class:"mini",viewBox:"0 0 96 22"}),pts=gates.filter(g=>g.win!=null);
+  if(!pts.length){s.append(sv("line",{x1:2,x2:94,y1:11,y2:11,stroke:C("--wait"),"stroke-dasharray":"2 3","stroke-opacity":.5}));s.append(Object.assign(sv("title",{}),{textContent:"no exams in training at this delay yet"}));return s}
+  const X=i=>pts.length>1?3+i/(pts.length-1)*90:48,Y=v=>19-v*16;
+  s.append(sv("line",{x1:0,x2:96,y1:Y(.5),y2:Y(.5),stroke:C("--line")}));
+  if(pts.length>1)s.append(sv("path",{d:pts.map((g,i)=>(i?"L":"M")+X(i).toFixed(1)+" "+Y(g.win).toFixed(1)).join(""),fill:"none",stroke:C("--dim"),"stroke-width":1.2}));
+  pts.forEach((g,i)=>s.append(sv("circle",{cx:X(i),cy:Y(g.win),r:i===pts.length-1?2.6:1.8,fill:col(g.passed)})));
+  s.append(Object.assign(sv("title",{}),{textContent:"exams in training: "+pts.map(g=>`update ${g.update} ${pc(g.win)}`).join(" · ")}));return s}
+
+function ladder(s){
+  const L=$("ladder");L.replaceChildren();const rows=s.ladder||[];
+  $("ladn").textContent=rows.filter(r=>r.icon==="passed"&&r.delay>0).length+" of "+rows.filter(r=>r.delay>0).length+" passed";
+  for(const r of rows){
+    const x=r.latest||r.baseline,has=!!x,row=el("div","stage"+(r.current?" cur":"")+(has?"":" nodata"));
+    const lb=el("div","lbl");lb.append(icon(r.icon),document.createTextNode(r.delay+" ms"));if(r.current)lb.append(el("small",null,r.icon==="confirming"?"confirming":"now"));
+    lb.title=r.delay===0?"no delay, the model's starting point":`reaction delay of ${r.delay} ms`+(r.best?` · best: update ${r.best.update}`:"");
+    const v=el("div","val "+(!has?"w":r.latest?(r.latest.passed===true?"g":r.latest.passed===false?"r":"n"):"n"),has?pc(x.win):"–");
+    v.title=has?(r.latest?`${r.latest.size} at update ${r.latest.update}`:"before training only"):"not measured";
+    const fs=el("div","dim");if(x&&x.first_shot_s!=null){fs.append(B(x.first_shot_s.toFixed(2)+" s"),document.createTextNode(" to first shot"))}else fs.textContent="– to first shot";
+    fs.title="mean time from first sight to first shot, newest exam"+(r.baseline&&r.baseline.first_shot_s!=null?` · before training ${r.baseline.first_shot_s.toFixed(2)} s`:"");
+    row.append(lb,winTrack(r),v,stack(x),fs,mini(r.gates||[]));L.append(row)}
+  if(!rows.length)L.append(el("div","none","no stages yet"));
+}
+
+function fmt(m,v){if(v==null)return"–";if(m._pct)return Math.round(v*100)+"%";if(m._sec)return v.toFixed(2)+" s";return Math.abs(v)>=10?v.toFixed(0):v.toFixed(2)}
+function marks(s){
+  const M=$("marks");M.replaceChildren();const mk=s.marks;
+  if(!mk||!(mk.items||[]).length){$("marksn").textContent="";const d=el("div","none");d.append(icon("todo"),document.createTextNode("no exam yet"));M.append(d);return}
+  $("marksn").textContent=`${mk.delay} ms · `+(mk.kind==="baseline"?"before training":`${mk.size} at update ${mk.update}`+(mk.size==="quick check"?" · 100 rounds per row":mk.size==="full exam"?" · 300 rounds per row":""));
+  for(const m of mk.items){
+    m._sec=/(_s$|sec|time)/i.test(m.name||"");m._pct=!m._sec&&[m.value,m.pass_at,m.before].every(v=>v==null||(v>=0&&v<=1));
+    const hi=m._pct?1:Math.max(m.value||0,m.pass_at||0,m.before||0)*1.4||1,F=v=>v/hi;
+    const cls=m.value==null?"w":m.passed?"g":"r",row=el("div","mark"),nm=el("div","nm"),d=el("span","sdot");d.style.background=C(cls==="g"?"--good":cls==="r"?"--bad":"--wait");
+    nm.append(d,el("span",null,(m.name||"").replace(/_/g," ")));nm.title=m.name||"";
+    const t=el("div","track");t.append(el("div","base"));
+    const z=el("div","zone");if(m.higher_is_better){z.style.left=P(F(m.pass_at));z.style.right="0"}else{z.style.left="0";z.style.width=P(F(m.pass_at))}t.append(z);
+    const k=el("div","tick");k.style.left=P(F(m.pass_at));t.append(k);
+    if(m.before!=null){const w=el("div","was");w.style.left=P(F(m.before));w.title="before training: "+fmt(m,m.before);t.append(w)}
+    if(m.value!=null){const n=el("div","now");n.style.left=P(F(m.value));n.style.background=C(cls==="g"?"--good":"--bad");n.title="this exam: "+fmt(m,m.value);t.append(n)}
+    t.title=`needs ${m.higher_is_better?"at least":"at most"} ${fmt(m,m.pass_at)}`;
+    const v=el("div","val "+cls,fmt(m,m.value)),nd=el("div","need",(m.higher_is_better?"≥ ":"≤ ")+fmt(m,m.pass_at));nd.title="pass mark";
+    row.append(nm,t,v,nd);M.append(row)}
+}
+
+function spark(box,label,pts,key,max,unit,key2,label2){
+  box.replaceChildren();const vals=pts.filter(p=>p[key]!=null);const cap=el("div","cap");cap.append(el("b",null,label));
+  const last=vals.length?vals[vals.length-1][key]:null;
+  if(key2){const l2=vals.length?vals[vals.length-1][key2]:null,lp=vals.length?vals[vals.length-1]:{};
+    const a=el("span","v",last==null?"–":Math.round(last*100)+"%");a.title=lp.n!=null?`last ${lp.n} rounds at this delay`:"";
+    const b=el("span","v",l2==null?"–":Math.round(l2*100)+"%");b.style.color=C("--good");b.title=lp.n0!=null?`last ${lp.n0} rounds at 0 ms · shows whether the old skill is kept`:"";
+    const lb=el("span","n"," "+label2+" ");lb.style.marginLeft="10px";cap.append(a,lb,b)}
+  else cap.append(el("span","v",last==null?"–":unit==="%"?Math.round(last*100)+"%":Math.round(last)+unit));
+  const svg=sv("svg",{class:"sp",viewBox:"0 0 300 84",preserveAspectRatio:"none"});
+  for(const g of [0,.5,1])svg.append(sv("line",{x1:0,x2:300,y1:4+76*(1-g),y2:4+76*(1-g),stroke:C("--line"),"stroke-width":1}));
+  if(vals.length>1){
+    max=max||Math.max(...vals.map(p=>p[key]))*1.15||1;const u0=vals[0].update,u1=vals[vals.length-1].update,X=u=>u1>u0?(u-u0)/(u1-u0)*300:150;
+    let e=null,d="";for(const p of vals){e=e==null?p[key]:e*.8+p[key]*.2;d+=(d?"L":"M")+X(p.update).toFixed(1)+" "+(4+76*(1-Math.min(1,e/max))).toFixed(1)}
+    if(key2){let e2=null,d2="";for(const p of vals){if(p[key2]==null)continue;e2=e2==null?p[key2]:e2*.8+p[key2]*.2;d2+=(d2?"L":"M")+X(p.update).toFixed(1)+" "+(4+76*(1-Math.min(1,e2/max))).toFixed(1)}
+      if(d2)svg.append(sv("path",{d:d2,fill:"none",stroke:C("--good"),"stroke-width":1.3,"stroke-opacity":.75,"vector-effect":"non-scaling-stroke"}))}
+    svg.append(sv("path",{d:d,fill:"none",stroke:C(key==="train_win_rate"?"--text":"--accent"),"stroke-width":1.6,"vector-effect":"non-scaling-stroke"}));
+    svg.append(Object.assign(sv("title",{}),{textContent:`updates ${u0} to ${u1} · top line = ${unit==="%"?"100%":Math.round(max)+unit}`}));
+  }else if(vals.length===1){
+    const mx=max||vals[0][key]*1.15||1,Y=v=>4+76*(1-Math.min(1,v/mx));
+    if(key2&&vals[0][key2]!=null)svg.append(sv("line",{x1:0,x2:10,y1:Y(vals[0][key2]),y2:Y(vals[0][key2]),stroke:C("--good"),"stroke-width":3,"stroke-opacity":.75,"vector-effect":"non-scaling-stroke"}));
+    svg.append(sv("line",{x1:0,x2:10,y1:Y(vals[0][key]),y2:Y(vals[0][key]),stroke:C(key==="train_win_rate"?"--text":"--accent"),"stroke-width":3,"vector-effect":"non-scaling-stroke"}));
+  }else svg.append(sv("line",{x1:0,x2:300,y1:42,y2:42,stroke:C("--wait"),"stroke-dasharray":"3 4","stroke-opacity":.5}));
+  box.append(cap,svg)}
+function winChart(box,pts,stage){
+  box.replaceChildren();const H=120,Y=v=>4+112*(1-Math.max(0,Math.min(1,v))),GOAL=.81;
+  const has0=pts.some(p=>p.win0!=null);
+  const cap=el("div","cap");cap.append(el("b",null,has0?"Rounds won in training (last 200 rounds of each kind)":"Rounds won in training (last 200 rounds)"));
+  const lg=(col,txt,tip)=>{const a=el("span","lg");const s=el("s");s.style.background=col;a.append(s,el("span",null,txt));a.title=tip;return a};
+  cap.append(lg(C("--text"),`duel wins at ${stage} ms`,"real-duel practice rounds won: the number that has to climb"));if(has0)cap.append(lg(C("--good"),"0 ms rounds","rounds with no delay"));
+  const hasA=pts.some(p=>p.arena!=null);if(hasA)cap.append(lg(C("--dim"),"aim drill kills","aim arena rounds at this delay: a simpler aiming drill, an early sign that aim is coming back before duel wins do"));
+  const w=el("div","wc"),svg=sv("svg",{viewBox:"0 0 300 120",preserveAspectRatio:"none"});
+  for(const g of [0,.25,.5,.75,1]){svg.append(sv("line",{x1:0,x2:300,y1:Y(g),y2:Y(g),stroke:C("--line"),"stroke-width":1,"vector-effect":"non-scaling-stroke"}));
+    const l=el("div","yl",Math.round(g*100)+"%");l.style.top=(Y(g)-7)+"px";w.append(l)}
+  svg.append(sv("line",{x1:0,x2:300,y1:Y(GOAL),y2:Y(GOAL),stroke:C("--accent"),"stroke-width":1,"stroke-dasharray":"4 4","stroke-opacity":.8,"vector-effect":"non-scaling-stroke"}));
+  const gl=el("div","goal",`exam starts when ${stage} ms reaches 81%`);gl.style.top=(Y(GOAL)-16)+"px";gl.title="the run only spends time on an exam once practice rounds suggest it could pass";
+  const vals=pts.filter(p=>p.train_win_rate!=null);w.append(svg,gl);
+  if(vals.length){
+    const u0=vals[0].update,u1=vals[vals.length-1].update,X=u=>u1>u0?(u-u0)/(u1-u0)*300:300;
+    const path=(k,col)=>{let d="";for(const p of vals){if(p[k]==null)continue;d+=(d?"L":"M")+X(p.update).toFixed(1)+" "+Y(p[k]).toFixed(1)}
+      if(d&&vals.length>1)svg.append(sv("path",{d:d,fill:"none",stroke:col,"stroke-width":1.8,"stroke-linejoin":"round","vector-effect":"non-scaling-stroke"}))};
+    path("arena",C("--dim"));path("win0",C("--good"));path("train_win_rate",C("--text"));
+    const L=vals[vals.length-1],ends=[["train_win_rate",C("--text"),"duels",L.n],["win0",C("--good"),"0 ms",L.n0],["arena",C("--dim"),"aim drill",null]].filter(e=>L[e[0]]!=null).map(e=>({v:L[e[0]],col:e[1],nm:e[2],n:e[3],y:Y(L[e[0]])}));
+    ends.sort((a,b)=>a.y-b.y);ends.forEach((e,i)=>{e.ly=i&&e.y<ends[i-1].ly+15?ends[i-1].ly+15:e.y});
+    for(const e of ends){const d=el("div","dot");d.style.top=e.y+"px";d.style.background=e.col;
+      const t=el("div","end");t.style.top=((e.ly!=null?e.ly:e.y)-7)+"px";t.style.color=e.col;t.append(Math.round(e.v*100)+"% ",el("i",null,e.nm));t.title=e.n!=null?`over the last ${e.n} rounds of this kind`:"";w.append(d,t)}
+    const a=el("div","xl","update "+u0);a.style.left="38px";const b=el("div","xl",vals.length>1?"update "+u1:"");b.style.right="94px";w.append(a,b);
+  }else{const n=el("div","goal","no training rounds yet");n.style.top="50px";n.style.color=C("--dim");w.append(n)}
+  box.append(cap,w)}
+function pulse(s){
+  const p=s.pulse||{},pts=p.points||[],tag=p.stage_ms!=null?`${p.stage_ms} ms · ${pts.length?"updates "+pts[0].update+"–"+pts[pts.length-1].update:"no data yet"}`:"no data yet";
+  $("pn1").textContent=tag;$("pn2").textContent=tag;
+  winChart($("p1"),pts,p.stage_ms!=null?p.stage_ms:"?");
+  spark($("p2"),"Updates per hour",pts,"updates_per_hour",null,"/h");
+}
+let last=null;
+function render(s){last=s;header(s);ladder(s);marks(s);pulse(s)}
+async function tick(){try{render(await(await fetch("/api/state",{cache:"no-store"})).json())}
+  catch(e){if(last){last.reachable=false;last.error="dashboard server not answering";header(last)}else{$("chips").replaceChildren(chip([B("dashboard server not answering")],"bad"))}}}
+tick();setInterval(tick,10000);
+</script></body></html>

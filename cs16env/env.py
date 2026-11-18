@@ -276,6 +276,7 @@ class CS16Env(gym.Env):
         # turn toward the enemy, weighted like the other navigator labels (otherwise there is no look label at all in
         # line of sight and the greedy model froze its view ~20 deg off a far enemy: time-outs). Default off.
         self.nav_engage_look = False
+        self.teacher_present = False  # --teacher-present: the aim teacher aims at where the enemy IS now (not where it was in the frame)
         # GO LOOKING (owner, 2026-11-13 late): a real duel has no clock -- hold at home first, and after go_look_after s of a
         # round with no line of sight at all, go looking. Then, for the rest of the round: THE SWITCH is turned off and the
         # navigator teacher's goal becomes "side" (walk toward the enemy side; it stops and fights when it sees the enemy).
@@ -1005,6 +1006,8 @@ class CS16Env(gym.Env):
         if not q:
             return np.zeros(10, np.float32)
         past, now = q[0], q[-1]
+        if self.teacher_present:  # the true present: where the enemy is now, from where the crosshair points now
+            past = now
         out = np.zeros(10, np.float32)
         out[0:3] = now[0:3]
         if past[5] > 0 and self._me(s).alive:

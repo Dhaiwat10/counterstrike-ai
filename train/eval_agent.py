@@ -71,6 +71,7 @@ class TorchAgent:
     @torch.no_grad()
     def act(self, obs: np.ndarray) -> np.ndarray:
         lg = self.logits(obs)
+        self.last_logits = lg  # (diagnostics only, e.g. peek_duel.py --log-fire-p; no effect on the action)
         out = []
         for k, p in enumerate(Policy.split(lg[0, 0])):
             if not self.mask[k]:  # head not learned by this policy: "no input"

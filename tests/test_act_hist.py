@@ -72,6 +72,11 @@ print("ok")
 from train.ppo import build_optimizer  # noqa: E402
 o0 = build_optimizer(base, 1e-4)
 assert len(o0.param_groups) == 1
+# a resumable checkpoint has Adam moments: take one step so there is state to restore (an optimizer that never stepped
+# has none, and build_optimizer rightly refuses a resume that restores almost nothing)
+sum(q.float().pow(2).sum() for q in base.parameters()).backward()
+o0.step(); o0.zero_grad()
+assert build_optimizer(aug, 1e-4, dict(model={})).state == {}, "a weights-only resume (snapshot) starts a fresh Adam"
 saved1 = dict(opt=o0.state_dict())
 o1 = build_optimizer(aug, 5e-5, saved1)
 assert len(o1.param_groups) == 2 and all(g["lr"] == 5e-5 for g in o1.param_groups[:1]) and o1.param_groups[1]["params"] == list(aug.act_in.parameters())

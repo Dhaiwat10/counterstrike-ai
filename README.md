@@ -24,6 +24,27 @@ Against scripted and bot opponents, real duels from the spawns, 300 rounds per r
 | Time past its own cover line in the opening | 0% | 0% |
 | Aim arena (enemy placed in view), kills | 94.2% | 91.6% |
 
+### With a 160 ms reaction delay
+
+The model above sees every frame the moment it is drawn. A second model (update 29800, release
+`aim_map-delay160-update29800`) was trained from it to play with every frame arriving 160 ms late, closer to human
+reaction time, in steps of 40, 80, 120 and 160 ms. Each step was passed only on a full exam (300 rounds per row). Final
+exam at 160 ms, real duels from the spawns, greedy play:
+
+| Opponent | Model at T end | Model at CT end |
+|---|---|---|
+| Easiest scripted peeker | 98.3% | 93.0% |
+| Holder at spots taken from the owner's play | 87.3% | 83.6% |
+| Holder on the raised stone steps | 91.0% | 89.7% |
+| Roaming YaPB bot | 95.6% | 91.3% |
+| Sharpest scripted peeker (100 rounds) | 75% | 69% |
+| Time past its own cover line in the opening | 0% | 0% |
+| Aim arena (enemy placed in view), kills | 94.6% | 91.3% |
+
+It fires about 0.5-0.9 s after first sight, against about 0.16 s for the no-delay model. A copy of the script that ran
+the ladder is in `scripts/delay_ladder/` for reference (it also calls exam scripts that are not in this repository);
+`dashboard/delay_server.py` shows a run live.
+
 ## How it works
 
 - **Observation and action.** The model sees only the rendered screen (world and HUD) and outputs what a mouse and
@@ -86,7 +107,8 @@ Detailed notes: [docs/](docs/).
 ## Weights
 
 Checkpoints are attached to this repository's GitHub releases. The final model is release
-`aim_map-home-update13800`.
+`aim_map-home-update13800`; the 160 ms reaction-delay model is release `aim_map-delay160-update29800` (play it with
+`--delay 0.16`).
 
 ## Quick start
 
